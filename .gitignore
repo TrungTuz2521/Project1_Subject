@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Frontend
+node_modules/
+dist/
+coverage/
+
+# Editors
+.vs/
+.vscode/
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Service credentials
+*service-account*.json
