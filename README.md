@@ -130,17 +130,28 @@ Khi backend đã được lập trình và cấu hình hoàn chỉnh, chạy:
 
 ## 6. Cài đặt Frontend
 
-Frontend hiện mới có cấu trúc thư mục, chưa khởi tạo đầy đủ dự án Vite và chưa có `package.json`.
+Đã có bộ React + Vite + TypeScript và màn hình mẫu **Đội bóng của tôi**. Dùng Node 24 LTS; trong thư mục dự án chạy:
 
-Sau khi frontend được khởi tạo, thành viên sẽ sử dụng:
-
-```bash
+```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Không chạy `npm install` trước khi có `package.json`.
+Mở URL terminal hiển thị, thường là http://localhost:5173. Dev mặc định dùng dữ liệu mẫu, bấm **Đăng nhập bằng tài khoản mẫu** để xem danh sách và tạo đội. Không cần backend hoặc TiDB cho phần demo này.
+
+```powershell
+npm test
+npm run build
+```
+
+Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO; `mocks` cho dữ liệu tổng hợp và handler; `features/matchmaking/TeamsPage.tsx` cho luồng tải danh sách/gửi form/báo lỗi.
+
+Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Form đăng nhập thật và các chức năng backend chưa được triển khai trong bộ mẫu.
+
+Build production luôn tắt mock. Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
+
+Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để thêm service, DTO, mock và xử lý lỗi theo mẫu.
 
 ## 7. Database TiDB và cấu hình kết nối
 
@@ -254,6 +265,6 @@ Tạo Pull Request trên GitHub để nhóm kiểm tra trước khi gộp vào n
 - [x] Thống nhất tài liệu API/Models và quy tắc nghiệp vụ
 - [ ] Khởi tạo Flask API
 - [ ] Kết nối Flask với TiDB Cloud
-- [ ] Khởi tạo React + Vite + TypeScript
+- [x] Khởi tạo React + Vite + TypeScript và bộ frontend mẫu dùng chung
 - [ ] Phát triển các chức năng nghiệp vụ
 - [ ] Kiểm thử và triển khai
