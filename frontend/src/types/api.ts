@@ -10,7 +10,7 @@ export interface ApiErrorBody { error: { code: string; message: string; fields?:
 export type SkillLevel = 'BEGINNER' | 'AMATEUR' | 'INTERMEDIATE' | 'SEMI_PRO' | 'PRO';
 export type PitchType = 'PITCH_5' | 'PITCH_7' | 'PITCH_11';
 export type MvpPitchType = Exclude<PitchType, 'PITCH_11'>;
-export type TeamPaymentRule = 'SPLIT_EQUAL';
+export type TeamPaymentRule = 'SPLIT_EQUAL' | 'LOSER_PAYS_REMAINDER';
 export type BookingPaymentRule = TeamPaymentRule | 'DIRECT_BOOKING';
 export interface UserSelf {
   user_id: number; full_name: string; email: string; phone: string | null;
