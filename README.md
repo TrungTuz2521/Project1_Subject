@@ -225,7 +225,7 @@ Không đưa `.env`, mật khẩu, JWT secret hoặc chuỗi kết nối có m�
 | --- | --- |
 | Giữ sân | 5 phút từ lúc server tạo hold |
 | Cọc | 20% tổng tiền sân |
-| Hai đội chia tiền | 50–50; mỗi đội cọc 10% tổng tiền sân, trả thêm phần còn lại của mình |
+| Hai đội chia tiền | Chọn 50–50 hoặc đội thua trả toàn bộ phần còn thiếu của cả hai đội, không hoàn cọc; hòa tính như 50–50. Mỗi đội đều cọc 10% tổng tiền sân |
 | Lượt đá | 90 phút |
 | Giờ mở cửa | 06:00–23:00 giờ Việt Nam |
 | Đặt trước | Tối đa 10 ngày |
@@ -234,6 +234,8 @@ Không đưa `.env`, mật khẩu, JWT secret hoặc chuỗi kết nối có m�
 | Token đăng nhập | Hết hạn sau 60 phút từ lúc cấp, đăng nhập lại; không dùng refresh token |
 
 Luồng ghép trận: đăng bài → AI đề xuất → hai bên xác nhận → giữ sân 5 phút → thu đủ cọc → xác nhận trận. Các quy tắc này cần được triển khai trong backend; migration không tự thực thi chúng.
+
+Quyết toán sau trận tại quầy: Admin đối chiếu với hai đội và chọn đội thắng hoặc hòa đối với thể thức đội thua trả phần còn lại; backend tính tiền, frontend hiện khoản phải trả rồi QR cho đúng người trả. Hòa chia 50–50; không hoàn cọc đội thắng. Thu tiền mặt có nút Admin xác nhận riêng. Không có bước hai đội xác nhận trên ứng dụng hoặc chờ 30 phút. API/schema/frontend quyết toán chưa triển khai; V3 không chứa phần này, cần bổ sung riêng theo mục 15.1 của hợp đồng.
 
 Đọc [hợp đồng API và Models](docs/api/API_MODELS_CONTRACT_PROJECT1.md) trước khi bắt đầu code; dùng chung tên cột, ENUM, endpoint và dữ liệu gửi/nhận theo tài liệu.
 
