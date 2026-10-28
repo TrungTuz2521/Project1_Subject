@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Booking, PaymentSession } from '../../types/api';
 import { cancelMyBooking, createDepositSession, getBooking, getMyBookings, huyDemo, moneyVN, dateVN, serverNow } from '../../services/huyApi';
-import { Banner, Button, Card, Empty, Head, Status, Warning, countdown, useNow } from '../huy/ui';
+import { Banner, Button, Card, Empty, Head, Status, Warning, countdown, useNow } from '../field-management/ui';
 import { PaymentBox } from '../payments/PaymentBox';
 
 export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | null; onRefresh?: () => void }) {

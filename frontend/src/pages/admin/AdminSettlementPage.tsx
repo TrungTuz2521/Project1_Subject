@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Booking, PaymentSession } from '../../types/api';
 import { createSettlementSession, getAdminBookings, getSettlement, huyDemo, moneyVN, dateVN, recordCash, setSettlementResult } from '../../services/huyApi';
 import type { MatchOutcome, Settlement } from '../../services/huyApi';
-import { Banner, Button, Card, Empty, Field, Head, Status, Warning } from '../../features/huy/ui';
+import { Banner, Button, Card, Empty, Field, Head, Status, Warning } from '../../features/field-management/ui';
 import { PaymentBox } from '../../features/payments/PaymentBox';
 
 export function AdminSettlementPage({ selectedId }: { selectedId: number | null }) {

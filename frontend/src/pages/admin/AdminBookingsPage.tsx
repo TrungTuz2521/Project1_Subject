@@ -4,7 +4,7 @@ import {
   getAdminBookings, getPitches, addAdminBooking, createMaintenance,
   cancelAdminBooking, moveAdminBooking, removeMaintenance, dateVN, moneyVN,
 } from '../../services/huyApi';
-import { Banner, Button, Card, Empty, Field, Head, Status, Warning, dateAfter } from '../../features/huy/ui';
+import { Banner, Button, Card, Empty, Field, Head, Status, Warning, dateAfter } from '../../features/field-management/ui';
 
 const times = Array.from({ length: 32 }, (_, n) => { const m = 360 + n * 30; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; });
 export function AdminBookingsPage({ settlement }: { settlement: (id: number) => void }) {

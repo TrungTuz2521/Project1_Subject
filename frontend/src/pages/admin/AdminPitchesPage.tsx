@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Pitch } from '../../types/api';
 import { addPitch, changePitch, getPitches, moneyVN } from '../../services/huyApi';
-import { Banner, Button, Card, Field, Head, Status, Warning } from '../../features/huy/ui';
+import { Banner, Button, Card, Field, Head, Status, Warning } from '../../features/field-management/ui';
 
 export function AdminPitchesPage() {
   const [pitches, setPitches] = useState<Pitch[]>([]);

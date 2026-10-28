@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createBooking, getAvailability, getPitches, moneyVN, dateVN, timeVN } from '../../services/huyApi';
 import type { Availability, Pitch } from '../../types/api';
-import { Banner, Button, Card, Empty, Field, Head, Status, Warning, dateAfter } from '../huy/ui';
+import { Banner, Button, Card, Empty, Field, Head, Status, Warning, dateAfter } from '../field-management/ui';
 
 export function PitchesPage({ onBooked }: { onBooked: (bookingId: number) => void }) {
   const [filter, setFilter] = useState('ALL');

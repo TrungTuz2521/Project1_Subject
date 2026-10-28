@@ -178,7 +178,16 @@ function demoSettlement(id: number): Settlement {
 
 // ---------- Public + Player APIs ----------
 export async function getPitches(query: PitchQuery = {}): Promise<Pitch[]> {
-  if (!huyDemo) return (await api.request<ApiResponse<Pitch[]>>('/pitches', { query, auth: false })).data;
+  
+if (!huyDemo) return (await api.request<ApiResponse<Pitch[]>>('/pitches', {
+  query: {
+    pitch_type: query.pitch_type,
+    min_price: query.min_price,
+    max_price: query.max_price,
+  },
+  auth: false,
+})).data;
+
   await pause();
   return demoPitches.filter(p => (!query.pitch_type || p.pitch_type === query.pitch_type) && (!query.min_price || integer(p.price_per_slot) >= integer(query.min_price)) && (!query.max_price || integer(p.price_per_slot) <= integer(query.max_price)));
 }

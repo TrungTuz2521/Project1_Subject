@@ -1,6 +1,6 @@
 import type { PaymentSession } from '../../types/api';
 import { huyDemo, moneyVN, dateVN } from '../../services/huyApi';
-import { Banner, Card, Status } from '../huy/ui';
+import { Banner, Card, Status } from '../field-management/ui';
 
 export function PaymentBox({ payment }: { payment: PaymentSession }) {
   // The payment provider supplies either a URL or QR payload. Never mark SUCCESS from this component.

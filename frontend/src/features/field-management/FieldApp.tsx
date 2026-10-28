@@ -7,7 +7,7 @@ import { AdminSettlementPage } from '../../pages/admin/AdminSettlementPage';
 import { AdminRevenuePage } from '../../pages/admin/AdminRevenuePage';
 import { DemoNote } from './ui';
 import { huyDemo } from '../../services/huyApi';
-import './huy.css';
+import './field.css';
 
 type Tab = 'pitches' | 'bookings' | 'adminBookings' | 'adminPitches' | 'settlement' | 'revenue';
 const nav: { title: string; items: { tab: Tab; icon: string; label: string }[] }[] = [
@@ -15,7 +15,7 @@ const nav: { title: string; items: { tab: Tab; icon: string; label: string }[] }
   { title: 'QUẢN TRỊ SÂN', items: [{ tab: 'adminBookings', icon: '▦', label: 'Lịch đặt sân' }, { tab: 'adminPitches', icon: '⚽', label: 'Quản lý sân' }, { tab: 'settlement', icon: '◈', label: 'Quyết toán' }, { tab: 'revenue', icon: '▥', label: 'Doanh thu' }] },
 ];
 
-export function HuyApp() {
+export function FieldApp() {
   const [tab, setTab] = useState<Tab>('pitches');
   const [bookingId, setBookingId] = useState<number | null>(null);
   const [settlementId, setSettlementId] = useState<number | null>(null);

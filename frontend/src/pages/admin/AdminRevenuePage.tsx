@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { RevenueReport } from '../../types/api';
 import type { TransactionList } from '../../services/huyApi';
 import { getRevenue, getTransactions, dateVN, moneyVN, todayVN } from '../../services/huyApi';
-import { Banner, Button, Card, Empty, Field, Head, Status, Warning, dateAfter } from '../../features/huy/ui';
+import { Banner, Button, Card, Empty, Field, Head, Status, Warning, dateAfter } from '../../features/field-management/ui';
 
 export function AdminRevenuePage() {
   const [from, setFrom] = useState(dateAfter(-7));
