@@ -1,6 +1,6 @@
 # Hợp đồng API và Models Project1
 
-Phiên bản 1.7 — ngày 27/10/2026. Dùng chung cho 5 thành viên khi lập trình Flask, React và TiDB. Đây là hợp đồng triển khai, không phải danh sách chức năng đã có trong mã nguồn.
+Phiên bản 1.8 — ngày 29/10/2026. Dùng chung cho 5 thành viên khi lập trình Flask, React và TiDB. Đây là hợp đồng triển khai, không phải danh sách chức năng đã có trong mã nguồn.
 
 ## 1. Cơ sở và quyết định thống nhất
 
@@ -22,7 +22,7 @@ Thứ tự áp dụng: yêu cầu trực tiếp của chủ dự án → quyết
 | Loại sân MVP | PITCH_5, PITCH_7; giữ PITCH_11 cho dữ liệu cũ | Báo cáo và schema |
 | Chi phí hai đội | SPLIT_EQUAL (50–50) hoặc LOSER_PAYS_REMAINDER (đội thua trả toàn bộ phần còn thiếu, không hoàn cọc); hòa chia 50–50 | Chủ dự án đã chốt |
 
-Chủ dự án đã chốt các thay đổi đến phiên bản 1.7: cọc 20%, hai thể thức 50–50 hoặc đội thua trả phần còn lại, hòa chia 50–50, đá 90 phút, mở 06:00–23:00, đặt trước tối đa 10 ngày, người dùng tự hủy sau khi cọc thì mất cọc; các đề xuất khác giữ theo lựa chọn đã đồng ý. Đăng nhập đã chốt: access token hết hạn sau 60 phút từ lúc cấp, hết hạn phải đăng nhập lại; không dùng refresh token. Hai thể thức chia tiền được chốt tại mục 15.1; không hoàn cọc chỉ vì một đội thắng. Google Login đang được trao đổi, chưa nằm trong phạm vi đã chốt. Không tự đổi endpoint hoặc tên trường khi điều chỉnh cấu hình.
+Chủ dự án đã chốt các thay đổi đến phiên bản 1.8: cọc 20%, hai thể thức 50–50 hoặc đội thua trả phần còn lại, hòa chia 50–50, đá 90 phút, mở 06:00–23:00, đặt trước tối đa 10 ngày, người dùng tự hủy sau khi cọc thì mất cọc; các đề xuất khác giữ theo lựa chọn đã đồng ý. Đăng nhập đã chốt: access token hết hạn sau 60 phút từ lúc cấp, hết hạn phải đăng nhập lại; không dùng refresh token. Hai thể thức chia tiền được chốt tại mục 15.1; không hoàn cọc chỉ vì một đội thắng. Google Login đang được trao đổi, chưa nằm trong phạm vi đã chốt. Không tự đổi endpoint hoặc tên trường khi điều chỉnh cấu hình.
 
 ## 2. Quy ước API
 
@@ -185,7 +185,7 @@ Hạn đề xuất = min(created_at+15 phút, các expiry_time, giờ bắt đ�
 - TEAM_MEMBER: proposal ACCEPTED; cập nhật TeamMember, MatchParticipant và số chỗ trong transaction. Bài cá nhân/nhóm đã được nhận → MATCHED; bài tuyển OPEN nếu còn thiếu, MATCHED khi đã đủ. Không tạo Match hoặc Booking mới chỉ vì nhận thành viên.
 - OPPONENT: proposal ACCEPTED nghĩa là đã đồng ý đề xuất. Hai bài tiếp tục LOCKED trong giai đoạn cọc; tạo Match **SUGGESTED** một lần, confirmed_at=null. Không dùng mặc định CONFIRMED trong bảng matches.
 - Hai bên phải cùng slot và cùng payment_rule (SPLIT_EQUAL hoặc LOSER_PAYS_REMAINDER). Tạo booking hold duy nhất bằng BookingService; link booking_id vào Match và hai bài. Nếu không còn sân phù hợp, không thu tiền, Match CANCELLED, mở lại bài còn hạn và báo lỗi SLOT_UNAVAILABLE.
-- Tổng cọc hai thể thức đều là **20% tổng tiền sân**, mỗi đội ứng một nửa cọc (10% tổng tiền sân). SPLIT_EQUAL: mỗi đội chịu 50% tổng tiền sân, trừ cọc đã trả. LOSER_PAYS_REMAINDER: không hoàn cọc; sau khi chốt kết quả, đội thua trả toàn bộ tiền sân còn thiếu của cả hai đội. Nếu hòa, quyết toán như SPLIT_EQUAL. Hai khoản cọc dùng BOOKING_DEPOSIT cùng booking_id, user_id khác nhau. Làm tròn phần nguồn xuống 1 VND, phần đích nhận số dư để khớp tổng.
+- Tổng cọc hai thể thức đều là **20% tổng tiền sân**, mỗi đội ứng một nửa cọc (10% tổng tiền sân). SPLIT_EQUAL: mỗi đội chịu 50% tổng tiền sân, trừ cọc đã trả. LOSER_PAYS_REMAINDER: không hoàn cọc; hai đội tự thực hiện thỏa thuận chia tiền sau trận. Hệ thống không chốt kết quả hoặc chia nghĩa vụ từng người; chỉ thu tổng phần thiếu của booking theo mục 15.1. Hai khoản cọc dùng BOOKING_DEPOSIT cùng booking_id, user_id khác nhau. Làm tròn phần nguồn xuống 1 VND, phần đích nhận số dư để khớp tổng.
 - Mỗi bên trả đúng phần payer_plan; chỉ khi đủ các phần và chưa hết hold: Booking CONFIRMED, Match CONFIRMED, matches.confirmed_at=UTC_now, hai bài MATCHED; gửi thông báo trận và liên hệ được phép.
 - Hết hold, thiếu cọc: Booking EXPIRED, Match CANCELLED; hoàn các phần đã thu. Bài còn hạn được OPEN lại sau khi xử lý trạng thái kèo; bài hết hạn EXPIRED. Không lấy proposal ACCEPTED làm bằng chứng đã thanh toán.
 
@@ -487,7 +487,7 @@ SD06 phải thể hiện đủ: hai ACCEPTED → tạo một Booking PENDING_HOL
 
 Đặt tài liệu tại `docs/api/API_MODELS_CONTRACT_PROJECT1.md`. Mọi người dùng chung prefix, ENUM, DTO và service đã phân công. Thay đổi tên trường/endpoint hoặc nghiệp vụ phải sửa tài liệu và frontend/backend liên quan trong cùng PR. Chỉ một migration được review cho mỗi thay đổi schema. Không tự chạy SQL cleanup hay migration cũ lên database chung.
 
-Migration V3 đã được áp dụng và xác minh trên TiDB dùng chung. Tài liệu này không chứng nhận backend/gateway đã được triển khai hoặc thể thức LOSER_PAYS_REMAINDER đã có luồng quyết toán. Điều kiện bắt đầu ghép code là kiểm tra mục 3.2, triển khai các endpoint theo phân công và vượt qua các kịch bản mục 10.
+Migration V3 đã được áp dụng và xác minh trên TiDB dùng chung. Tài liệu này không chứng nhận gateway hoặc thu phần còn lại đã triển khai; phần Đức đã có được ghi riêng trong BACKEND_IMPLEMENTATION_STATUS.md. Điều kiện bắt đầu ghép code là kiểm tra mục 3.2, triển khai các endpoint theo phân công và vượt qua các kịch bản mục 10.
 
 ## Phụ lục A Từ điển cột sau migration V2
 
@@ -724,41 +724,34 @@ Lưu ý khi dùng SQL nguồn: tệp gốc có SET FOREIGN_KEY_CHECKS=0 nhưng d
 
 ## 15. Quyết định bổ sung và nội dung còn trao đổi
 
-### 15.1 Chia tiền hai đội đã chốt
+### 15.1 Thanh toán sau trận — thay thế luồng cũ từ 29/10/2026
 
-Hai đội chọn thể thức khi đăng bài và thống nhất trước xác nhận kèo. Không đổi thể thức sau khi đã đồng ý hoặc bắt đầu thu cọc. DIRECT_BOOKING vẫn dành cho một người đặt trực tiếp.
+Hai đội vẫn chọn SPLIT_EQUAL / LOSER_PAYS_REMAINDER trước khi xác nhận kèo. Thể thức hiển thị để hai đội tự chia; hệ thống không lưu kết quả thắng/hòa, không tính khoản phải trả của từng đội sau trận và không tạo QR theo người thắng/thua. DIRECT_BOOKING vẫn dùng cho người đặt trực tiếp.
 
-| Thể thức | Tiền cọc | Quyết toán sau trận |
-| --- | --- | --- |
-| SPLIT_EQUAL | Tổng 20%, hai đội cọc mỗi đội 10% tổng tiền sân | Mỗi đội chịu 50% tổng tiền sân, trừ tiền đội đó đã trả |
-| LOSER_PAYS_REMAINDER có đội thua | Cọc như SPLIT_EQUAL, không hoàn cọc đội thắng | Đội thua trả toàn bộ số tiền sân còn thiếu của hai đội; đội thắng không trả thêm |
-| LOSER_PAYS_REMAINDER nhưng hòa | Cọc như SPLIT_EQUAL | Tính như chia 50–50 |
+Admin mở booking sau end_time, xem tổng tiền, cọc thực thu, phần còn lại đã ghi nhận và tổng còn thiếu. Một QR chuyển khoản ngân hàng chung hiện bên dưới, gợi ý số tiền thiếu cùng nội dung booking ổn định. Hai đội có thể chuyển nhiều lần hoặc trả tiền mặt/chuyển khoản ngoài. QR thường không có callback xác nhận; Admin phải kiểm tra tổng tiền thực nhận trước khi bấm Xác nhận đã thu đủ. Không hiện QR nếu thiếu cấu hình ngân hàng; hiển thị lý do rõ ràng.
 
-Ví dụ sân 600.000 VND, mỗi đội đã cọc 60.000 VND: chia 50–50 hoặc hòa thì mỗi đội trả thêm 240.000 VND; có đội thua thì đội thua trả thêm 480.000 VND, đội thắng không trả thêm. Tổng thực trả là 540.000 VND của đội thua và 60.000 VND của đội thắng. Cọc vẫn là khoản tiền sân đã thu, không bị bỏ khỏi sổ giao dịch.
+Ví dụ tổng sân 600000, cọc đã nhận 120000: cả hai thể thức đều hiển thị outstanding_amount=480000. Hai đội tự chia; hệ thống không đòi SOURCE_WIN/OPPONENT_WIN/DRAW. Nếu đã ghi nhận thêm 100000 thì chỉ còn 380000; không tạo lại 80% cố định. Không hoàn cọc do thắng trận.
 
-Khoản trả thêm dùng BOOKING_REMAINING_PAYMENT, ghi đúng user_id người thực trả và booking_id; không ghi khoản do đội thua trả hộ thành giao dịch của đội thắng. Khi tính tiền còn thiếu phải trừ mọi khoản thực thu hợp lệ đã có, không chỉ trừ cọc và không tạo giao dịch trùng. payer_plan là kế hoạch cọc, không sửa lại nó để giả lập kế hoạch quyết toán sau trận.
+Backend tính collected_amount từ tiền gốc SUCCESS/REFUNDED trừ REFUND SUCCESS đúng một lần; không tính PENDING/FAILED. outstanding_amount=max(total_amount-collected_amount,0). payment_status UNPAID/PARTIAL/PAID là trường response tính toán; không đổi Booking.status thành PAID. Không cần bảng booking_settlements, outcome hoặc settlement_version; dùng dữ liệu Booking/Payment V3, không chạy lại migration.
 
-**Luồng tại quầy đã chốt:** sau giờ kết thúc trận, Admin trực sân mở booking, đối chiếu với hai đội rồi chọn kết quả. Với LOSER_PAYS_REMAINDER, có ba nút SOURCE_WIN / OPPONENT_WIN / DRAW; giao diện hiển thị tên đội cụ thể thay cho mã. Với SPLIT_EQUAL hoặc DIRECT_BOOKING không cần chọn kết quả để tính tiền. Bỏ luồng hai đội xác nhận qua ứng dụng và không có hạn chờ phản hồi 30 phút.
-
-Backend tính số tiền còn phải thu từ giá booking, thể thức và các giao dịch thực thu. Frontend hiển thị số tiền và người phải trả; sau khi Admin bấm Tạo QR, QR xuất hiện bên dưới. Chia 50–50/hòa tạo giao dịch riêng từng người trả; có đội thua thì một giao dịch cho đại diện đội thua, gồm cả phần còn thiếu của đội thắng. Không gửi amount tự nhập từ frontend để quyết định số tiền online.
-
-Mỗi QR phải gắn payment_id, booking_id, user_id, BOOKING_REMAINING_PAYMENT, số tiền và phiên bản quyết toán. Mã người trả lấy từ đại diện hai đội đã gắn vào trận, không chọn user_id tùy ý. Khi chưa thống nhất kết quả tại quầy, Admin chưa tạo QR theo thắng/thua. Không suy ra đã thanh toán chỉ vì đã chọn kết quả, tạo QR hoặc quay lại từ trang thanh toán.
-
-Admin được sửa lựa chọn khi chưa có giao dịch quyết toán. Khi đã có QR còn hiệu lực, chặn thay kết quả cho đến khi giao dịch được hủy/đối soát theo khả năng cổng thanh toán; nếu gateway không hỗ trợ hủy tức thời thì chờ hết hạn và đối soát trước. Không coi việc ẩn QR ở frontend là vô hiệu hóa giao dịch. Tiền đến muộn của phiên quyết toán cũ phải được đối soát để không thu thừa hoặc chốt theo kế hoạch cũ.
-
-Sau khi đã thu thành công, không tự sửa kết quả/số tiền kế hoạch; điều chỉnh phải ghi lý do, lịch sử và giao dịch bù/hoàn riêng nếu cần. Callback online xác minh đủ chữ ký, số tiền và trạng thái như luồng cọc. Tiền mặt/chuyển khoản tại quầy dùng API Admin xác nhận thực thu riêng, không đánh dấu giao dịch online thành công bằng nút thu tiền mặt. Khóa booking khi tạo/ghi giao dịch để chống trùng QR và vượt số tiền còn thiếu, kể cả khi có hai tab Admin.
-
-**API Admin bổ sung — hợp đồng triển khai, chưa có backend:**
+**Endpoints Admin do Tú triển khai, Huy sử dụng:**
 
 | Method và path | Request | data |
 | --- | --- | --- |
-| GET /admin/bookings/{booking_id}/settlement | — | booking_id, payment_rule, outcome, version, total_amount, collected_amount, outstanding_amount, payers |
-| PATCH /admin/bookings/{booking_id}/settlement/result | outcome:SOURCE_WIN/OPPONENT_WIN/DRAW, expected_version, reason? | Quyết toán cập nhật; chỉ LOSER_PAYS_REMAINDER, sau giờ kết thúc |
-| POST /admin/bookings/{booking_id}/settlement/payment-sessions | payer_user_id, payment_method:VNPAY/MOMO, expected_version | PaymentSession cho phần còn phải trả do backend tính |
+| GET /admin/bookings/{booking_id}/balance | — | BookingBalance |
+| POST /admin/bookings/{booking_id}/confirm-paid | expected_outstanding, idempotency_key, receipts:[{payment_method:CASH/BANK_TRANSFER, amount, reference?}] | BookingBalance sau khi ghi nhận |
 
-Tất cả endpoint trên cần ADMIN ACTIVE. expected_version chống ghi đè từ màn hình cũ; sai phiên bản trả 409 STATE_CONFLICT. `payers` gồm user_id, team_id (có thể null cho đặt trực tiếp), display_name, remaining_amount; tiền là chuỗi thập phân. Thu trực tiếp tiếp tục dùng POST /admin/payments/record với payment_type=BOOKING_REMAINING_PAYMENT và kiểm tra cùng kế hoạch quyết toán. Không có kết quả cho đặt trực tiếp. Không thêm endpoint xác nhận kết quả của người chơi vào luồng này.
+BookingBalance: booking_id, payment_rule, total_amount, deposit_collected_amount, remaining_collected_amount (hai trường là thu gốc theo loại), collected_amount (ròng sau hoàn), outstanding_amount, payment_status, qr_payload nullable, transfer_reference nullable, qr_unavailable_reason nullable. Tiền gửi/nhận là chuỗi thập phân. qr_payload chỉ là nội dung QR ngân hàng do server cấu hình, không phải gateway payment session; khi đã đủ tiền qr_payload=null.
 
-Cần migration bổ sung sau V3 để lưu bền vững kết quả, phiên bản/kế hoạch quyết toán, Admin thao tác, thời điểm và lịch sử điều chỉnh; Payment mới phải liên kết được phiên quyết toán. Chưa tạo/chạy migration đó trong lần cập nhật tài liệu này. Cần cập nhật DTO/service/mock khi triển khai màn hình Admin. Migration V3 đã chạy không chứa các cấu trúc này, không chạy lại V3. Huy phụ trách giao diện chọn kết quả/tiền/QR; Tú phụ trách service/API tính tiền, tạo giao dịch và xác nhận thu; Đức hỗ trợ schema và tích hợp.
+Chỉ ADMIN ACTIVE được gọi. confirm-paid yêu cầu booking CONFIRMED và now>=end_time. expected_outstanding chống màn hình cũ; backend kiểm tra lại sau khóa. receipts là tiền đã đối chiếu thực nhận, mỗi amount dương nguyên VND; tổng receipts phải bằng đúng số dư và không bao gồm tiền đã ghi trước đó. Hỗ trợ thu bằng một hoặc nhiều khoản, kể cả trộn tiền mặt/chuyển khoản. Sai tổng trả 422, số dư đã đổi trả 409 STATE_CONFLICT. Không nhận user_id/outcome/phân bổ từng đội.
+
+Backend khóa Booking/Payment, tạo BOOKING_REMAINING_PAYMENT SUCCESS cho từng receipt trong cùng transaction. Ghi recorded_by_admin_id, paid_at, reference/note và transaction_code ổn định từ booking_id+idempotency_key+chỉ số receipt. Retry cùng key/cùng payload trả kết quả cũ kể cả số dư nay bằng 0; cùng key khác payload trả 409. Hai tab không tạo thu trùng; ghi nhận sai phải đi qua điều chỉnh/đối soát riêng, không xóa giao dịch. Nếu còn gateway session phần còn lại theo code cũ chưa đối soát, chặn xác nhận mới bằng PAYMENT_RECONCILIATION_REQUIRED.
+
+Ngoại lệ user_id cho thu gộp: do cột Payment.user_id hiện NOT NULL, dùng booking.user_id làm tài khoản quy chiếu và note đánh dấu thu gộp theo booking. Không khẳng định người đứng tên là người thực chuyển hoặc quy khoản này thành tiền của một đội. Cọc trước trận/hoàn cọc vẫn ghi đúng người thực trả. Hoàn khoản thu gộp cần Admin đối chiếu chứng từ/người nhận, không tự hoàn về người đứng tên.
+
+POST /admin/payments/record giữ cho thu thực tế riêng lẻ, hỗ trợ khoản trả thêm một phần nếu cần; kiểm tra chung số dư/khóa với confirm-paid và không ghi lại cùng receipt. Không dùng nó để giả callback online. Các endpoint chọn kết quả và tạo payment session quyết toán theo đội trong bản 1.7 được bỏ khỏi hợp đồng mới.
+
+Danh sách GET /admin/bookings bổ sung filter phase=UPCOMING/IN_PROGRESS/ENDED_UNPAID/PAID, có start_time/end_time, tên sân, hai đội (null cho đặt trực tiếp), payment_rule và balance. IN_PROGRESS khi start_time<=now<end_time, booking CONFIRMED; PAID xét từ tiền thực thu ròng, độc lập giờ đá. Giao diện Huy có bốn mục và hiển thị QR/nút xác nhận trong chi tiết. Tú triển khai danh sách/balance/receipt thật; Đức cung cấp Auth, DTO và get_booking_parties; Dminh không đổi Auth, Quang giữ lựa chọn thể thức. Các phần của Tú/Huy là hợp đồng bàn giao, chưa được tạo trong code Đức.
 
 ### 15.2 Đăng nhập đã chốt
 
