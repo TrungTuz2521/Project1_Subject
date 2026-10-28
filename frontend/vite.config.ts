@@ -6,7 +6,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html', // existing team's homepage
-        huy: 'huy.html',    // Huy's standalone frontend module
+        sanBong: 'san-bong.html',    // Huy's standalone frontend module
       },
     },
   },
