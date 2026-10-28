@@ -1,17 +1,17 @@
 # Bộ frontend dùng chung
 
-React + TypeScript + Vite. Màn hình mẫu là **Đội bóng của tôi**: đăng nhập mẫu, GET danh sách có phân trang, POST tạo đội, thông báo thành công, lỗi từng trường và lỗi toàn màn hình.
+React + TypeScript + Vite cho hệ thống đặt sân bóng, ghép đội và tìm trận. Đã tích hợp module **tài khoản và khung ứng dụng** theo `docs/api/API_MODELS_CONTRACT_PROJECT1.md`: đăng nhập/đăng ký, hồ sơ GET/PATCH, điều hướng theo hash, đăng xuất, phiên access token trong bộ nhớ tối đa 60 phút và trở về đăng nhập khi token hết hạn/được API trả 401. Màn hình **Đội bóng của tôi** tiếp tục được giữ làm ví dụ CRUD theo hợp đồng API.
 
 ## Chạy trên máy
 
-Trong thư mục `frontend`, dùng Node 24 LTS và npm:
+Cần Node.js 24 LTS (hoặc bản Node tương thích với phiên bản Vite trong `package.json`) và npm. Mở Terminal trong thư mục `frontend`:
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-Mở URL terminal hiển thị, thường là http://localhost:5173. Chế độ dev mặc định dùng mock, không cần backend hoặc TiDB. Bấm **Đăng nhập bằng tài khoản mẫu**, rồi thử tạo đội và các tình huống lỗi trong thanh công cụ. Reload trang đặt lại dữ liệu và cần đăng nhập mẫu lại.
+Mở URL terminal hiển thị, thường là http://localhost:5173. Chế độ dev mặc định dùng mock, không cần backend hoặc TiDB. Tại màn hình đăng nhập, dùng nút **Đăng nhập nhanh bằng tài khoản mẫu** (email `demo@example.test`, mật khẩu `mock-only`), hoặc tạo tài khoản demo mới. Sau đăng nhập, thử cập nhật hồ sơ, điều hướng và tạo đội. Dữ liệu mock chỉ lưu trong bộ nhớ và được đặt lại khi tải lại trang; cần đăng nhập lại sau reload.
 
 ```powershell
 npm test
@@ -39,13 +39,14 @@ Frontend KHÔNG kết nối TiDB và không chứa mật khẩu database. Mọi 
 | --- | --- |
 | `src/services/api.ts` | `createApiClient`, `ApiError`, timeout, abort, query, envelope, token |
 | `src/services/client.ts` | Instance `api` chung; chọn mock/Flask bằng cấu hình |
-| `src/stores/session.ts` | Lưu phiên trong bộ nhớ, tự xóa khi hết hạn, không refresh token |
-| `src/services/auth.ts` | `login()` cấp phiên; `logout()` xóa phiên phía client |
+| `src/stores/session.ts` | Lưu phiên trong bộ nhớ, cập nhật user không gia hạn token, tự xóa khi hết hạn, không refresh token |
+| `src/services/auth.ts` | `register()`, `login()`, `getCurrentUser()`, `updateCurrentUser()`, `logout()` |
 | `src/services/teams.ts` | Ví dụ service endpoint GET/POST của một module |
 | `src/types/api.ts` | DTO, ENUM, request/response của các module |
 | `src/mocks/fixtures.ts` | Dữ liệu tổng hợp: user, đội, sân, bài, đề xuất, booking, payment, thông báo, doanh thu |
 | `src/mocks/server.ts` | Handler mock có kiểm tra Bearer, phân trang, tạo đội, lỗi 422/409/401 |
-| `src/features/matchmaking/TeamsPage.tsx` | Màn hình hoàn chỉnh để các bạn làm mẫu |
+| `src/App.tsx` | Form đăng nhập/đăng ký, shell điều hướng, dashboard, hồ sơ, trang khung các module |
+| `src/features/matchmaking/TeamsPage.tsx` | Màn hình đội bóng mẫu; điều hướng trở lại các khu vực tài khoản |
 
 ## Quy ước gọi API
 
@@ -78,8 +79,8 @@ export function getMyBookings(signal?: AbortSignal) {
 
 Mock hiện hỗ trợ:
 
-- POST /auth/login (tài khoản mẫu, không xác thực người dùng thật).
-- GET /users/me; GET/POST /teams.
+- POST /auth/register và POST /auth/login (tài khoản demo và tài khoản được đăng ký trong bộ nhớ; không xác thực người dùng thật).
+- GET/PATCH /users/me; GET/POST /teams.
 - GET /pitches, /match-posts, /bookings/my, /notifications.
 
 Booking/payment/proposal/revenue fixture giúp dựng màn hình nhưng không đồng nghĩa đã có toàn bộ handler. Endpoint chưa làm trả 501 MOCK_NOT_IMPLEMENTED. Không có thu tiền, tạo QR thật, xác nhận trận, email hoặc quyền Admin thật.
@@ -92,9 +93,20 @@ Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh s
 
 ## Chia phần cho nhóm
 
-- **Duy Minh:** dùng services/auth.ts và session để xây form đăng nhập/đăng ký và khung điều hướng; không tự lưu token theo cách khác.
+- **Duy Minh:** module tài khoản/khung ứng dụng đã được tích hợp tại `src/App.tsx`; tiếp tục đồng bộ giao diện với backend theo `services/auth.ts` và `stores/session.ts`. Không tự lưu token ở localStorage/sessionStorage hoặc tạo một luồng refresh token riêng.
 - **Quang:** phát triển tiếp màn hình đội/bài/đề xuất từ TeamsPage, dùng DTO chung.
 - **Huy:** dùng fixtures sân/booking/doanh thu để dựng màn hình; không giả báo đã thanh toán thành công.
 - **Đức/Tú:** triển khai backend theo cùng hợp đồng, review service/DTO và nối API thật. Google Login chưa nằm trong bộ mẫu này.
 
 Đối chiếu nguồn chính tại [API và Models](../docs/api/API_MODELS_CONTRACT_PROJECT1.md). DTO BookingStatistics.by_pitch trong bản mẫu là cấu trúc đề xuất cho mảng thống kê hoạt động; hợp đồng hiện mới chốt tên trường, cần đồng bộ với backend khi triển khai. Không có báo cáo doanh thu theo mặt sân.
+
+
+## Module tài khoản — cách kiểm tra nhanh
+
+1. Mở `#/login`, thử tài khoản mẫu: `demo@example.test` / `mock-only`.
+2. Vào **Hồ sơ cá nhân**, cập nhật họ tên/số điện thoại/trình độ rồi lưu; UI gọi `GET /users/me` và `PATCH /users/me`.
+3. Đăng xuất, mở **Đăng ký ngay**, điền tên/email/mật khẩu (8–72 byte UTF-8), sau đó đăng nhập bằng tài khoản vừa đăng ký. Email trùng trả về lỗi 409.
+4. Để thử hết hạn phiên, trên trang Đội bóng của tôi chọn **Thử lỗi token 401** ở thanh tình huống; yêu cầu API tiếp theo bị từ chối và app đưa người dùng về đăng nhập.
+5. Các đường dẫn đặt sân/ghép đội/thông báo trong khung hiện là trang giữ chỗ; không giả lập thành công nghiệp vụ chưa được triển khai.
+
+**Bảo mật:** token chỉ ở bộ nhớ, bị xóa sau 60 phút hoặc khi API bảo vệ trả 401. Tải lại trang cần đăng nhập lại theo hợp đồng hiện tại; chưa có refresh token hoặc API thu hồi JWT. Chế độ mock chỉ để phát triển giao diện và không thay thế xác thực/kiểm tra quyền của backend.
