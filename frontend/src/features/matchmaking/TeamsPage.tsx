@@ -88,13 +88,20 @@ export function TeamsPage() {
     <aside className="sidebar">
       <a className="brand" href="#main"><span className="brand-icon">F</span><span>FOOTBALL<span className="brand-sub">FIELD MANAGEMENT</span></span></a>
       <p className="nav-label">KHÔNG GIAN CỦA BẠN</p>
-      <nav aria-label="Điều hướng"><a className="nav-item selected" href="#main" aria-current="page"><span>◉</span> Đội bóng của tôi <span className="nav-arrow">↗</span></a></nav>
+      <nav aria-label="Điều hướng chính">
+        <a className="nav-item" href="#/dashboard"><span>⌂</span> Tổng quan</a>
+        <a className="nav-item selected" href="#/teams" aria-current="page"><span>◉</span> Đội bóng của tôi <span className="nav-arrow">↗</span></a>
+        <a className="nav-item" href="#/bookings"><span>▦</span> Đặt sân</a>
+        <a className="nav-item" href="#/matchmaking"><span>⇄</span> Ghép đội & tìm trận</a>
+        <a className="nav-item" href="#/notifications"><span>♧</span> Thông báo</a>
+        <a className="nav-item" href="#/profile"><span>◎</span> Hồ sơ cá nhân</a>
+      </nav>
       <div className="pitch-art" aria-hidden="true"><div className="center-line" /><div className="center-circle" /><div className="goal goal-top" /><div className="goal goal-bottom" /></div>
       <div className="sidebar-footer"><span className="status-dot" /> Cùng đội. Cùng đam mê.<small>Chọn đội, tìm kèo, ra sân.</small></div>
     </aside>
     <div className="workspace">
       <header className="topbar"><span>Không gian cá nhân <span className="separator">/</span> <strong>Đội bóng</strong></span>
-        <div className="identity"><span className="avatar">{current ? 'Đ' : '•'}</span><span>{current?.user.full_name ?? 'Chưa đăng nhập'}</span>{current && <button className="text-button" onClick={logout}>Đăng xuất</button>}</div>
+        <div className="identity"><span className="avatar">{current ? current.user.full_name.trim().split(/\s+/).slice(-2).map((word) => word[0]).join('').toLocaleUpperCase() : '•'}</span><span>{current?.user.full_name ?? 'Chưa đăng nhập'}</span>{current && <button className="text-button" onClick={() => { window.dispatchEvent(new Event('app:manual-logout')); logout(); window.location.hash = '/login'; }}>Đăng xuất</button>}</div>
       </header>
       <main id="main">
         <div className="eyebrow">KẾT NỐI TỪ SÂN CỎ</div>

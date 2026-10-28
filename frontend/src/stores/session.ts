@@ -6,6 +6,7 @@ export interface SessionStore {
   subscribe: (listener: () => void) => () => void;
   set: (data: LoginData) => void;
   clear: () => void;
+  updateUser: (user: UserSelf) => void;
   token: () => string | null;
 }
 /** In-memory only: reload requires login again. No JWT in localStorage. */
@@ -34,6 +35,11 @@ export function createSessionStore(now = () => Date.now()): SessionStore {
       emit();
     },
     clear,
+    updateUser: (user) => {
+      if (!current) return;
+      current = { ...current, user };
+      emit();
+    },
     token: () => {
       if (current && current.expires_at <= now()) clear();
       return current?.access_token ?? null;
