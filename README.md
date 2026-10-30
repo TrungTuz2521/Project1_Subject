@@ -268,5 +268,7 @@ Tạo Pull Request trên GitHub để nhóm kiểm tra trước khi gộp vào n
 - [ ] Khởi tạo Flask API
 - [ ] Kết nối Flask với TiDB Cloud
 - [x] Khởi tạo React + Vite + TypeScript và bộ frontend mẫu dùng chung
+- [x] Frontend đăng nhập/đăng ký/hồ sơ, khung điều hướng và xử lý token hết hạn (mock API)
+- [ ] Tích hợp frontend tài khoản với Flask API thật sau khi backend hoàn thành
 - [ ] Phát triển các chức năng nghiệp vụ
 - [ ] Kiểm thử và triển khai
