@@ -99,4 +99,69 @@ describe('matchmaking mock API', () => {
     const matches = await api.request<{ data: Match[] }>('/matches');
     expect(matches.data.every(match => match.status !== 'CONFIRMED')).toBe(true);
   });
+  it('creates only a SUGGESTED match after both opponent confirmations', async () => {
+    const { api, store } = await setup();
+    await api.request('/match-proposals/11/respond', { method: 'POST', body: { decision: 'ACCEPTED' } });
+    const captainLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'captain@example.test', password: 'mock-only' },
+    });
+    store.set(captainLogin.data);
+    const accepted = await api.request<ApiResponse<ProposalDetail>>('/match-proposals/11/respond', {
+      method: 'POST', body: { decision: 'ACCEPTED' },
+    });
+    expect(accepted.data.status).toBe('ACCEPTED');
+    const list = await api.request<{ data: Match[] }>('/matches');
+    expect(list.data).toHaveLength(1);
+    expect(list.data[0].status).toBe('SUGGESTED');
+    expect(list.data[0].confirmed_at).toBeNull();
+    expect(list.data[0].booking_id).toBeNull();
+  });
+
+  it('activates a team member only after captain and candidate both accept without creating a match', async () => {
+    const { api, store } = await setup();
+    const team = await api.request<ApiResponse<{ team_id: number }>>('/teams', {
+      method: 'POST', body: { team_name: 'FC Membership Test' },
+    });
+    const start = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const post = await api.request<ApiResponse<MatchPost>>('/match-posts', {
+      method: 'POST',
+      body: {
+        post_type: 'RECRUIT_MEMBERS', title: 'FC Membership Test tuyển người', team_id: team.data.team_id,
+        pitch_type: 'PITCH_7', match_time: start.toISOString(),
+        end_time: new Date(start.getTime() + 90 * 60 * 1000).toISOString(),
+        skill_level: 'INTERMEDIATE', payment_rule: 'SPLIT_EQUAL', required_players: 1,
+        expiry_time: new Date(start.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    await api.request('/auth/register', {
+      auth: false, method: 'POST',
+      body: { full_name: 'Ứng viên Test', email: 'candidate@example.test', password: 'password123' },
+    });
+    const candidateLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'candidate@example.test', password: 'password123' },
+    });
+    store.set(candidateLogin.data);
+    const request = await api.request<ApiResponse<TeamJoinRequest>>('/teams/' + team.data.team_id + '/join-requests', {
+      method: 'POST', body: {},
+    });
+
+    const captainLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' },
+    });
+    store.set(captainLogin.data);
+    await api.request('/teams/' + team.data.team_id + '/join-requests/' + post.data.post_id + '/respond', {
+      method: 'PATCH', body: { decision: 'ACCEPTED' },
+    });
+
+    store.set(candidateLogin.data);
+    const accepted = await api.request<ApiResponse<ProposalDetail>>('/match-proposals/' + request.data.proposal_id + '/respond', {
+      method: 'POST', body: { decision: 'ACCEPTED' },
+    });
+    expect(accepted.data.status).toBe('ACCEPTED');
+    const detail = await api.request<ApiResponse<TeamDetail>>('/teams/' + team.data.team_id);
+    expect(detail.data.members.some(member => member.user_id === candidateLogin.data.user.user_id && member.status === 'ACTIVE')).toBe(true);
+    const matches = await api.request<{ data: Match[] }>('/matches');
+    expect(matches.data).toHaveLength(0);
+  });
+
 });
