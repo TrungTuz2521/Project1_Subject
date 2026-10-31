@@ -29,11 +29,11 @@ export function TeamsPage(){
   try{
    const pair=await Promise.all([teamsService.get(id),matchPostsService.mine()]);
    setDetail(pair[0].data);setName(pair[0].data.team_name);
-   const post=pair[1].data.find(p=>p.team_id===id&&p.post_type==='RECRUIT_MEMBERS'&&p.status==='OPEN')??null;
+   const post=pair[1].data.find(p=>p.team_id===id&&p.post_type==='RECRUIT_MEMBERS'&&['OPEN','LOCKED'].includes(p.status))??null;
    setRecruitment(post);
    if(post&&pair[0].data.members.some(m=>m.user_id===current?.user.user_id&&m.role==='CAPTAIN'&&m.status==='ACTIVE')){
     const result=await teamsService.listRecruitmentParticipants(post.post_id);
-    setApplicants(result.data.filter(p=>p.status==='PENDING'));
+    setApplicants(result.data.filter(p=>(p.status==='PENDING'||p.status==='ACCEPTED')&&!pair[0].data.members.some(member=>member.user_id===p.user_id&&member.status==='ACTIVE')));
    }
   }catch(e){setError(errorMessage(e));}finally{setLoading(false);}
  }
@@ -83,7 +83,7 @@ export function TeamsPage(){
        <div className="account-section-heading"><div><span className="mm-type">CHI TIẾT ĐỘI BÓNG</span><h2>{detail.team_name}</h2><p>{detail.active_member_count} thành viên · {detail.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}</p></div><button className="account-secondary-button" onClick={()=>setEditing(v=>!v)} disabled={!isCaptain}>Chỉnh sửa</button></div>
        {editing&&<form className="team-inline-edit" onSubmit={submitTeam}><input value={name} onChange={e=>setName(e.target.value)} maxLength={100} aria-label="Tên đội mới"/><button className="account-primary-button" disabled={busy}>Lưu</button></form>}
        <div className="team-members"><h3>Thành viên</h3>{detail.members.length===0?<p>Chưa có dữ liệu thành viên từ API.</p>:detail.members.map(member=><div className="team-member-row" key={member.user_id}><span className="account-avatar">{member.full_name.split(/\\s+/).slice(-2).map(x=>x[0]).join('').toUpperCase()}</span><div><strong>{member.full_name}</strong><small>{member.role==='CAPTAIN'?'Đội trưởng':'Thành viên'} · {member.status==='ACTIVE'?'Đang tham gia':member.status==='LEFT'?'Đã rời đội':'Đã bị xóa'} · {timeLabel(member.joined_at)}</small></div>{member.role!=='CAPTAIN'&&isCaptain&&member.status==='ACTIVE'&&<button className="account-secondary-button" disabled={busy} onClick={()=>void removeMember(member.user_id)}>Xóa</button>}</div>)}</div>
-       {isCaptain&&<section className="team-requests"><div className="account-section-heading"><div><h3>Yêu cầu tuyển thành viên</h3><p>{recruitment?'Bài tuyển đang mở: '+recruitment.title:'Đội chưa có bài RECRUIT_MEMBERS đang mở.'}</p></div></div>{applicants.length===0?<p className="input-caption">Chưa có yêu cầu đang chờ xử lý.</p>:applicants.map(item=><div className="team-member-row" key={item.participant_id}><div><strong>Người chơi #{item.user_id}</strong><small>Đăng ký ngày {timeLabel(item.joined_at)}</small></div><div className="mm-actions"><button disabled={busy} onClick={()=>void handleApplicant(item.post_id,'ACCEPTED')}>Chấp thuận</button><button className="secondary" disabled={busy} onClick={()=>void handleApplicant(item.post_id,'DECLINED')}>Từ chối</button></div></div>)}</section>}
+       {isCaptain&&<section className="team-requests"><div className="account-section-heading"><div><h3>Yêu cầu tuyển thành viên</h3><p>{recruitment?(recruitment.status==='LOCKED'?'Đề xuất đang chờ xác nhận: ':'Bài tuyển đang mở: ')+recruitment.title:'Đội chưa có bài RECRUIT_MEMBERS đang mở.'}</p></div></div>{applicants.length===0?<p className="input-caption">Chưa có yêu cầu đang chờ xử lý.</p>:applicants.map(item=><div className="team-member-row" key={item.participant_id}><div><strong>Người chơi #{item.user_id}</strong><small>{item.status==='ACCEPTED'?'Đội trưởng đã đồng ý · Chờ ứng viên xác nhận proposal':'Đang chờ đội trưởng xử lý'} · {timeLabel(item.joined_at)}</small></div>{item.status==='PENDING'&&<div className="mm-actions"><button disabled={busy} onClick={()=>void handleApplicant(item.post_id,'ACCEPTED')}>Chấp thuận</button><button className="secondary" disabled={busy} onClick={()=>void handleApplicant(item.post_id,'DECLINED')}>Từ chối</button></div>}</div>)}</section>}
        <div className="team-detail-actions">{isMember&&!isCaptain&&current?.user.role==='PLAYER'&&<button className="account-secondary-button" onClick={()=>void leaveTeam()} disabled={busy}>Rời đội</button>}</div>
       </>}
      </section>
