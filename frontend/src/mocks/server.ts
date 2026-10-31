@@ -295,7 +295,7 @@ export function createMockServer(delayMs = 80) {
         team_id:teamId,pitch_id:body.pitch_id??null,pitch_type:body.pitch_type??null,match_time:body.match_time??null,end_time:body.end_time??null,
         skill_level:body.skill_level as SkillLevel,payment_rule:body.payment_rule??null,required_players:body.required_players??null,
         current_players:teamId?(teams.find(t=>t.team_id===teamId)?.active_member_count??1):1,expiry_time:body.expiry_time as string,status:'OPEN',
-        matching_ready:needsSlot};
+        matching_ready:Boolean((body.pitch_type??null)&&(body.match_time??null)&&(body.end_time??null))};
       posts.unshift(post);postOwners.set(post.post_id,currentUser.user_id);return reply(post,201);
     }
     if(parts[0]==='match-posts'&&parts.length===2&&method==='GET'){

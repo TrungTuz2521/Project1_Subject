@@ -42,15 +42,42 @@ describe('matchmaking mock API', () => {
     expect(created.data.post_id).toBeGreaterThan(4);
     expect(created.data.status).toBe('OPEN');
 
+    const updatedStart = new Date(start.getTime() + 60 * 60 * 1000);
+    const updatedEnd = new Date(updatedStart.getTime() + 90 * 60 * 1000);
     const edited = await api.request<ApiResponse<MatchPost>>('/match-posts/' + created.data.post_id, {
-      method: 'PATCH', body: { title: 'FC Test đã cập nhật', description: 'Mô tả mới' },
+      method: 'PATCH', body: {
+        title: 'FC Test đã cập nhật', description: 'Mô tả mới',
+        skill_level: 'AMATEUR', pitch_type: 'PITCH_5',
+        match_time: updatedStart.toISOString(), end_time: updatedEnd.toISOString(),
+      },
     });
     expect(edited.data.title).toBe('FC Test đã cập nhật');
+    expect(edited.data.skill_level).toBe('AMATEUR');
+    expect(edited.data.pitch_type).toBe('PITCH_5');
+    expect(edited.data.match_time).toBe(updatedStart.toISOString());
+    await expect(api.request('/match-posts/' + created.data.post_id, {
+      method: 'PATCH', body: { match_time: updatedStart.toISOString(), end_time: updatedStart.toISOString() },
+    })).rejects.toMatchObject({ status: 422, code: 'VALIDATION_ERROR' });
 
     const cancelled = await api.request<ApiResponse<MatchPost>>('/match-posts/' + created.data.post_id + '/cancel', {
       method: 'POST', body: { reason: 'Test cancel' },
     });
     expect(cancelled.data.status).toBe('CANCELLED');
+  });
+
+  it('allows LOOK_FOR_TEAM to start without an assigned team, pitch or time', async () => {
+    const { api } = await setup();
+    const expiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const created = await api.request<ApiResponse<MatchPost>>('/match-posts', {
+      method: 'POST', body: {
+        post_type: 'LOOK_FOR_TEAM', title: 'Cá nhân tìm đội', skill_level: 'AMATEUR', expiry_time: expiry,
+        team_id: null,
+      },
+    });
+    expect(created.data.team_id).toBeNull();
+    expect(created.data.pitch_type).toBeNull();
+    expect(created.data.match_time).toBeNull();
+    expect(created.data.matching_ready).toBe(false);
   });
 
   it('does not treat one ACCEPTED confirmation as an accepted proposal or confirmed match', async () => {
