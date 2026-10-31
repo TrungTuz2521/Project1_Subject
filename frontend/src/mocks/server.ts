@@ -44,6 +44,7 @@ export function createMockServer(delayMs = 80) {
   let nextMatchId = 1;
   let validToken: string | null = null;
   let tokenDeadline = 0;
+  const tokenSessions = new Map<string, { user: UserSelf; expiresAt: number }>();
   let loginCount = 0;
   let currentUser: UserSelf = { ...demoUser };
   let scenario: MockScenario = 'normal';
@@ -147,12 +148,17 @@ export function createMockServer(delayMs = 80) {
       validToken = 'mock-session-' + (++loginCount);
       tokenDeadline = Date.now() + 3600000;
       currentUser = { ...account.user };
+      tokenSessions.set(validToken, { user: { ...currentUser }, expiresAt: tokenDeadline });
       return reply({ access_token: validToken, expires_in: 3600, user: currentUser });
     }
 
-    if (!publicPath && (new Headers(init?.headers).get('Authorization') !== 'Bearer ' + validToken || !validToken || Date.now() >= tokenDeadline)) {
+    const authorization = new Headers(init?.headers).get('Authorization');
+    const requestToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
+    const tokenSession = requestToken ? tokenSessions.get(requestToken) : undefined;
+    if (!publicPath && (!tokenSession || Date.now() >= tokenSession.expiresAt)) {
       return fail(401, 'TOKEN_EXPIRED', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     }
+    if (tokenSession) currentUser = { ...tokenSession.user };
     if (scenario === 'network-error') throw new TypeError('Simulated offline');
     if (scenario === 'server-error') return fail(500, 'INTERNAL_ERROR', 'Không tải được dữ liệu mẫu. Hãy chọn chế độ bình thường rồi thử lại.');
 
@@ -396,7 +402,7 @@ export function createMockServer(delayMs = 80) {
   return {
     transport,
     setScenario: (value: MockScenario) => { scenario = value; },
-    expireSession: () => { tokenDeadline = 0; },
+    expireSession: () => { tokenDeadline = 0; if (validToken) tokenSessions.delete(validToken); },
     reset: () => {
       teams=structuredClone(initialTeams);nextTeamId=4;nextUserId=20;nextPostId=5;nextParticipantId=1;nextProposalId=12;nextMatchId=1;
       teamMembers={
@@ -405,7 +411,7 @@ export function createMockServer(delayMs = 80) {
         3:[{user_id:2,full_name:demoUser.full_name,role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
       };
       posts=structuredClone(fixtures.posts);proposals=[structuredClone(fixtures.proposal)];matches=[];participants=[];notifications=structuredClone(fixtures.notifications);
-      validToken=null;tokenDeadline=0;currentUser={...demoUser};scenario='normal';seedAccounts();
+      validToken=null;tokenDeadline=0;tokenSessions.clear();currentUser={...demoUser};scenario='normal';seedAccounts();
     },
   };
 }
