@@ -38,7 +38,7 @@ export function createMockServer(delayMs = 80) {
   };
   let nextTeamId = 4;
   let nextUserId = 20;
-  let nextPostId = 5;
+  let nextPostId = 6;
   let nextParticipantId = 1;
   let nextProposalId = 12;
   let nextMatchId = 1;
@@ -58,13 +58,14 @@ export function createMockServer(delayMs = 80) {
   };
   seedAccounts();
   const fixtures = createFixtures();
-  let posts: MatchPost[] = structuredClone(fixtures.posts);
+  const seedPosts = () => structuredClone(fixtures.posts);
+  let posts: MatchPost[] = seedPosts();
   let proposals: ProposalDetail[] = [structuredClone(fixtures.proposal)];
   let matches: Match[] = [];
   let participants: Participant[] = [];
   let notifications: Notification[] = structuredClone(fixtures.notifications);
   const notificationOwners = new Map<number, number>([[fixtures.notifications[0].notification_id, 2]]);
-  const postOwners = new Map<number, number>([[1,2],[2,3],[3,20],[4,2]]);
+  const postOwners = new Map<number, number>([[1,2],[2,3],[3,20],[4,2],[5,3]]);
   const reply = (data: unknown, status = 200, meta: Record<string, unknown> = {}) => new Response(JSON.stringify({
     data, meta: { server_time: new Date().toISOString(), ...meta },
   }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -466,13 +467,13 @@ export function createMockServer(delayMs = 80) {
     setScenario: (value: MockScenario) => { scenario = value; },
     expireSession: () => { tokenDeadline = 0; if (validToken) tokenSessions.delete(validToken); },
     reset: () => {
-      teams=structuredClone(initialTeams);nextTeamId=4;nextUserId=20;nextPostId=5;nextParticipantId=1;nextProposalId=12;nextMatchId=1;
+      teams=structuredClone(initialTeams);nextTeamId=4;nextUserId=20;nextPostId=6;nextParticipantId=1;nextProposalId=12;nextMatchId=1;
       teamMembers={
         1:[{user_id:2,full_name:demoUser.full_name,role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
         2:[{user_id:3,full_name:'Đội trưởng mẫu',role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()},{user_id:2,full_name:demoUser.full_name,role:'MEMBER',status:'ACTIVE',joined_at:new Date().toISOString()}],
         3:[{user_id:2,full_name:demoUser.full_name,role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
       };
-      posts=structuredClone(fixtures.posts);proposals=[structuredClone(fixtures.proposal)];matches=[];participants=[];notifications=structuredClone(fixtures.notifications);notificationOwners.clear();notificationOwners.set(fixtures.notifications[0].notification_id,2);
+      posts=seedPosts();proposals=[structuredClone(fixtures.proposal)];matches=[];participants=[];notifications=structuredClone(fixtures.notifications);notificationOwners.clear();notificationOwners.set(fixtures.notifications[0].notification_id,2);
       validToken=null;tokenDeadline=0;tokenSessions.clear();currentUser={...demoUser};scenario='normal';seedAccounts();
     },
   };
