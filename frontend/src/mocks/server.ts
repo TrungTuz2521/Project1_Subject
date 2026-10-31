@@ -2,7 +2,7 @@ import { demoUser, initialTeams, pitches, createFixtures } from './fixtures';
 import type { Transport } from '../services/api';
 import type {
   RegisterRequest, SkillLevel, Team, UserSelf, ProposalDetail, Match, MatchPost,
-  TeamMember, Participant, PostCreate, PostType, PostStatus, Notification,
+  TeamMember, Participant, PostCreate, PostType, PostStatus, Notification, TeamPaymentRule,
 } from '../types/api';
 
 export type MockScenario = 'normal' | 'empty' | 'server-error' | 'network-error' | 'validation-error';
@@ -335,9 +335,9 @@ export function createMockServer(delayMs = 80) {
       if(body.pitch_type!==undefined&&!['PITCH_5','PITCH_7'].includes(String(body.pitch_type)))fields.pitch_type='MVP chỉ hỗ trợ sân 5 hoặc sân 7.';
       if(body.payment_rule!==undefined&&!['SPLIT_EQUAL','LOSER_PAYS_REMAINDER'].includes(String(body.payment_rule)))fields.payment_rule='Quy tắc chia tiền không hợp lệ.';
       if(body.required_players!==undefined&&(!Number.isInteger(body.required_players)||Number(body.required_players)<1))fields.required_players='Số người cần tuyển phải là số nguyên dương.';
-      const nextMatchTime=body.match_time===undefined?post.match_time:body.match_time;
-      const nextEndTime=body.end_time===undefined?post.end_time:body.end_time;
-      const nextExpiry=body.expiry_time===undefined?post.expiry_time:body.expiry_time;
+      const nextMatchTime: string|null=body.match_time===undefined?post.match_time:body.match_time as string|null;
+      const nextEndTime: string|null=body.end_time===undefined?post.end_time:body.end_time as string|null;
+      const nextExpiry: string=body.expiry_time===undefined?post.expiry_time:body.expiry_time as string;
       if(body.match_time!==undefined&&!iso(body.match_time))fields.match_time='Thời gian bắt đầu cần ISO 8601 có múi giờ.';
       if(body.end_time!==undefined&&!iso(body.end_time))fields.end_time='Thời gian kết thúc cần ISO 8601 có múi giờ.';
       if(body.expiry_time!==undefined&&(!iso(body.expiry_time)||Date.parse(body.expiry_time)<=Date.now()))fields.expiry_time='Hạn bài phải nằm trong tương lai.';
