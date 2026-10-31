@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { TeamsPage } from './features/matchmaking/TeamsPage';
+import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
 import { getCurrentUser, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
@@ -72,11 +73,11 @@ export default function App() {
   // Public auth URLs should never display an authenticated user a login form.
   const activeRoute: Route = route === '/login' || route === '/register' ? '/dashboard' : route;
   if (activeRoute === '/teams') return <TeamsPage />;
+  if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage /></AppShell>;
   if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} /></AppShell>;
-  if (activeRoute === '/bookings' || activeRoute === '/matchmaking' || activeRoute === '/notifications') {
+  if (activeRoute === '/bookings' || activeRoute === '/notifications') {
     const pages = {
       '/bookings': { title: 'Đặt sân', number: '03', description: 'Tìm sân phù hợp và quản lý lịch đặt sân của bạn.' },
-      '/matchmaking': { title: 'Ghép đội và tìm trận', number: '04', description: 'Tìm đối thủ, tìm đồng đội và theo dõi đề xuất ghép trận.' },
       '/notifications': { title: 'Thông báo', number: '05', description: 'Theo dõi xác nhận trận đấu, lịch sân và trạng thái thanh toán.' },
     } as const;
     return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ComingSoonPage {...pages[activeRoute]} /></AppShell>;
