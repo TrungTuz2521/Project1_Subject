@@ -50,7 +50,7 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
  },[]);
  useEffect(()=>{void load();},[load]);
  const sourcePosts=mineOnly?myPosts:posts;
- const visiblePosts=useMemo(()=>sourcePosts.filter(p=>(postFilter==='ALL'||p.post_type===postFilter)&&(pitchFilter==='ALL'||p.pitch_type===pitchFilter)&&(skillFilter==='ALL'||p.skill_level===skillFilter)&&p.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())&&(!fromDate||(p.match_time!==null&&p.match_time.slice(0,10)>=fromDate))&&(!toDate||(p.match_time!==null&&p.match_time.slice(0,10)<=toDate)),[sourcePosts,postFilter,pitchFilter,skillFilter,search,fromDate,toDate]);
+ const visiblePosts=useMemo(()=>sourcePosts.filter(p=>(postFilter==='ALL'||p.post_type===postFilter)&&(pitchFilter==='ALL'||p.pitch_type===pitchFilter)&&(skillFilter==='ALL'||p.skill_level===skillFilter)&&p.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())&&(!fromDate||(p.match_time!==null&&p.match_time.slice(0,10)>=fromDate))&&(!toDate||(p.match_time!==null&&p.match_time.slice(0,10)<=toDate))),[sourcePosts,postFilter,pitchFilter,skillFilter,search,fromDate,toDate]);
  const setField = <K extends keyof ReturnType<typeof initialForm>,>(key: K, value: ReturnType<typeof initialForm>[K]) => setForm(old => ({ ...old, [key]: value }));
  async function createPost(event:FormEvent<HTMLFormElement>){
   event.preventDefault();setNotice('');setDetailError('');
