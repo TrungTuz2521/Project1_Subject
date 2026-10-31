@@ -336,9 +336,27 @@ export function createMockServer(delayMs = 80) {
       const confirmation=proposal.confirmations.find(item=>item.user_id===currentUser.user_id);if(!confirmation)return fail(403,'FORBIDDEN','Bạn không có quyền phản hồi đề xuất.');
       if(confirmation.decision!=='PENDING')return fail(409,'ALREADY_RESPONDED','Bạn đã phản hồi đề xuất này.');
       confirmation.decision=decision;confirmation.responded_at=new Date().toISOString();
-      if(decision==='DECLINED')proposal.status='REJECTED';
+      if(decision==='DECLINED'){
+        proposal.status='REJECTED';
+        const rejectedParticipant=participants.find(p=>p.post_id===proposal.source_post_id&&p.user_id===proposal.candidate_user_id);
+        if(rejectedParticipant)rejectedParticipant.status='REJECTED';
+      }
       else if(proposal.confirmations.every(item=>item.decision==='ACCEPTED')){
         proposal.status='ACCEPTED';proposal.confirmed_at=new Date().toISOString();
+        if(proposal.proposal_type==='TEAM_MEMBER'&&proposal.candidate_user_id!==null){
+          const sourcePost=posts.find(p=>p.post_id===proposal.source_post_id);
+          if(sourcePost?.team_id){
+            const currentMembers=teamMembers[sourcePost.team_id]??[];
+            if(!currentMembers.some(m=>m.user_id===proposal.candidate_user_id&&m.status==='ACTIVE')){
+              const candidate=Array.from(accounts.values()).find(a=>a.user.user_id===proposal.candidate_user_id)?.user;
+              currentMembers.push({user_id:proposal.candidate_user_id,full_name:candidate?.full_name??('Người chơi #'+proposal.candidate_user_id),role:'MEMBER',status:'ACTIVE',joined_at:new Date().toISOString()});
+              teamMembers[sourcePost.team_id]=currentMembers;
+              const sourceTeam=teams.find(t=>t.team_id===sourcePost.team_id);if(sourceTeam)sourceTeam.active_member_count=currentMembers.filter(m=>m.status==='ACTIVE').length;
+            }
+          }
+          const acceptedParticipant=participants.find(p=>p.post_id===proposal.source_post_id&&p.user_id===proposal.candidate_user_id);
+          if(acceptedParticipant)acceptedParticipant.status='ACCEPTED';
+        }
         const post=posts.find(p=>p.post_id===proposal.source_post_id);
         const match:Match={match_id:nextMatchId++,post_id:proposal.source_post_id,opponent_post_id:proposal.target_post_id,
           proposal_id:proposal.proposal_id,booking_id:null,match_time:post?.match_time??new Date().toISOString(),status:'SUGGESTED',confirmed_at:null};
