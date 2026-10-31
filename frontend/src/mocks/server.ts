@@ -143,7 +143,7 @@ export function createMockServer(delayMs = 250) {
     }
     if (path === '/match-posts/my' && method === 'GET') return reply(fixtures.posts, 200, { page: 1, page_size: 20, total: fixtures.posts.length });
     if (path === '/match-proposals' && method === 'GET') return reply(proposals, 200, { page: 1, page_size: 20, total: proposals.length });
-    const proposalMatch = path.match(/^\\/match-proposals\\/(\\d+)(?:\\/(respond))?$/);
+    const proposalMatch = path.match(/^\/match-proposals\/(\d+)(?:\/(respond))?$/);
     if (proposalMatch) {
       const proposalId = Number(proposalMatch[1]);
       const proposal = proposals.find(item => item.proposal_id === proposalId);
@@ -168,13 +168,13 @@ export function createMockServer(delayMs = 250) {
       }
     }
     if (path === '/matches' && method === 'GET') return reply(matches, 200, { page: 1, page_size: 20, total: matches.length });
-    const matchMatch = path.match(/^\\/matches\\/(\\d+)$/);
+    const matchMatch = path.match(/^\/matches\/(\d+)$/);
     if (matchMatch && method === 'GET') {
       const match = matches.find(item => item.match_id === Number(matchMatch[1]));
       return match ? reply({ ...match, end_time: fixtures.posts[0].end_time!, proposal: proposals[0], teams, booking: null, payer_progress: [] }) : fail(404, 'NOT_FOUND', 'Không tìm thấy trận đấu.');
     }
     if (path === '/notifications' && method === 'GET') return reply(notifications, 200, { page: 1, page_size: 20, total: notifications.length });
-    const notificationMatch = path.match(/^\\/notifications\\/(\\d+)\\/read$/);
+    const notificationMatch = path.match(/^\/notifications\/(\d+)\/read$/);
     if (notificationMatch && method === 'PATCH') {
       const notification = notifications.find(item => item.notification_id === Number(notificationMatch[1]));
       if (!notification) return fail(404, 'NOT_FOUND', 'Không tìm thấy thông báo.');
