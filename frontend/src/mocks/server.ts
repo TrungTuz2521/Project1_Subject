@@ -325,8 +325,31 @@ export function createMockServer(delayMs = 80) {
       if(post.status!=='OPEN')return fail(409,'STATE_CONFLICT','Chỉ sửa bài đang mở.');
       if(proposals.some(p=>(p.source_post_id===post.post_id||p.target_post_id===post.post_id)&&p.status==='PENDING_CONFIRMATION'))return fail(409,'STATE_CONFLICT','Bài đang có đề xuất ghép.');
       const body=parseBody(init)??{};
-      if(body.title!==undefined){if(typeof body.title!=='string'||body.title.trim().length<1||body.title.trim().length>150)return fail(422,'VALIDATION_ERROR','Tiêu đề không hợp lệ.',{title:'Từ 1 đến 150 ký tự.'});post.title=body.title.trim();}
-      if(body.description!==undefined){if(typeof body.description!=='string'||body.description.length>3000)return fail(422,'VALIDATION_ERROR','Mô tả không hợp lệ.',{description:'Tối đa 3000 ký tự.'});post.description=body.description;}
+      const fields:Record<string,string>={};
+      if(body.title!==undefined&&(typeof body.title!=='string'||body.title.trim().length<1||body.title.trim().length>150))fields.title='Từ 1 đến 150 ký tự.';
+      if(body.description!==undefined&&(typeof body.description!=='string'||body.description.length>3000))fields.description='Tối đa 3000 ký tự.';
+      if(body.skill_level!==undefined&&!skillLevels.includes(body.skill_level as SkillLevel))fields.skill_level='Trình độ không hợp lệ.';
+      if(body.pitch_type!==undefined&&!['PITCH_5','PITCH_7'].includes(String(body.pitch_type)))fields.pitch_type='MVP chỉ hỗ trợ sân 5 hoặc sân 7.';
+      if(body.payment_rule!==undefined&&!['SPLIT_EQUAL','LOSER_PAYS_REMAINDER'].includes(String(body.payment_rule)))fields.payment_rule='Quy tắc chia tiền không hợp lệ.';
+      if(body.required_players!==undefined&&(!Number.isInteger(body.required_players)||Number(body.required_players)<1))fields.required_players='Số người cần tuyển phải là số nguyên dương.';
+      const nextMatchTime=body.match_time===undefined?post.match_time:body.match_time;
+      const nextEndTime=body.end_time===undefined?post.end_time:body.end_time;
+      const nextExpiry=body.expiry_time===undefined?post.expiry_time:body.expiry_time;
+      if(body.match_time!==undefined&&!iso(body.match_time))fields.match_time='Thời gian bắt đầu cần ISO 8601 có múi giờ.';
+      if(body.end_time!==undefined&&!iso(body.end_time))fields.end_time='Thời gian kết thúc cần ISO 8601 có múi giờ.';
+      if(body.expiry_time!==undefined&&(!iso(body.expiry_time)||Date.parse(body.expiry_time)<=Date.now()))fields.expiry_time='Hạn bài phải nằm trong tương lai.';
+      if((nextMatchTime===null)!==(nextEndTime===null))fields.match_time='Cần có cả giờ bắt đầu và giờ kết thúc.';
+      if(nextMatchTime!==null&&nextEndTime!==null&&Date.parse(nextEndTime)-Date.parse(nextMatchTime)!==90*60000)fields.match_time='Khung giờ trận đấu phải đủ 90 phút.';
+      if(nextMatchTime!==null&&iso(nextExpiry)&&Date.parse(nextExpiry)>Date.parse(nextMatchTime))fields.expiry_time='Bài đăng phải hết hạn trước hoặc tại giờ bắt đầu trận.';
+      if(Object.keys(fields).length)return fail(422,'VALIDATION_ERROR','Dữ liệu chỉnh sửa bài đăng không hợp lệ.',fields);
+      if(body.title!==undefined)post.title=(body.title as string).trim();
+      if(body.description!==undefined)post.description=body.description as string;
+      if(body.skill_level!==undefined)post.skill_level=body.skill_level as SkillLevel;
+      if(body.pitch_type!==undefined)post.pitch_type=body.pitch_type as 'PITCH_5'|'PITCH_7';
+      if(body.payment_rule!==undefined)post.payment_rule=body.payment_rule as TeamPaymentRule;
+      if(body.required_players!==undefined)post.required_players=Number(body.required_players);
+      post.match_time=nextMatchTime as string|null;post.end_time=nextEndTime as string|null;post.expiry_time=nextExpiry as string;
+      post.matching_ready=Boolean(post.pitch_type&&post.match_time&&post.end_time);
       return reply(post);
     }
     if(parts[0]==='match-posts'&&parts[2]==='cancel'&&parts.length===3&&method==='POST'){
