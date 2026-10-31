@@ -180,7 +180,7 @@ describe('matchmaking mock API', () => {
       auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' },
     });
     store.set(demoLogin.data);
-    await expect(api.request('/teams/1/members/4', { method: 'DELETE' }))
+    await expect(api.request('/teams/1/members/4', { method: 'DELETE', body: { reason: 'Vi phạm nội quy đội' } }))
       .rejects.toMatchObject({ status: 409, code: 'ACTIVE_MATCH_MEMBERSHIP' });
     await expect(api.request('/match-posts/1/cancel', { method: 'POST', body: { reason: 'test' } }))
       .rejects.toMatchObject({ status: 409, code: 'MATCH_CANCELLATION_REQUIRED' });

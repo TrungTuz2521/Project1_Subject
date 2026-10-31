@@ -60,8 +60,11 @@ export function TeamsPage(){
  }
  async function removeMember(userId:number){
   if(!detail||!window.confirm('Xóa thành viên này khỏi đội?'))return;
+  const reason=window.prompt('Nhập lý do xóa thành viên (bắt buộc):');
+  if(reason===null)return;
+  if(!reason.trim()){setError('Lý do xóa thành viên không được để trống.');return;}
   setBusy(true);setError('');
-  try{await teamsService.removeMember(detail.team_id,userId);setNotice('Đã gửi yêu cầu xóa thành viên.');await openTeam(detail.team_id);}
+  try{await teamsService.removeMember(detail.team_id,userId,reason.trim());setNotice('Đã gửi yêu cầu xóa thành viên.');await openTeam(detail.team_id);}
   catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
  return <div className="account-shell">

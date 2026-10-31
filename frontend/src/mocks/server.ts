@@ -250,6 +250,7 @@ export function createMockServer(delayMs = 80) {
     if(parts[0]==='teams'&&parts[2]==='members'&&parts.length===4&&method==='DELETE'){
       const teamId=Number(parts[1]);const userId=Number(parts[3]);
       if(!currentIsCaptain(teamId))return fail(403,'FORBIDDEN','Chỉ đội trưởng mới được xóa thành viên.');
+      const reason=parseBody(init)?.reason;if(typeof reason!=='string'||!reason.trim())return fail(422,'VALIDATION_ERROR','Cần cung cấp lý do xóa thành viên.',{reason:'Lý do không được để trống.'});
       const member=(teamMembers[teamId]??[]).find(m=>m.user_id===userId&&m.status==='ACTIVE');
       if(!member)return fail(404,'NOT_FOUND','Không tìm thấy thành viên đang hoạt động.');
       if(member.role==='CAPTAIN')return fail(409,'CAPTAIN_TRANSFER_REQUIRED','Không thể xóa đội trưởng.');
