@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { TeamsPage } from './features/matchmaking/TeamsPage';
 import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
+import { SchedulePage } from './features/matchmaking/SchedulePage';
 import { getCurrentUser, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
 import { session } from './stores/session';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
-const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/matchmaking', '/notifications'] as const;
+const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/matchmaking', '/notifications', '/schedule'] as const;
 type Route = typeof routes[number];
 const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
@@ -74,11 +75,12 @@ export default function App() {
   const activeRoute: Route = route === '/login' || route === '/register' ? '/dashboard' : route;
   if (activeRoute === '/teams') return <TeamsPage />;
   if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage /></AppShell>;
+  if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage initialTab='notifications' /></AppShell>;
+  if (activeRoute === '/schedule') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><SchedulePage /></AppShell>;
   if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} /></AppShell>;
-  if (activeRoute === '/bookings' || activeRoute === '/notifications') {
+  if (activeRoute === '/bookings') {
     const pages = {
       '/bookings': { title: 'Đặt sân', number: '03', description: 'Tìm sân phù hợp và quản lý lịch đặt sân của bạn.' },
-      '/notifications': { title: 'Thông báo', number: '05', description: 'Theo dõi xác nhận trận đấu, lịch sân và trạng thái thanh toán.' },
     } as const;
     return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ComingSoonPage {...pages[activeRoute]} /></AppShell>;
   }
@@ -181,7 +183,7 @@ function AppShell({ current, route, onLogout, children }: { current: UserSelf; r
   const navItems: { path: Route; icon: string; label: string }[] = [
     { path: '/dashboard', icon: '⌂', label: 'Tổng quan' }, { path: '/teams', icon: '♧', label: 'Đội bóng của tôi' },
     { path: '/bookings', icon: '▦', label: 'Đặt sân' }, { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận' },
-    { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
+    { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/schedule', icon: '▦', label: 'Lịch thi đấu' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
   ];
   const title = navItems.find((item) => item.path === route)?.label ?? 'Tổng quan';
   return <div className="account-shell">
