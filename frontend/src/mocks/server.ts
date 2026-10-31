@@ -63,6 +63,7 @@ export function createMockServer(delayMs = 80) {
   let matches: Match[] = [];
   let participants: Participant[] = [];
   let notifications: Notification[] = structuredClone(fixtures.notifications);
+  const notificationOwners = new Map<number, number>([[fixtures.notifications[0].notification_id, 2]]);
   const postOwners = new Map<number, number>([[1,2],[2,3],[3,20],[4,2]]);
   const reply = (data: unknown, status = 200, meta: Record<string, unknown> = {}) => new Response(JSON.stringify({
     data, meta: { server_time: new Date().toISOString(), ...meta },
@@ -80,10 +81,12 @@ export function createMockServer(delayMs = 80) {
     member.user_id === currentUser.user_id && member.role === 'CAPTAIN' && member.status === 'ACTIVE');
   const ownedTeamIds = () => teams.filter(team => (teamMembers[team.team_id] ?? []).some(member =>
     member.user_id === currentUser.user_id && member.status === 'ACTIVE')).map(team => team.team_id);
-  const pushNotification = (value: Omit<Notification, 'notification_id' | 'is_read' | 'read_at' | 'created_at'>) => {
-    notifications.unshift({ ...value, notification_id: Math.max(0, ...notifications.map(n => n.notification_id)) + 1,
-      is_read: false, read_at: null, created_at: new Date().toISOString() });
+  const pushNotification = (userId: number, value: Omit<Notification, 'notification_id' | 'is_read' | 'read_at' | 'created_at'>) => {
+    const notification: Notification = { ...value, notification_id: Math.max(0, ...notifications.map(n => n.notification_id)) + 1,
+      is_read: false, read_at: null, created_at: new Date().toISOString() };
+    notifications.unshift(notification);notificationOwners.set(notification.notification_id,userId);
   };
+  const isProposalParty = (proposal: ProposalDetail) => proposal.confirmations.some(confirmation => confirmation.user_id === currentUser.user_id);
   const createTeamProposal = (post: MatchPost, participant: Participant, captainId: number) => {
     const expiresAt = Math.min(Date.now() + 15 * 60000, Date.parse(post.expiry_time), post.match_time ? Date.parse(post.match_time) : Infinity);
     const proposal: ProposalDetail = {
@@ -222,7 +225,7 @@ export function createMockServer(delayMs = 80) {
       const participant:Participant={participant_id:nextParticipantId++,post_id:post.post_id,user_id:currentUser.user_id,status:'PENDING',joined_at:new Date().toISOString()};
       participants.push(participant);
       const proposal=createTeamProposal(post,participant,team.created_by??0);
-      pushNotification({notification_type:'TEAM_JOINED',title:'Có yêu cầu tham gia đội',content:'Một người chơi đã gửi yêu cầu tham gia đội '+team.team_name+'.',proposal_id:proposal.proposal_id,match_id:null});
+      pushNotification(team.created_by??0,{notification_type:'TEAM_JOINED',title:'Có yêu cầu tham gia đội',content:'Một người chơi đã gửi yêu cầu tham gia đội '+team.team_name+'.',proposal_id:proposal.proposal_id,match_id:null});
       return reply({ ...participant, proposal_id: proposal.proposal_id },201);
     }
     if(parts[0]==='teams'&&parts[2]==='join-requests'&&parts[4]==='respond'&&parts.length===5&&method==='PATCH'){
@@ -316,7 +319,7 @@ export function createMockServer(delayMs = 80) {
       participants.push(participant);
       const ownerId=postOwners.get(post.post_id)??(post.team_id?teams.find(t=>t.team_id===post.team_id)?.created_by:0)??0;
       const proposal=createTeamProposal(post,participant,ownerId);
-      pushNotification({notification_type:'MATCH_PROPOSAL',title:'Yêu cầu của bạn đã được gửi',content:'Đang chờ bên còn lại xác nhận.',proposal_id:proposal.proposal_id,match_id:null});
+      pushNotification(ownerId,{notification_type:'MATCH_PROPOSAL',title:'Yêu cầu của bạn đã được gửi',content:'Đang chờ bên còn lại xác nhận.',proposal_id:proposal.proposal_id,match_id:null});
       return reply({...participant,proposal_id:proposal.proposal_id},201);
     }
     if(parts[0]==='match-posts'&&parts.length===2&&method==='PATCH'){
@@ -362,10 +365,10 @@ export function createMockServer(delayMs = 80) {
     }
 
     if(path==='/match-proposals'&&method==='GET'){
-      const result=paginate(proposals,url);return result?reply(result.data,200,{page:result.page,page_size:result.page_size,total:result.total}):fail(422,'VALIDATION_ERROR','Phân trang không hợp lệ.');
+      const visible=proposals.filter(isProposalParty);const result=paginate(visible,url);return result?reply(result.data,200,{page:result.page,page_size:result.page_size,total:result.total}):fail(422,'VALIDATION_ERROR','Phân trang không hợp lệ.');
     }
     if(parts[0]==='match-proposals'&&parts.length===2&&method==='GET'){
-      const proposal=proposals.find(p=>p.proposal_id===Number(parts[1]));return proposal?reply(proposal):fail(404,'NOT_FOUND','Không tìm thấy đề xuất.');
+      const proposal=proposals.find(p=>p.proposal_id===Number(parts[1]));return proposal&&isProposalParty(proposal)?reply(proposal):fail(404,'NOT_FOUND','Không tìm thấy đề xuất.');
     }
     if(parts[0]==='match-proposals'&&parts[2]==='respond'&&parts.length===3&&method==='POST'){
       const proposal=proposals.find(p=>p.proposal_id===Number(parts[1]));if(!proposal)return fail(404,'NOT_FOUND','Không tìm thấy đề xuất.');
@@ -406,23 +409,23 @@ export function createMockServer(delayMs = 80) {
       return reply(proposal);
     }
     if(path==='/matches'&&method==='GET'){
-      let visible=[...matches];const status=url.searchParams.get('status');if(status)visible=visible.filter(m=>m.status===status);
+      let visible=matches.filter(match=>{const proposal=proposals.find(item=>item.proposal_id===match.proposal_id);return proposal?isProposalParty(proposal):false;});const status=url.searchParams.get('status');if(status)visible=visible.filter(m=>m.status===status);
       const result=paginate(visible,url);return result?reply(result.data,200,{page:result.page,page_size:result.page_size,total:result.total}):fail(422,'VALIDATION_ERROR','Phân trang không hợp lệ.');
     }
     if(parts[0]==='matches'&&parts.length===2&&method==='GET'){
       const match=matches.find(m=>m.match_id===Number(parts[1]));if(!match)return fail(404,'NOT_FOUND','Không tìm thấy trận.');
+      const proposal=proposals.find(p=>p.proposal_id===match.proposal_id);if(!proposal||!isProposalParty(proposal))return fail(404,'NOT_FOUND','Không tìm thấy trận.');
       const post=posts.find(p=>p.post_id===match.post_id);const opponentPost=match.opponent_post_id===null?undefined:posts.find(p=>p.post_id===match.opponent_post_id);
       const teamIds=[post?.team_id,opponentPost?.team_id].filter((id):id is number=>id!==null&&id!==undefined);
       const teamList=teams.filter(t=>teamIds.includes(t.team_id));
-      const proposal=proposals.find(p=>p.proposal_id===match.proposal_id)??proposals[0];
       return reply({...match,end_time:post?.end_time??match.match_time,proposal,teams:teamList,booking:null,payer_progress:[]});
     }
     if(path==='/notifications'&&method==='GET'){
-      let visible=[...notifications];const read=url.searchParams.get('is_read');if(read!==null)visible=visible.filter(n=>String(n.is_read)===read);
+      let visible=notifications.filter(notification=>notificationOwners.get(notification.notification_id)===currentUser.user_id);const read=url.searchParams.get('is_read');if(read!==null)visible=visible.filter(n=>String(n.is_read)===read);
       const result=paginate(visible,url);return result?reply(result.data,200,{page:result.page,page_size:result.page_size,total:result.total}):fail(422,'VALIDATION_ERROR','Phân trang không hợp lệ.');
     }
     if(parts[0]==='notifications'&&parts[2]==='read'&&parts.length===3&&method==='PATCH'){
-      const notification=notifications.find(n=>n.notification_id===Number(parts[1]));if(!notification)return fail(404,'NOT_FOUND','Không tìm thấy thông báo.');
+      const notification=notifications.find(n=>n.notification_id===Number(parts[1])&&notificationOwners.get(n.notification_id)===currentUser.user_id);if(!notification)return fail(404,'NOT_FOUND','Không tìm thấy thông báo.');
       notification.is_read=true;notification.read_at=new Date().toISOString();return reply(notification);
     }
     if(path==='/bookings/my'&&method==='GET')return reply([fixtures.booking],200,{page:1,page_size:20,total:1});
@@ -440,7 +443,7 @@ export function createMockServer(delayMs = 80) {
         2:[{user_id:3,full_name:'Đội trưởng mẫu',role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()},{user_id:2,full_name:demoUser.full_name,role:'MEMBER',status:'ACTIVE',joined_at:new Date().toISOString()}],
         3:[{user_id:2,full_name:demoUser.full_name,role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
       };
-      posts=structuredClone(fixtures.posts);proposals=[structuredClone(fixtures.proposal)];matches=[];participants=[];notifications=structuredClone(fixtures.notifications);
+      posts=structuredClone(fixtures.posts);proposals=[structuredClone(fixtures.proposal)];matches=[];participants=[];notifications=structuredClone(fixtures.notifications);notificationOwners.clear();notificationOwners.set(fixtures.notifications[0].notification_id,2);
       validToken=null;tokenDeadline=0;tokenSessions.clear();currentUser={...demoUser};scenario='normal';seedAccounts();
     },
   };
