@@ -115,6 +115,15 @@ describe('matchmaking mock API', () => {
     expect(list.data[0].status).toBe('SUGGESTED');
     expect(list.data[0].confirmed_at).toBeNull();
     expect(list.data[0].booking_id).toBeNull();
+
+    const demoLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' },
+    });
+    store.set(demoLogin.data);
+    await expect(api.request('/teams/1/members/4', { method: 'DELETE' }))
+      .rejects.toMatchObject({ status: 409, code: 'ACTIVE_MATCH_MEMBERSHIP' });
+    await expect(api.request('/match-posts/1/cancel', { method: 'POST', body: { reason: 'test' } }))
+      .rejects.toMatchObject({ status: 409, code: 'MATCH_CANCELLATION_REQUIRED' });
   });
 
   it('activates a team member only after captain and candidate both accept without creating a match', async () => {

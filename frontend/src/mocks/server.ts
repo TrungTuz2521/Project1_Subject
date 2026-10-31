@@ -253,7 +253,7 @@ export function createMockServer(delayMs = 80) {
       const boundToUpcomingMatch=matches.some(match=>{
         const source=posts.find(post=>post.post_id===match.post_id);
         const target=match.opponent_post_id===null?undefined:posts.find(post=>post.post_id===match.opponent_post_id);
-        return (source?.team_id===teamId||target?.team_id===teamId)&&match.match_time>Date.now().toString()&&['SUGGESTED','CONFIRMED'].includes(match.status);
+        return (source?.team_id===teamId||target?.team_id===teamId)&&Date.parse(match.match_time)>Date.now()&&['SUGGESTED','CONFIRMED'].includes(match.status);
       });
       if(boundToUpcomingMatch)return fail(409,'ACTIVE_MATCH_MEMBERSHIP','Thành viên đang gắn với trận sắp diễn ra.');
       member.status='REMOVED';const team=teams.find(t=>t.team_id===teamId);if(team)team.active_member_count=Math.max(0,team.active_member_count-1);
