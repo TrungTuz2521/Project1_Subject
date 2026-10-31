@@ -130,6 +130,13 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
   setBusy(id);try{const result=await notificationsService.markRead(id);setNotifications(old=>old.map(n=>n.notification_id===id?result.data:n));}
   catch(e){setDetailError(errorMessage(e));}finally{setBusy(null);}
  }
+ const proposalSourcePost = proposalDetail ? posts.find(post => post.post_id === proposalDetail.source_post_id) : undefined;
+ const proposalTargetPost = proposalDetail?.target_post_id ? posts.find(post => post.post_id === proposalDetail.target_post_id) : undefined;
+ const proposalSourceTeam = proposalSourcePost?.team_id ? teams.find(team => team.team_id === proposalSourcePost.team_id) : undefined;
+ const proposalTargetTeam = proposalTargetPost?.team_id ? teams.find(team => team.team_id === proposalTargetPost.team_id) : undefined;
+ const canRespondToProposal = Boolean(proposalDetail?.confirmations.some(
+  confirmation => confirmation.user_id === current?.user.user_id && confirmation.decision === 'PENDING',
+ ));
  return <section className="mm-page">
   <div className="account-eyebrow">KẾT NỐI TỪ SÂN CỎ</div><div className="account-page-heading"><div><h1>Ghép đội & tìm trận<span>.</span></h1><p>Tìm đối thủ, tuyển đồng đội và theo dõi quá trình xác nhận trận đấu.</p></div><div className="mm-heading-actions"><a className="account-secondary-button" href="#/schedule">Lịch thi đấu</a>{isPlayer&&<button className="account-primary-button" onClick={()=>{setShowCreate(v=>!v);setDetailError('');}}>＋ Tạo bài đăng</button>}</div></div>
   {notice&&<div className="notice-success" role="status">{notice}</div>}{detailError&&<div className="notice-error" role="alert">{detailError}<button type="button" onClick={()=>setDetailError('')}>Đóng</button></div>}
