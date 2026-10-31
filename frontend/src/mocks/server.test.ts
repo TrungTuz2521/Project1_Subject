@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createApiClient } from '../services/api';
 import { createSessionStore } from '../stores/session';
 import { createMockServer } from './server';
-import type { ApiResponse, LoginData, Match, MatchPost, ProposalDetail, TeamDetail, TeamJoinRequest } from '../types/api';
+import type { ApiResponse, LoginData, Match, MatchPost, ProposalDetail, TeamDetail, TeamJoinRequest, Notification } from '../types/api';
 
 describe('matchmaking mock API', () => {
   const stores: ReturnType<typeof createSessionStore>[] = [];
@@ -107,6 +107,13 @@ describe('matchmaking mock API', () => {
     expect(result.data.proposal_id).toBeGreaterThan(0);
     const proposals = await api.request<{ data: ProposalDetail[] }>('/match-proposals');
     expect(proposals.data.some(item => item.proposal_id === result.data.proposal_id)).toBe(true);
+
+    const captainLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'captain@example.test', password: 'mock-only' },
+    });
+    store.set(captainLogin.data);
+    const captainNotifications = await api.request<{ data: Notification[] }>('/notifications');
+    expect(captainNotifications.data.some(item => item.notification_type === 'TEAM_JOINED' && item.proposal_id === result.data.proposal_id)).toBe(true);
   });
 
   it('returns team detail and protects captain leave rules', async () => {
@@ -117,6 +124,23 @@ describe('matchmaking mock API', () => {
       .rejects.toMatchObject({ status: 409, code: 'CAPTAIN_TRANSFER_REQUIRED' });
   });
 
+  it('does not expose another player\'s proposals or matches', async () => {
+    const { api, store } = await setup();
+    await api.request('/auth/register', {
+      auth: false, method: 'POST',
+      body: { full_name: 'Người ngoài', email: 'outsider@example.test', password: 'password123' },
+    });
+    const login = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'outsider@example.test', password: 'password123' },
+    });
+    store.set(login.data);
+    const proposals = await api.request<{ data: ProposalDetail[] }>('/match-proposals');
+    const matches = await api.request<{ data: Match[] }>('/matches');
+    expect(proposals.data).toHaveLength(0);
+    expect(matches.data).toHaveLength(0);
+    await expect(api.request('/match-proposals/11')).rejects.toMatchObject({ status: 404, code: 'NOT_FOUND' });
+  });
+
   it('marks a notification read without inventing a payment or a confirmed booking', async () => {
     const { api } = await setup();
     const read = await api.request<ApiResponse<{ is_read: boolean }>>('/notifications/1/read', { method: 'PATCH', body: {} });
@@ -125,6 +149,15 @@ describe('matchmaking mock API', () => {
     expect(list.data[0].is_read).toBe(true);
     const matches = await api.request<{ data: Match[] }>('/matches');
     expect(matches.data.every(match => match.status !== 'CONFIRMED')).toBe(true);
+
+    const captainLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'captain@example.test', password: 'mock-only' },
+    });
+    store.set(captainLogin.data);
+    const otherUserNotifications = await api.request<{ data: Notification[] }>('/notifications');
+    expect(otherUserNotifications.data).toHaveLength(0);
+    await expect(api.request('/notifications/1/read', { method: 'PATCH' }))
+      .rejects.toMatchObject({ status: 404, code: 'NOT_FOUND' });
   });
   it('creates only a SUGGESTED match after both opponent confirmations', async () => {
     const { api, store } = await setup();
