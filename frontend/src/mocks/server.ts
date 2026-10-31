@@ -250,6 +250,12 @@ export function createMockServer(delayMs = 80) {
       const member=(teamMembers[teamId]??[]).find(m=>m.user_id===userId&&m.status==='ACTIVE');
       if(!member)return fail(404,'NOT_FOUND','Không tìm thấy thành viên đang hoạt động.');
       if(member.role==='CAPTAIN')return fail(409,'CAPTAIN_TRANSFER_REQUIRED','Không thể xóa đội trưởng.');
+      const boundToUpcomingMatch=matches.some(match=>{
+        const source=posts.find(post=>post.post_id===match.post_id);
+        const target=match.opponent_post_id===null?undefined:posts.find(post=>post.post_id===match.opponent_post_id);
+        return (source?.team_id===teamId||target?.team_id===teamId)&&match.match_time>Date.now().toString()&&['SUGGESTED','CONFIRMED'].includes(match.status);
+      });
+      if(boundToUpcomingMatch)return fail(409,'ACTIVE_MATCH_MEMBERSHIP','Thành viên đang gắn với trận sắp diễn ra.');
       member.status='REMOVED';const team=teams.find(t=>t.team_id===teamId);if(team)team.active_member_count=Math.max(0,team.active_member_count-1);
       return reply({team_id:teamId,user_id:userId,status:'REMOVED'});
     }
@@ -328,6 +334,7 @@ export function createMockServer(delayMs = 80) {
       if(postOwners.get(post.post_id)!==currentUser.user_id)return fail(403,'FORBIDDEN','Bạn không phải chủ bài.');
       if(post.status!=='OPEN')return fail(409,'STATE_CONFLICT','Bài đăng không ở trạng thái có thể hủy.');
       if(proposals.some(p=>(p.source_post_id===post.post_id||p.target_post_id===post.post_id)&&p.status==='PENDING_CONFIRMATION'))return fail(409,'STATE_CONFLICT','Bài đang có đề xuất ghép hoạt động.');
+      if(matches.some(match=>(match.post_id===post.post_id||match.opponent_post_id===post.post_id)&&['SUGGESTED','CONFIRMED'].includes(match.status)))return fail(409,'MATCH_CANCELLATION_REQUIRED','Bài đang gắn với trận. Hãy xử lý hủy trận qua luồng Match.');
       post.status='CANCELLED';return reply(post);
     }
 

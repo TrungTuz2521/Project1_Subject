@@ -25,6 +25,6 @@ export const matchPostsService = {
     api.request<ApiResponse<MatchPost>>('/match-posts/' + postId + '/cancel', { method: 'POST', body: reason ? { reason } : {} }),
   requestParticipant: (postId: number) =>
     api.request<ApiResponse<{ participant_id: number; post_id: number; user_id: number; status: string; proposal_id: number }>>(
-      '/match-posts/' + postId + '/participants', { method: 'POST', body: {} },
+      '/match-posts/' + postId + '/participants', { method: 'POST' },
     ),
 };

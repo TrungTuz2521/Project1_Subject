@@ -17,6 +17,7 @@ const statusNames:Record<string,string>={PENDING_CONFIRMATION:'Chờ xác nhận
 const skillNames:Record<SkillLevel,string>={BEGINNER:'Mới chơi',AMATEUR:'Phong trào',INTERMEDIATE:'Trung bình',SEMI_PRO:'Bán chuyên',PRO:'Chuyên nghiệp'};
 const pitchNames:Record<PitchType,string>={PITCH_5:'Sân 5',PITCH_7:'Sân 7',PITCH_11:'Sân 11'};
 const dateLabel=(v:string|null|undefined)=>v?new Date(v).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa xác định';
+const vietnamDay=(v:string)=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(v));
 function localInput(date:Date){
  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
  const val=(k:string)=>parts.find(p=>p.type===k)?.value??'00';
@@ -50,7 +51,7 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
  },[]);
  useEffect(()=>{void load();},[load]);
  const sourcePosts=mineOnly?myPosts:posts;
- const visiblePosts=useMemo(()=>sourcePosts.filter(p=>(postFilter==='ALL'||p.post_type===postFilter)&&(pitchFilter==='ALL'||p.pitch_type===pitchFilter)&&(skillFilter==='ALL'||p.skill_level===skillFilter)&&p.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())&&(!fromDate||(p.match_time!==null&&p.match_time.slice(0,10)>=fromDate))&&(!toDate||(p.match_time!==null&&p.match_time.slice(0,10)<=toDate))),[sourcePosts,postFilter,pitchFilter,skillFilter,search,fromDate,toDate]);
+ const visiblePosts=useMemo(()=>sourcePosts.filter(p=>(postFilter==='ALL'||p.post_type===postFilter)&&(pitchFilter==='ALL'||p.pitch_type===pitchFilter)&&(skillFilter==='ALL'||p.skill_level===skillFilter)&&p.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())&&(!fromDate||(p.match_time!==null&&vietnamDay(p.match_time)>=fromDate))&&(!toDate||(p.match_time!==null&&vietnamDay(p.match_time)<=toDate))),[sourcePosts,postFilter,pitchFilter,skillFilter,search,fromDate,toDate]);
  const setField = <K extends keyof ReturnType<typeof initialForm>,>(key: K, value: ReturnType<typeof initialForm>[K]) => setForm(old => ({ ...old, [key]: value }));
  async function createPost(event:FormEvent<HTMLFormElement>){
   event.preventDefault();setNotice('');setDetailError('');
