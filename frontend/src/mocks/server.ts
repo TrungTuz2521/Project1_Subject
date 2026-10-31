@@ -1,6 +1,6 @@
 import { demoUser, initialTeams, pitches, createFixtures } from './fixtures';
 import type { Transport } from '../services/api';
-import type { RegisterRequest, SkillLevel, Team, UserSelf } from '../types/api';
+import type { RegisterRequest, SkillLevel, Team, UserSelf, ProposalDetail, Match } from '../types/api';
 
 export type MockScenario = 'normal' | 'empty' | 'server-error' | 'network-error' | 'validation-error';
 type MockAccount = { user: UserSelf; password: string };
@@ -23,6 +23,9 @@ export function createMockServer(delayMs = 250) {
   };
   seedAccounts();
   const fixtures = createFixtures();
+  let proposals: ProposalDetail[] = [structuredClone(fixtures.proposal)];
+  let matches: Match[] = [];
+  let notifications = structuredClone(fixtures.notifications);
   const reply = (data: unknown, status = 200, meta: Record<string, unknown> = {}) => new Response(JSON.stringify({
     data, meta: { server_time: new Date().toISOString(), ...meta },
   }), { status, headers: { 'Content-Type': 'application/json' } });
@@ -133,9 +136,51 @@ export function createMockServer(delayMs = 250) {
       teams.unshift(team); return reply(team, 201);
     }
     if (path === '/pitches' && method === 'GET') return reply(pitches, 200, { page: 1, page_size: 20, total: pitches.length });
-    if (path === '/match-posts' && method === 'GET') return reply(fixtures.posts, 200, { page: 1, page_size: 20, total: fixtures.posts.length });
+    if (path === '/match-posts' && method === 'GET') {
+      const type = url.searchParams.get('post_type');
+      const filtered = fixtures.posts.filter(post => !type || post.post_type === type);
+      return reply(filtered, 200, { page: 1, page_size: filtered.length || 20, total: filtered.length });
+    }
+    if (path === '/match-posts/my' && method === 'GET') return reply(fixtures.posts, 200, { page: 1, page_size: 20, total: fixtures.posts.length });
+    if (path === '/match-proposals' && method === 'GET') return reply(proposals, 200, { page: 1, page_size: 20, total: proposals.length });
+    const proposalMatch = path.match(/^\\/match-proposals\\/(\\d+)(?:\\/(respond))?$/);
+    if (proposalMatch) {
+      const proposalId = Number(proposalMatch[1]);
+      const proposal = proposals.find(item => item.proposal_id === proposalId);
+      if (!proposal) return fail(404, 'NOT_FOUND', 'Không tìm thấy đề xuất ghép trận.');
+      if (!proposalMatch[2] && method === 'GET') return reply(proposal);
+      if (proposalMatch[2] === 'respond' && method === 'POST') {
+        if (Date.parse(proposal.expires_at) <= Date.now()) return fail(409, 'PROPOSAL_EXPIRED', 'Đề xuất đã hết hạn.');
+        const decision = parseBody(init)?.decision;
+        if (decision !== 'ACCEPTED' && decision !== 'DECLINED') return fail(422, 'VALIDATION_ERROR', 'Quyết định không hợp lệ.');
+        const confirmation = proposal.confirmations.find(item => item.user_id === currentUser.user_id);
+        if (!confirmation) return fail(403, 'FORBIDDEN', 'Bạn không có quyền phản hồi đề xuất này.');
+        if (confirmation.decision !== 'PENDING') return fail(409, 'STATE_CONFLICT', 'Bạn đã phản hồi đề xuất này.');
+        confirmation.decision = decision; confirmation.responded_at = new Date().toISOString();
+        if (decision === 'DECLINED') proposal.status = 'REJECTED';
+        else if (proposal.confirmations.every(item => item.decision === 'ACCEPTED')) {
+          proposal.status = 'ACCEPTED'; proposal.confirmed_at = new Date().toISOString();
+          const match: Match = { match_id: 1, post_id: proposal.source_post_id, opponent_post_id: proposal.target_post_id,
+            proposal_id: proposal.proposal_id, booking_id: null, match_time: fixtures.posts[0].match_time!, status: 'SUGGESTED', confirmed_at: null };
+          matches.push(match); proposal.match_id = match.match_id;
+        }
+        return reply(proposal);
+      }
+    }
+    if (path === '/matches' && method === 'GET') return reply(matches, 200, { page: 1, page_size: 20, total: matches.length });
+    const matchMatch = path.match(/^\\/matches\\/(\\d+)$/);
+    if (matchMatch && method === 'GET') {
+      const match = matches.find(item => item.match_id === Number(matchMatch[1]));
+      return match ? reply({ ...match, end_time: fixtures.posts[0].end_time!, proposal: proposals[0], teams, booking: null, payer_progress: [] }) : fail(404, 'NOT_FOUND', 'Không tìm thấy trận đấu.');
+    }
+    if (path === '/notifications' && method === 'GET') return reply(notifications, 200, { page: 1, page_size: 20, total: notifications.length });
+    const notificationMatch = path.match(/^\\/notifications\\/(\\d+)\\/read$/);
+    if (notificationMatch && method === 'PATCH') {
+      const notification = notifications.find(item => item.notification_id === Number(notificationMatch[1]));
+      if (!notification) return fail(404, 'NOT_FOUND', 'Không tìm thấy thông báo.');
+      notification.is_read = true; notification.read_at = new Date().toISOString(); return reply(notification);
+    }
     if (path === '/bookings/my' && method === 'GET') return reply([fixtures.booking], 200, { page: 1, page_size: 20, total: 1 });
-    if (path === '/notifications' && method === 'GET') return reply(fixtures.notifications, 200, { page: 1, page_size: 20, total: 1 });
     // Unknown endpoints fail explicitly; no mock flow pretends a payment or AI action succeeded.
     return fail(501, 'MOCK_NOT_IMPLEMENTED', `Mock chưa hỗ trợ ${method} ${path}. Bổ sung handler trước khi dùng.`);
   };
@@ -146,6 +191,7 @@ export function createMockServer(delayMs = 250) {
     expireSession: () => { tokenDeadline = 0; },
     reset: () => {
       teams = structuredClone(initialTeams); nextTeamId = 4; nextUserId = 3; scenario = 'normal';
+      proposals = [structuredClone(fixtures.proposal)]; matches = []; notifications = structuredClone(fixtures.notifications);
       validToken = null; tokenDeadline = 0; currentUser = { ...demoUser }; seedAccounts();
     },
   };
