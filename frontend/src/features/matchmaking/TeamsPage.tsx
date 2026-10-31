@@ -24,8 +24,8 @@ export function TeamsPage(){
   catch(e){setError(errorMessage(e));}finally{setLoading(false);}
  }
  useEffect(()=>{void loadList();},[revision,page]);
- async function openTeam(id:number){
-  setLoading(true);setError('');setNotice('');setApplicants([]);setRecruitment(null);
+ async function openTeam(id:number,preserveNotice=false){
+  setLoading(true);setError('');if(!preserveNotice)setNotice('');setCreating(false);setEditing(false);setApplicants([]);setRecruitment(null);
   try{
    const pair=await Promise.all([teamsService.get(id),matchPostsService.mine()]);
    setDetail(pair[0].data);setName(pair[0].data.team_name);
@@ -42,14 +42,14 @@ export function TeamsPage(){
   if(value.length<1||value.length>100){setError('Tên đội phải từ 1 đến 100 ký tự.');return;}
   setBusy(true);setError('');setNotice('');
   try{
-   if(detail){await teamsService.update(detail.team_id,{team_name:value});setNotice('Đã cập nhật tên đội.');await openTeam(detail.team_id);}
-   else{const created=await teamsService.create({team_name:value});setNotice('Đã tạo đội mới. Bạn là đội trưởng.');setName('');setCreating(false);setPage(1);setRevision(v=>v+1);await openTeam(created.data.team_id);}
+   if(detail){await teamsService.update(detail.team_id,{team_name:value});setNotice('Đã cập nhật tên đội.');await openTeam(detail.team_id,true);}
+   else{const created=await teamsService.create({team_name:value});setNotice('Đã tạo đội mới. Bạn là đội trưởng.');setName('');setCreating(false);setPage(1);setRevision(v=>v+1);await openTeam(created.data.team_id,true);}
   }catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
  async function handleApplicant(postId:number,decision:'ACCEPTED'|'DECLINED'){
   if(!detail||!window.confirm(decision==='ACCEPTED'?'Chấp thuận yêu cầu này? Ứng viên vẫn cần xác nhận đề xuất ghép.':'Từ chối yêu cầu tham gia đội?'))return;
   setBusy(true);setError('');setNotice('');
-  try{await teamsService.respondJoinRequest(detail.team_id,postId,decision);setNotice('Đã ghi nhận phản hồi. Việc thêm thành viên chỉ hoàn tất sau khi hai bên xác nhận proposal.');await openTeam(detail.team_id);}
+  try{await teamsService.respondJoinRequest(detail.team_id,postId,decision);setNotice('Đã ghi nhận phản hồi. Việc thêm thành viên chỉ hoàn tất sau khi hai bên xác nhận proposal.');await openTeam(detail.team_id,true);}
   catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
  async function leaveTeam(){
@@ -64,7 +64,7 @@ export function TeamsPage(){
   if(reason===null)return;
   if(!reason.trim()){setError('Lý do xóa thành viên không được để trống.');return;}
   setBusy(true);setError('');
-  try{await teamsService.removeMember(detail.team_id,userId,reason.trim());setNotice('Đã gửi yêu cầu xóa thành viên.');await openTeam(detail.team_id);}
+  try{await teamsService.removeMember(detail.team_id,userId,reason.trim());setNotice('Đã gửi yêu cầu xóa thành viên.');await openTeam(detail.team_id,true);}
   catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
  return <div className="account-shell">
