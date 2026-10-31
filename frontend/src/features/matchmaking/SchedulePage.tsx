@@ -16,7 +16,7 @@ export function SchedulePage(){
   const day=ymd(new Date(match.match_time));if(view==='day')return day===selected;
   if(view==='month')return day.slice(0,7)===selected.slice(0,7);
   const start=startOfWeek(selectedDate);const end=new Date(start);end.setDate(start.getDate()+7);const time=new Date(match.match_time).getTime();return time>=start.getTime()&&time<end.getTime();
- }),[matches,view,selected]);
+ }).sort((a,b)=>Date.parse(a.match_time)-Date.parse(b.match_time)),[matches,view,selected]);
  const confirmed=visible.filter(m=>m.status==='CONFIRMED');const suggested=visible.filter(m=>m.status==='SUGGESTED');
  function shift(delta:number){const d=new Date(selectedDate);if(view==='day')d.setDate(d.getDate()+delta);else if(view==='week')d.setDate(d.getDate()+delta*7);else d.setMonth(d.getMonth()+delta);setSelected(ymd(d));}
  async function openMatch(id:number){setDetail(null);setDetailError('');try{const result=await matchesService.get(id);setDetail(result.data);}catch(e){setDetailError(errorMessage(e));}}
