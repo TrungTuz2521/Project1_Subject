@@ -142,7 +142,7 @@ describe('matchmaking mock API', () => {
   });
 
   it('marks a notification read without inventing a payment or a confirmed booking', async () => {
-    const { api } = await setup();
+    const { api, store } = await setup();
     const read = await api.request<ApiResponse<{ is_read: boolean }>>('/notifications/1/read', { method: 'PATCH', body: {} });
     expect(read.data.is_read).toBe(true);
     const list = await api.request<{ data: { is_read: boolean }[] }>('/notifications');
