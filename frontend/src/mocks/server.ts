@@ -28,7 +28,8 @@ export function createMockServer(delayMs = 80) {
     ],
     2: [
       { user_id: 3, full_name: 'Đội trưởng mẫu', role: 'CAPTAIN', status: 'ACTIVE', joined_at: new Date().toISOString() },
-      ...[5,6,7,8].map(id => ({ user_id: id, full_name: 'Thành viên ' + id, role: 'MEMBER' as const, status: 'ACTIVE' as const, joined_at: new Date().toISOString() })),
+      { user_id: 2, full_name: demoUser.full_name, role: 'MEMBER', status: 'ACTIVE', joined_at: new Date().toISOString() },
+      ...[5,6,7].map(id => ({ user_id: id, full_name: 'Thành viên ' + id, role: 'MEMBER' as const, status: 'ACTIVE' as const, joined_at: new Date().toISOString() })),
     ],
     3: [
       { user_id: 2, full_name: demoUser.full_name, role: 'CAPTAIN', status: 'ACTIVE', joined_at: new Date().toISOString() },
@@ -105,7 +106,7 @@ export function createMockServer(delayMs = 80) {
     const path = url.pathname.replace(/^\/api\/v1/, '');
     const parts = path.split('/').filter(Boolean);
     const method = init?.method ?? 'GET';
-    const isPublicPostGet = path === '/match-posts' || (parts[0] === 'match-posts' && parts.length === 2 && method === 'GET');
+    const isPublicPostGet = path === '/match-posts' || (parts[0] === 'match-posts' && parts.length === 2 && parts[1] !== 'my' && method === 'GET');
     const publicPath = path === '/auth/login' || path === '/auth/register' || path === '/pitches' || isPublicPostGet;
 
     if (path === '/auth/register' && method === 'POST') {
@@ -172,8 +173,7 @@ export function createMockServer(delayMs = 80) {
     }
 
     if (path === '/teams' && method === 'GET') {
-      const teamIds = ownedTeamIds();
-      const visible = scenario === 'empty' ? [] : teams.filter(team => teamIds.includes(team.team_id));
+      const visible = scenario === 'empty' ? [] : teams.filter(team => ownedTeamIds().includes(team.team_id));
       const result = paginate(visible, url);
       return result ? reply(result.data, 200, { page: result.page, page_size: result.page_size, total: result.total }) : fail(422, 'VALIDATION_ERROR', 'Phân trang không hợp lệ.');
     }
@@ -377,7 +377,7 @@ export function createMockServer(delayMs = 80) {
       teams=structuredClone(initialTeams);nextTeamId=4;nextUserId=20;nextPostId=5;nextParticipantId=1;nextProposalId=12;nextMatchId=1;
       teamMembers={
         1:[{user_id:2,full_name:demoUser.full_name,role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
-        2:[{user_id:3,full_name:'Đội trưởng mẫu',role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
+        2:[{user_id:3,full_name:'Đội trưởng mẫu',role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()},{user_id:2,full_name:demoUser.full_name,role:'MEMBER',status:'ACTIVE',joined_at:new Date().toISOString()}],
         3:[{user_id:2,full_name:demoUser.full_name,role:'CAPTAIN',status:'ACTIVE',joined_at:new Date().toISOString()}],
       };
       posts=structuredClone(fixtures.posts);proposals=[structuredClone(fixtures.proposal)];matches=[];participants=[];notifications=structuredClone(fixtures.notifications);
