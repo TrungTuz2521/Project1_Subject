@@ -400,9 +400,9 @@ export function createMockServer(delayMs = 80) {
     if(parts[0]==='match-posts'&&parts[2]==='cancel'&&parts.length===3&&method==='POST'){
       const post=posts.find(p=>p.post_id===Number(parts[1]));if(!post)return fail(404,'NOT_FOUND','Không tìm thấy bài đăng.');
       if(postOwners.get(post.post_id)!==currentUser.user_id)return fail(403,'FORBIDDEN','Bạn không phải chủ bài.');
-      if(post.status!=='OPEN')return fail(409,'STATE_CONFLICT','Bài đăng không ở trạng thái có thể hủy.');
-      if(proposals.some(p=>(p.source_post_id===post.post_id||p.target_post_id===post.post_id)&&p.status==='PENDING_CONFIRMATION'))return fail(409,'STATE_CONFLICT','Bài đang có đề xuất ghép hoạt động.');
       if(matches.some(match=>(match.post_id===post.post_id||match.opponent_post_id===post.post_id)&&['SUGGESTED','CONFIRMED'].includes(match.status)))return fail(409,'MATCH_CANCELLATION_REQUIRED','Bài đang gắn với trận. Hãy xử lý hủy trận qua luồng Match.');
+      if(proposals.some(p=>(p.source_post_id===post.post_id||p.target_post_id===post.post_id)&&p.status==='PENDING_CONFIRMATION'))return fail(409,'STATE_CONFLICT','Bài đang có đề xuất ghép hoạt động.');
+      if(post.status!=='OPEN')return fail(409,'STATE_CONFLICT','Bài đăng không ở trạng thái có thể hủy.');
       post.status='CANCELLED';return reply(post);
     }
 
