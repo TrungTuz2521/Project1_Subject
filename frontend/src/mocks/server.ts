@@ -51,6 +51,9 @@ export function createMockServer(delayMs = 80) {
   const seedAccounts = () => {
     accounts.clear();
     accounts.set(demoUser.email, { user: { ...demoUser }, password: 'mock-only' });
+    const captain: UserSelf = { user_id: 3, full_name: 'Đội trưởng mẫu', email: 'captain@example.test',
+      phone: null, role: 'PLAYER', skill_level: 'INTERMEDIATE', status: 'ACTIVE' };
+    accounts.set(captain.email, { user: captain, password: 'mock-only' });
   };
   seedAccounts();
   const fixtures = createFixtures();
@@ -225,7 +228,7 @@ export function createMockServer(delayMs = 80) {
       if(!participant)return fail(404,'NOT_FOUND','Không có yêu cầu đang chờ.');
       participant.status=decision==='ACCEPTED'?'ACCEPTED':'REJECTED';
       const proposal=proposals.find(p=>p.proposal_type==='TEAM_MEMBER'&&p.source_post_id===postId&&p.candidate_user_id===participant.user_id);
-      if(proposal){const captainConfirmation=proposal.confirmations.find(c=>c.user_id===currentUser.user_id);if(captainConfirmation){captainConfirmation.decision=decision;captainConfirmation.responded_at=new Date().toISOString();}}
+      if(proposal){const captainConfirmation=proposal.confirmations.find(c=>c.user_id===currentUser.user_id);if(captainConfirmation){captainConfirmation.decision=decision;captainConfirmation.responded_at=new Date().toISOString();if(decision==='DECLINED')proposal.status='REJECTED';}}
       return reply({ ...participant, proposal_id: proposal?.proposal_id ?? 0 });
     }
     if(parts[0]==='teams'&&parts[2]==='members'&&parts[3]==='me'&&method==='DELETE'){
@@ -357,10 +360,12 @@ export function createMockServer(delayMs = 80) {
           const acceptedParticipant=participants.find(p=>p.post_id===proposal.source_post_id&&p.user_id===proposal.candidate_user_id);
           if(acceptedParticipant)acceptedParticipant.status='ACCEPTED';
         }
-        const post=posts.find(p=>p.post_id===proposal.source_post_id);
-        const match:Match={match_id:nextMatchId++,post_id:proposal.source_post_id,opponent_post_id:proposal.target_post_id,
-          proposal_id:proposal.proposal_id,booking_id:null,match_time:post?.match_time??new Date().toISOString(),status:'SUGGESTED',confirmed_at:null};
-        matches.unshift(match);proposal.match_id=match.match_id;
+        if(proposal.proposal_type==='OPPONENT'){
+          const post=posts.find(p=>p.post_id===proposal.source_post_id);
+          const match:Match={match_id:nextMatchId++,post_id:proposal.source_post_id,opponent_post_id:proposal.target_post_id,
+            proposal_id:proposal.proposal_id,booking_id:null,match_time:post?.match_time??new Date().toISOString(),status:'SUGGESTED',confirmed_at:null};
+          matches.unshift(match);proposal.match_id=match.match_id;
+        }
       }
       return reply(proposal);
     }
@@ -370,8 +375,9 @@ export function createMockServer(delayMs = 80) {
     }
     if(parts[0]==='matches'&&parts.length===2&&method==='GET'){
       const match=matches.find(m=>m.match_id===Number(parts[1]));if(!match)return fail(404,'NOT_FOUND','Không tìm thấy trận.');
-      const post=posts.find(p=>p.post_id===match.post_id);
-      const teamList=teams.filter(t=>t.team_id===post?.team_id||(t.team_id===match.opponent_post_id));
+      const post=posts.find(p=>p.post_id===match.post_id);const opponentPost=match.opponent_post_id===null?undefined:posts.find(p=>p.post_id===match.opponent_post_id);
+      const teamIds=[post?.team_id,opponentPost?.team_id].filter((id):id is number=>id!==null&&id!==undefined);
+      const teamList=teams.filter(t=>teamIds.includes(t.team_id));
       const proposal=proposals.find(p=>p.proposal_id===match.proposal_id)??proposals[0];
       return reply({...match,end_time:post?.end_time??match.match_time,proposal,teams:teamList,booking:null,payer_progress:[]});
     }

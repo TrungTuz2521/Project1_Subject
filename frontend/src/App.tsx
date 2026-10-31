@@ -144,6 +144,12 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
     catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
+  async function demoCaptainLogin() {
+    setEmail('captain@example.test'); setPassword('mock-only'); setError(''); setBusy(true);
+    try { await login({ email: 'captain@example.test', password: 'mock-only' }); onLogin(); }
+    catch (reason) { setError(errorMessage(reason)); }
+    finally { setBusy(false); }
+  }
 
   return <div className="auth-screen">
     <aside className="auth-visual">
@@ -170,7 +176,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
           {error && <div className="notice-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">↗</span></button>
         </form>
-        {useMocks && !isRegister && <button type="button" className="demo-login-button" disabled={busy} onClick={demoLogin}>Đăng nhập nhanh bằng tài khoản mẫu</button>}
+        {useMocks && !isRegister && <><button type="button" className="demo-login-button" disabled={busy} onClick={demoLogin}>Đăng nhập nhanh bằng tài khoản mẫu</button><button type="button" className="demo-login-button" disabled={busy} onClick={demoCaptainLogin}>Thử tài khoản đội trưởng mẫu</button></>}
         <p className="auth-switch">{isRegister ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'} <button type="button" onClick={() => { clearNotice(); setError(''); onNavigate(isRegister ? '/login' : '/register'); }}>{isRegister ? 'Đăng nhập' : 'Đăng ký ngay'}</button></p>
         <p className="auth-terms">Bằng việc tiếp tục, bạn đồng ý tuân thủ các quy định sử dụng của hệ thống.</p>
       </section>
