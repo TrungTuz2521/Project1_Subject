@@ -83,7 +83,7 @@ it('mock supports login → load → create → reload and rejects expired sessi
   const store = makeStore();
   const mock = createMockServer(0);
   const api = createApiClient({ baseUrl: '/api/v1', store, transport: mock.transport });
-  const result = await api.request<{ data: { access_token: string; expires_in: number; user: typeof demoUser } }>('/auth/login', { auth: false, method: 'POST', body: {} });
+  const result = await api.request<{ data: { access_token: string; expires_in: number; user: typeof demoUser } }>('/auth/login', { auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' } });
   store.set(result.data);
   const first = await api.request<{ data: unknown[]; meta: { total: number } }>('/teams');
   expect(first.meta.total).toBe(3);

@@ -1,6 +1,6 @@
 # Bộ frontend dùng chung
 
-React + TypeScript + Vite cho hệ thống đặt sân bóng, ghép đội và tìm trận. Đã tích hợp module **tài khoản và khung ứng dụng** theo `docs/api/API_MODELS_CONTRACT_PROJECT1.md`: đăng nhập/đăng ký, hồ sơ GET/PATCH, điều hướng theo hash, đăng xuất, phiên access token trong bộ nhớ tối đa 60 phút và trở về đăng nhập khi token hết hạn/được API trả 401. Màn hình **Đội bóng của tôi** tiếp tục được giữ làm ví dụ CRUD theo hợp đồng API.
+React + TypeScript + Vite cho hệ thống đặt sân bóng, ghép đội và tìm trận. Đã tích hợp module **tài khoản và khung ứng dụng** theo `docs/api/API_MODELS_CONTRACT_PROJECT1.md`: đăng nhập/đăng ký, hồ sơ GET/PATCH, điều hướng theo hash, đăng xuất, phiên access token trong bộ nhớ tối đa 60 phút và trở về đăng nhập khi token hết hạn/được API trả 401. Phân hệ **Quản lý đội bóng & Ghép trận** được triển khai theo module: quản lý đội/thành viên, bài đăng, đề xuất, xác nhận hai phía, thông báo và lịch thi đấu. Giao diện kế thừa shell, CSS, API Client, session và DTO hiện tại.
 
 ## Chạy trên máy
 
@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Mở URL terminal hiển thị, thường là http://localhost:5173. Chế độ dev mặc định dùng mock, không cần backend hoặc TiDB. Tại màn hình đăng nhập, dùng nút **Đăng nhập nhanh bằng tài khoản mẫu** (email `demo@example.test`, mật khẩu `mock-only`), hoặc tạo tài khoản demo mới. Sau đăng nhập, thử cập nhật hồ sơ, điều hướng và tạo đội. Dữ liệu mock chỉ lưu trong bộ nhớ và được đặt lại khi tải lại trang; cần đăng nhập lại sau reload.
+Mở URL terminal hiển thị, thường là http://localhost:5173. Chế độ dev mặc định dùng mock, không cần backend hoặc TiDB. Tại màn hình đăng nhập, dùng **Đăng nhập nhanh bằng tài khoản mẫu** (`demo@example.test` / `mock-only`) hoặc **Thử tài khoản đội trưởng mẫu** (`captain@example.test` / `mock-only`). Có thể đăng ký tài khoản demo mới để thử vai trò ứng viên. Mock hỗ trợ nhiều session cùng lúc để kiểm tra xác nhận của hai người dùng. Dữ liệu mock chỉ lưu trong bộ nhớ, được đặt lại khi tải lại trang; cần đăng nhập lại sau reload.
 
 ```powershell
 npm test
@@ -41,12 +41,18 @@ Frontend KHÔNG kết nối TiDB và không chứa mật khẩu database. Mọi 
 | `src/services/client.ts` | Instance `api` chung; chọn mock/Flask bằng cấu hình |
 | `src/stores/session.ts` | Lưu phiên trong bộ nhớ, cập nhật user không gia hạn token, tự xóa khi hết hạn, không refresh token |
 | `src/services/auth.ts` | `register()`, `login()`, `getCurrentUser()`, `updateCurrentUser()`, `logout()` |
-| `src/services/teams.ts` | Ví dụ service endpoint GET/POST của một module |
+| `src/services/teams.ts` | Đội, chi tiết/thành viên, yêu cầu tham gia, phản hồi, rời đội/xóa thành viên |
+| `src/services/matchPosts.ts` | Bảng tin, bài của tôi, tạo/sửa/hủy, đăng ký tham gia |
+| `src/services/proposals.ts` | Danh sách/chi tiết đề xuất và phản hồi ACCEPTED/DECLINED |
+| `src/services/matches.ts` | Danh sách và chi tiết trận đấu |
+| `src/services/notifications.ts` | Thông báo và đánh dấu đã đọc |
 | `src/types/api.ts` | DTO, ENUM, request/response của các module |
 | `src/mocks/fixtures.ts` | Dữ liệu tổng hợp: user, đội, sân, bài, đề xuất, booking, payment, thông báo, doanh thu |
-| `src/mocks/server.ts` | Handler mock có kiểm tra Bearer, phân trang, tạo đội, lỗi 422/409/401 |
-| `src/App.tsx` | Form đăng nhập/đăng ký, shell điều hướng, dashboard, hồ sơ, trang khung các module |
-| `src/features/matchmaking/TeamsPage.tsx` | Màn hình đội bóng mẫu; điều hướng trở lại các khu vực tài khoản |
+| `src/mocks/server.ts` | Mock handler theo DTO/envelope, session đa tài khoản, phân trang, phân quyền và lỗi 4xx/5xx |
+| `src/App.tsx` | Form đăng nhập/đăng ký, shell điều hướng, dashboard, hồ sơ, đội bóng, ghép trận, thông báo và lịch |
+| `src/features/matchmaking/TeamsPage.tsx` | Danh sách, chi tiết, tạo/sửa đội, roster, yêu cầu tuyển và thao tác Captain |
+| `src/features/matchmaking/MatchmakingPage.tsx` | 4 loại bài đăng, bộ lọc, CRUD bài, đề xuất, xác nhận, trận và thông báo |
+| `src/features/matchmaking/SchedulePage.tsx` | Lịch ngày/tuần/tháng; CONFIRMED và SUGGESTED được tách riêng |
 
 ## Quy ước gọi API
 
@@ -77,15 +83,20 @@ export function getMyBookings(signal?: AbortSignal) {
 
 ## Dữ liệu mẫu và phạm vi mock
 
-Mock hiện hỗ trợ:
+Mock hiện hỗ trợ các endpoint của phân hệ này:
 
-- POST /auth/register và POST /auth/login (tài khoản demo và tài khoản được đăng ký trong bộ nhớ; không xác thực người dùng thật).
-- GET/PATCH /users/me; GET/POST /teams.
-- GET /pitches, /match-posts, /bookings/my, /notifications.
+- Auth/profile: POST /auth/register, POST /auth/login, GET/PATCH /users/me.
+- Đội: GET/POST /teams, GET/PATCH /teams/{team_id}, POST/PATCH join-requests, DELETE members/me và members/{user_id}.
+- Bài đăng: GET /match-posts, GET /match-posts/my, POST/GET/PATCH /match-posts/{post_id}, POST cancel, GET/POST participants.
+- Ghép trận: GET /match-proposals, GET /match-proposals/{proposal_id}, POST respond, GET /matches, GET /matches/{match_id}.
+- Thông báo: GET /notifications, PATCH /notifications/{notification_id}/read.
+- Dữ liệu hỗ trợ demo: GET /pitches, GET /bookings/my.
 
-Booking/payment/proposal/revenue fixture giúp dựng màn hình nhưng không đồng nghĩa đã có toàn bộ handler. Endpoint chưa làm trả 501 MOCK_NOT_IMPLEMENTED. Không có thu tiền, tạo QR thật, xác nhận trận, email hoặc quyền Admin thật.
+Mock kiểm tra Bearer/session, quyền thành viên/đội trưởng, party của proposal, chủ thông báo, response envelope, phân trang, validation và các xung đột nghiệp vụ cơ bản. Mock không lưu dữ liệu bền vững và không xác thực người dùng thật.
 
-Ngày trận tự dịch sang ngày mai để mẫu không hết hạn theo lịch. Hold mẫu 5 phút tính từ lúc khởi tạo mock; fixture không mô phỏng đầy đủ worker hết hạn/hoàn tiền. Không dùng mock làm bằng chứng nghiệp vụ thanh toán đã đúng.
+**Giới hạn không giả lập:** không chạy thuật toán AI, không giữ sân thật, không gọi VNPay/MoMo, không thu/hoàn tiền, không tự tạo Booking đã thanh toán, không giả báo email gửi thành công. Khi hai bên đồng ý proposal OPPONENT, mock chỉ tạo Match SUGGESTED; không đổi sang CONFIRMED. Proposal TEAM_MEMBER chỉ thêm thành viên sau khi cả đội trưởng và ứng viên cùng xác nhận. Các chức năng booking/payment/hoàn tiền phụ thuộc Backend.
+
+Ngày trận fixture được tạo tương đối theo thời điểm khởi tạo. Dữ liệu và session mẫu chỉ tồn tại trong bộ nhớ; không dùng mock làm bằng chứng nghiệp vụ thanh toán/booking ở Backend đã đúng.
 
 Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh sách trống luôn ẩn danh sách kể cả sau POST; chuyển về Bình thường để xem các đội đã tạo. Chế độ 422 cho phép thử lỗi do server trả về dù input hợp lệ. Nút thử 401 làm phiên mẫu bị server từ chối ở GET kế tiếp.
 
@@ -94,7 +105,7 @@ Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh s
 ## Chia phần cho nhóm
 
 - **Duy Minh:** module tài khoản/khung ứng dụng đã được tích hợp tại `src/App.tsx`; tiếp tục đồng bộ giao diện với backend theo `services/auth.ts` và `stores/session.ts`. Không tự lưu token ở localStorage/sessionStorage hoặc tạo một luồng refresh token riêng.
-- **Quang:** phát triển tiếp màn hình đội/bài/đề xuất từ TeamsPage, dùng DTO chung.
+- **Quang:** phụ trách phân hệ frontend đội bóng/ghép trận/thông báo/lịch trên nhánh `feature/quang-team-matchmaking`; các thay đổi chờ review/PR, không commit vào `main`.
 - **Huy:** dùng fixtures sân/booking/doanh thu để dựng màn hình; không giả báo đã thanh toán thành công.
 - **Đức/Tú:** triển khai backend theo cùng hợp đồng, review service/DTO và nối API thật. Google Login chưa nằm trong bộ mẫu này.
 
@@ -107,6 +118,8 @@ Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh s
 2. Vào **Hồ sơ cá nhân**, cập nhật họ tên/số điện thoại/trình độ rồi lưu; UI gọi `GET /users/me` và `PATCH /users/me`.
 3. Đăng xuất, mở **Đăng ký ngay**, điền tên/email/mật khẩu (8–72 byte UTF-8), sau đó đăng nhập bằng tài khoản vừa đăng ký. Email trùng trả về lỗi 409.
 4. Để thử hết hạn phiên, trên trang Đội bóng của tôi chọn **Thử lỗi token 401** ở thanh tình huống; yêu cầu API tiếp theo bị từ chối và app đưa người dùng về đăng nhập.
-5. Các đường dẫn đặt sân/ghép đội/thông báo trong khung hiện là trang giữ chỗ; không giả lập thành công nghiệp vụ chưa được triển khai.
+5. Mở `#/teams` để quản lý đội, `#/matchmaking` để tạo/lọc bài và xem proposal, `#/notifications` để xem thông báo, `#/schedule` để xem lịch ngày/tuần/tháng.
+6. Tài khoản đội trưởng mẫu: `captain@example.test` / `mock-only`. Tạo tài khoản mới (PLAYER) để thử luồng ứng viên, rồi dùng tài khoản đội trưởng để chấp thuận và quay lại ứng viên để xác nhận proposal.
+7. GitHub Actions workflow `Frontend checks` chạy `npm ci`, `npm test` và `npm run build` khi push lên nhánh tính năng hoặc pull request.
 
 **Bảo mật:** token chỉ ở bộ nhớ, bị xóa sau 60 phút hoặc khi API bảo vệ trả 401. Tải lại trang cần đăng nhập lại theo hợp đồng hiện tại; chưa có refresh token hoặc API thu hồi JWT. Chế độ mock chỉ để phát triển giao diện và không thay thế xác thực/kiểm tra quyền của backend.

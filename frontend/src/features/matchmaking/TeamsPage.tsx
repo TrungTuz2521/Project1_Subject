@@ -1,147 +1,94 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { session } from '../../stores/session';
-import { login, logout } from '../../services/auth';
+import { logout } from '../../services/auth';
 import { teamsService } from '../../services/teams';
-import { ApiError, errorMessage } from '../../services/api';
-import { mockServer, useMocks } from '../../services/client';
-import type { MockScenario } from '../../mocks/server';
-import type { Team } from '../../types/api';
+import { matchPostsService } from '../../services/matchPosts';
+import { errorMessage } from '../../services/api';
+import type { Participant, Team, TeamDetail, MatchPost } from '../../types/api';
 
-/** Reference flow: session → GET → render → POST → refresh → field/global errors. */
-export function TeamsPage() {
-  const current = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [revision, setRevision] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [listError, setListError] = useState('');
-  const [name, setName] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [fieldError, setFieldError] = useState('');
-  const [formError, setFormError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [signingIn, setSigningIn] = useState(false);
-  const [scenario, setScenario] = useState<MockScenario>('normal');
-  const busy = useRef(false);
-  const requestSequence = useRef(0);
-  const nameInput = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!current) { setTeams([]); setTotal(0); setLoading(false); return; }
-    const controller = new AbortController();
-    setLoading(true); setListError(''); setTeams([]);
-    teamsService.list(page, controller.signal).then((result) => {
-      if (!controller.signal.aborted) { setTeams(result.data); setTotal(result.meta.total); }
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) setListError(errorMessage(error));
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [current, page, revision]);
-
-  useEffect(() => {
-    ++requestSequence.current; busy.current = false;
-    setSaving(false); setName(''); setFieldError(''); setFormError(''); setSuccess('');
-  }, [current]);
-
-  async function signIn() {
-    setSigningIn(true); setFormError('');
-    try { await login({ email: 'demo@example.test', password: 'mock-only' }); }
-    catch (error) { setFormError(errorMessage(error)); }
-    finally { setSigningIn(false); }
-  }
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (busy.current || !current) return;
-    const teamName = name.trim();
-    setFieldError(''); setFormError(''); setSuccess('');
-    if (!teamName || teamName.length > 100) { setFieldError('Nhập tên đội từ 1 đến 100 ký tự.'); nameInput.current?.focus(); return; }
-    busy.current = true; setSaving(true);
-    const sequence = requestSequence.current;
-    const token = current.access_token;
-    const stillCurrent = () => sequence === requestSequence.current && session.getSnapshot()?.access_token === token;
-    try {
-      const result = await teamsService.create({ team_name: teamName });
-      if (stillCurrent()) {
-        setName(''); setSuccess(`Đã tạo đội “${result.data.team_name}”. Bạn là đội trưởng.`);
-        setPage(1); setRevision((value) => value + 1);
-      }
-    } catch (error) {
-      if (stillCurrent()) {
-        if (error instanceof ApiError && error.fields.team_name) {
-          const field = error.fields.team_name;
-          setFieldError(Array.isArray(field) ? field.join(' ') : field); nameInput.current?.focus();
-        } else setFormError(errorMessage(error));
-      }
-    } finally {
-      if (sequence === requestSequence.current) { busy.current = false; setSaving(false); }
-    }
-  }
-  function changeScenario(value: MockScenario) {
-    mockServer?.setScenario(value); setScenario(value); setSuccess(''); setFormError(''); setFieldError('');
-    setPage(1); setRevision((revision) => revision + 1);
-  }
-  const refresh = () => setRevision((value) => value + 1);
-
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <a className="brand" href="#main"><span className="brand-icon">F</span><span>FOOTBALL<span className="brand-sub">FIELD MANAGEMENT</span></span></a>
-      <p className="nav-label">KHÔNG GIAN CỦA BẠN</p>
-      <nav aria-label="Điều hướng chính">
-        <a className="nav-item" href="#/dashboard"><span>⌂</span> Tổng quan</a>
-        <a className="nav-item selected" href="#/teams" aria-current="page"><span>◉</span> Đội bóng của tôi <span className="nav-arrow">↗</span></a>
-        <a className="nav-item" href="#/bookings"><span>▦</span> Đặt sân</a>
-        <a className="nav-item" href="#/matchmaking"><span>⇄</span> Ghép đội & tìm trận</a>
-        <a className="nav-item" href="#/notifications"><span>♧</span> Thông báo</a>
-        <a className="nav-item" href="#/profile"><span>◎</span> Hồ sơ cá nhân</a>
-      </nav>
-      <div className="pitch-art" aria-hidden="true"><div className="center-line" /><div className="center-circle" /><div className="goal goal-top" /><div className="goal goal-bottom" /></div>
-      <div className="sidebar-footer"><span className="status-dot" /> Cùng đội. Cùng đam mê.<small>Chọn đội, tìm kèo, ra sân.</small></div>
-    </aside>
-    <div className="workspace">
-      <header className="topbar"><span>Không gian cá nhân <span className="separator">/</span> <strong>Đội bóng</strong></span>
-        <div className="identity"><span className="avatar">{current ? current.user.full_name.trim().split(/\s+/).slice(-2).map((word) => word[0]).join('').toLocaleUpperCase() : '•'}</span><span>{current?.user.full_name ?? 'Chưa đăng nhập'}</span>{current && <button className="text-button" onClick={() => { window.dispatchEvent(new Event('app:manual-logout')); logout(); window.location.hash = '/login'; }}>Đăng xuất</button>}</div>
-      </header>
-      <main id="main">
-        <div className="eyebrow">KẾT NỐI TỪ SÂN CỎ</div>
-        <div className="page-heading"><div><h1>Đội bóng của tôi<span>.</span></h1><p>Mỗi trận đấu hay bắt đầu từ một đội bóng của riêng bạn.</p></div><span className="page-index">01 / ĐỘI BÓNG</span></div>
-        {useMocks && <section className="demo-panel" aria-label="Công cụ dữ liệu mẫu">
-          <div><strong><span className="status-dot" /> Chế độ dữ liệu mẫu</strong><p>Chạy độc lập với backend · Dữ liệu được đặt lại khi tải lại trang.</p></div>
-          <div className="demo-actions"><label htmlFor="scenario">Tình huống</label><select id="scenario" value={scenario} onChange={(event) => changeScenario(event.target.value as MockScenario)}>
-            <option value="normal">Bình thường</option><option value="empty">Danh sách trống</option><option value="server-error">Lỗi máy chủ 500</option><option value="network-error">Mất kết nối</option><option value="validation-error">Lỗi form 422</option>
-          </select><button className="small-button" disabled={!current} onClick={() => { mockServer?.expireSession(); refresh(); }}>Thử lỗi token 401</button></div>
-        </section>}
-        {!current ? <section className="login-state"><span className="large-icon">↗</span><h2>Sẵn sàng trở lại sân?</h2><p>Đăng nhập để xem đội bóng và tạo đội mới.</p>
-          {useMocks ? <button className="primary-button" disabled={signingIn} onClick={signIn}>{signingIn ? 'Đang đăng nhập…' : 'Đăng nhập bằng tài khoản mẫu →'}</button>
-            : <p className="integration-note">Kết nối màn hình đăng nhập thật với hàm <code>login()</code> trong <code>services/auth.ts</code>. Backend hiện chưa được triển khai.</p>}
-          {formError && <p className="error" role="alert">{formError}</p>}
-        </section> : <div className="content-grid">
-          <section className="teams-section" aria-labelledby="teams-heading" aria-busy={loading}>
-            <div className="section-heading"><div><h2 id="teams-heading">Đồng đội của bạn <span className="count-badge">{total}</span></h2><p>Những đội bóng bạn đang đồng hành.</p></div><button className="small-button" onClick={refresh} disabled={loading}>↻ Làm mới</button></div>
-            {loading ? <div className="loading-state" role="status"><span className="spinner" /> Đang tải đội bóng…<div className="skeleton" /><div className="skeleton" /></div>
-              : listError ? <div className="empty-state error-state" role="alert"><h3>Chưa tải được danh sách</h3><p>{listError}</p><button className="small-button" onClick={refresh}>Thử lại</button></div>
-              : teams.length === 0 ? <div className="empty-state"><span className="large-icon">◎</span><h3>{total ? 'Trang này chưa có đội' : 'Đội bóng đầu tiên đang chờ bạn'}</h3><p>Đặt một cái tên, rủ đồng đội và bắt đầu hành trình.</p><button className="small-button" onClick={() => nameInput.current?.focus()}>Tạo đội mới →</button></div>
-              : <div className="team-list">{teams.map((team, index) => <article className="team-card" key={team.team_id}>
-                <div className={`team-crest crest-${index % 3}`} aria-hidden="true">{team.team_name.split(' ').slice(0, 2).map((word) => word[0]).join('')}</div>
-                <div className="team-info"><div className="team-kicker">{team.creation_type === 'AI_RANDOM' ? 'ĐỘI GHÉP TỰ ĐỘNG' : 'ĐỘI CỦA BẠN'}</div><h3>{team.team_name}</h3><p>{team.active_member_count} thành viên <span>·</span> {team.created_by === current.user.user_id ? 'Bạn tạo đội' : 'Đội AI tập hợp'}</p></div>
-                <span className={`badge ${team.status === 'ACTIVE' ? '' : 'inactive'}`}>{team.status === 'ACTIVE' ? 'Đang hoạt động' : 'Ngừng hoạt động'}</span>
-              </article>)}</div>}
-            {!listError && total > 6 && <div className="pagination"><button className="small-button" disabled={loading || page === 1} onClick={() => setPage(page - 1)}>← Trước</button><span>Trang {page} / {Math.ceil(total / 6)}</span><button className="small-button" disabled={loading || page * 6 >= total} onClick={() => setPage(page + 1)}>Sau →</button></div>}
-            <div className="field-note"><span>↳</span> Đội do bạn tạo sẽ có bạn làm đội trưởng. Việc tìm đối thủ được thực hiện qua bài đăng riêng.</div>
-          </section>
-          <aside className="create-panel"><div className="form-symbol" aria-hidden="true">+</div><div className="eyebrow">THÊM MỘT KHỞI ĐẦU</div><h2>Tạo đội bóng mới</h2><p>Một cái tên để cùng nhau ra sân.</p>
-            <form onSubmit={submit} noValidate><label htmlFor="team-name">Tên đội bóng <span aria-hidden="true">*</span></label><input ref={nameInput} id="team-name" name="team_name" placeholder="Ví dụ: FC Chiều Thứ Bảy" value={name} maxLength={100} disabled={saving} aria-invalid={!!fieldError} aria-describedby={fieldError ? 'name-error' : 'name-help'} onChange={(event) => { setName(event.target.value); setFieldError(''); }} />
-              <div className="input-help" id="name-help"><span>Tên dễ nhớ, tinh thần dễ gắn kết.</span><span>{name.length}/100</span></div>
-              {fieldError && <p id="name-error" className="error" role="alert">{fieldError}</p>}
-              {formError && <p className="error" role="alert">{formError}</p>}
-              {success && <p className="success" role="status">✓ {success}</p>}
-              <button className="primary-button create-button" type="submit" disabled={saving}>{saving ? 'Đang tạo đội…' : 'Tạo đội bóng'}<span aria-hidden="true">↗</span></button>
-            </form><div className="form-footer">Bạn sẽ trở thành đội trưởng.<br />Có thể tuyển thêm thành viên sau khi tạo đội.</div>
-          </aside>
-        </div>}
-        <footer className="page-footer"><span>FOOTBALL FIELD MANAGEMENT</span><span>Đồng đội hôm nay. Kỷ niệm ngày mai.</span></footer>
-      </main>
+const timeLabel=(value:string)=>new Date(value).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'});
+export function TeamsPage(){
+ const current=session.getSnapshot();
+ const [teams,setTeams]=useState<Team[]>([]); const [total,setTotal]=useState(0); const [page,setPage]=useState(1); const [detail,setDetail]=useState<TeamDetail|null>(null);
+ const [recruitment,setRecruitment]=useState<MatchPost|null>(null); const [applicants,setApplicants]=useState<Participant[]>([]);
+ const [busy,setBusy]=useState(false); const [loading,setLoading]=useState(true); const [error,setError]=useState(''); const [notice,setNotice]=useState('');
+ const [name,setName]=useState(''); const [editing,setEditing]=useState(false); const [creating,setCreating]=useState(false);
+ const [revision,setRevision]=useState(0);
+ const isCaptain=Boolean(detail?.members.some(m=>m.user_id===current?.user.user_id&&m.role==='CAPTAIN'&&m.status==='ACTIVE'));
+ const isMember=Boolean(detail?.members.some(m=>m.user_id===current?.user.user_id&&m.status==='ACTIVE'));
+ const canCreateTeam=current?.user.role==='PLAYER';
+ async function loadList(){
+  setLoading(true);setError('');
+  try{const result=await teamsService.list(page);setTeams(result.data);setTotal(result.meta.total);}
+  catch(e){setError(errorMessage(e));}finally{setLoading(false);}
+ }
+ useEffect(()=>{void loadList();},[revision,page]);
+ async function openTeam(id:number,preserveNotice=false){
+  setLoading(true);setError('');if(!preserveNotice)setNotice('');setCreating(false);setEditing(false);setApplicants([]);setRecruitment(null);
+  try{
+   const pair=await Promise.all([teamsService.get(id),matchPostsService.mine()]);
+   setDetail(pair[0].data);setName(pair[0].data.team_name);
+   const post=pair[1].data.find(p=>p.team_id===id&&p.post_type==='RECRUIT_MEMBERS'&&['OPEN','LOCKED'].includes(p.status))??null;
+   setRecruitment(post);
+   if(post&&pair[0].data.members.some(m=>m.user_id===current?.user.user_id&&m.role==='CAPTAIN'&&m.status==='ACTIVE')){
+    const result=await teamsService.listRecruitmentParticipants(post.post_id);
+    setApplicants(result.data.filter(p=>(p.status==='PENDING'||p.status==='ACCEPTED')&&!pair[0].data.members.some(member=>member.user_id===p.user_id&&member.status==='ACTIVE')));
+   }
+  }catch(e){setError(errorMessage(e));}finally{setLoading(false);}
+ }
+ async function submitTeam(event:FormEvent<HTMLFormElement>){
+  event.preventDefault();const value=name.trim();
+  if(value.length<1||value.length>100){setError('Tên đội phải từ 1 đến 100 ký tự.');return;}
+  setBusy(true);setError('');setNotice('');
+  try{
+   if(detail){await teamsService.update(detail.team_id,{team_name:value});setNotice('Đã cập nhật tên đội.');await openTeam(detail.team_id,true);}
+   else{const created=await teamsService.create({team_name:value});setNotice('Đã tạo đội mới. Bạn là đội trưởng.');setName('');setCreating(false);setPage(1);setRevision(v=>v+1);await openTeam(created.data.team_id,true);}
+  }catch(e){setError(errorMessage(e));}finally{setBusy(false);}
+ }
+ async function handleApplicant(postId:number,decision:'ACCEPTED'|'DECLINED'){
+  if(!detail||!window.confirm(decision==='ACCEPTED'?'Chấp thuận yêu cầu này? Ứng viên vẫn cần xác nhận đề xuất ghép.':'Từ chối yêu cầu tham gia đội?'))return;
+  setBusy(true);setError('');setNotice('');
+  try{await teamsService.respondJoinRequest(detail.team_id,postId,decision);setNotice('Đã ghi nhận phản hồi. Việc thêm thành viên chỉ hoàn tất sau khi hai bên xác nhận proposal.');await openTeam(detail.team_id,true);}
+  catch(e){setError(errorMessage(e));}finally{setBusy(false);}
+ }
+ async function leaveTeam(){
+  if(!detail||!window.confirm('Bạn chắc chắn muốn rời đội bóng này?'))return;
+  setBusy(true);setError('');
+  try{await teamsService.leave(detail.team_id);setNotice('Bạn đã rời đội.');setDetail(null);setRevision(v=>v+1);}
+  catch(e){setError(errorMessage(e));}finally{setBusy(false);}
+ }
+ async function removeMember(userId:number){
+  if(!detail||!window.confirm('Xóa thành viên này khỏi đội?'))return;
+  const reason=window.prompt('Nhập lý do xóa thành viên (bắt buộc):');
+  if(reason===null)return;
+  if(!reason.trim()){setError('Lý do xóa thành viên không được để trống.');return;}
+  setBusy(true);setError('');
+  try{await teamsService.removeMember(detail.team_id,userId,reason.trim());setNotice('Đã gửi yêu cầu xóa thành viên.');await openTeam(detail.team_id,true);}
+  catch(e){setError(errorMessage(e));}finally{setBusy(false);}
+ }
+ return <div className="account-shell">
+  <aside className="account-sidebar"><a href="#/dashboard" className="account-brand"><span className="account-brand-mark">F</span><span>FOOTBALL<small>FIELD MANAGEMENT</small></span></a><div className="account-side-label">KHÔNG GIAN CỦA BẠN</div><nav className="account-nav" aria-label="Điều hướng chính"><a href="#/dashboard" className="account-nav-item"><span className="account-nav-icon">⌂</span><span>Tổng quan</span></a><a href="#/teams" className="account-nav-item active"><span className="account-nav-icon">♧</span><span>Đội bóng của tôi</span></a><a href="#/bookings" className="account-nav-item"><span className="account-nav-icon">▦</span><span>Đặt sân</span></a><a href="#/matchmaking" className="account-nav-item"><span className="account-nav-icon">⇄</span><span>Ghép đội & tìm trận</span></a><a href="#/schedule" className="account-nav-item"><span className="account-nav-icon">▦</span><span>Lịch thi đấu</span></a><a href="#/notifications" className="account-nav-item"><span className="account-nav-icon">♧</span><span>Thông báo</span></a><a href="#/profile" className="account-nav-item"><span className="account-nav-icon">◎</span><span>Hồ sơ cá nhân</span></a></nav><div className="account-sidebar-bottom"><div className="account-mini-pitch"><span/></div><p><i/> Cùng đội. Cùng đam mê.</p><small>Chọn đội, tìm kèo, ra sân.</small></div></aside>
+  <div className="account-workspace"><header className="account-topbar"><div className="account-breadcrumb">Không gian cá nhân <span>/</span> <strong>Đội bóng</strong></div><div className="account-user"><span className="account-avatar">{current?.user.full_name.split(/\\s+/).slice(-2).map(x=>x[0]).join('').toUpperCase()}</span><span className="account-user-name">{current?.user.full_name}</span><a href="#/dashboard">Quay lại</a><button className="account-secondary-button" onClick={()=>{window.dispatchEvent(new Event('app:manual-logout'));logout();window.location.hash='/login';}}>Đăng xuất</button></div></header>
+   <main className="account-main"><div className="account-eyebrow">QUẢN LÝ ĐỘI BÓNG</div><div className="account-page-heading"><div><h1>Đội bóng của tôi<span>.</span></h1><p>Tạo đội, quản lý thành viên và xử lý yêu cầu tuyển người.</p></div>{canCreateTeam&&<button className="account-primary-button" onClick={()=>{setDetail(null);setName('');setCreating(v=>!v);setError('');}}>＋ Tạo đội</button>}</div>
+    {error&&<div className="notice-error" role="alert">{error}</div>}{notice&&<div className="notice-success" role="status">{notice}</div>}
+    {creating&&canCreateTeam&&<section className="profile-form-card"><div className="profile-form-heading"><div><h2>Tạo đội bóng mới</h2><p>Bạn sẽ trở thành đội trưởng đội vừa tạo.</p></div></div><form className="profile-form" onSubmit={submitTeam}><div className="form-field"><label htmlFor="team-name">Tên đội bóng</label><input id="team-name" value={name} maxLength={100} onChange={e=>setName(e.target.value)} placeholder="Ví dụ: FC Chiều Thứ Bảy" required/></div><div className="profile-actions"><button className="account-secondary-button" type="button" onClick={()=>setCreating(false)}>Hủy</button><button className="account-primary-button" disabled={busy}>{busy?'Đang lưu…':'Tạo đội'}</button></div></form></section>}
+    <div className="team-workspace">
+     <section className="account-panel"><div className="account-section-heading"><div><h2>Danh sách đội bóng</h2><p>{total} đội trong tài khoản</p></div><button className="account-secondary-button" onClick={()=>void loadList()} disabled={loading}>Làm mới</button></div>
+      {loading&&!detail?<div className="account-loading">Đang tải đội bóng…</div>:teams.length===0?<div className="mm-empty"><h3>Bạn chưa có đội bóng</h3><p>Tạo đội đầu tiên hoặc đăng ký tham gia một đội qua bài tuyển thành viên.</p></div>:<div className="team-manager-list">{teams.map((team,index)=><button key={team.team_id} className={detail?.team_id===team.team_id?'team-manager-item active':'team-manager-item'} onClick={()=>void openTeam(team.team_id)}><span className={'team-manager-crest crest-'+(index%3)}>{team.team_name.split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()}</span><span><strong>{team.team_name}</strong><small>{team.active_member_count} thành viên · {team.creation_type==='AI_RANDOM'?'Đội ghép tự động':'Đội do người chơi tạo'}</small></span><span className="team-manager-status">{team.status==='ACTIVE'?'Hoạt động':'Ngừng'}</span></button>)}</div>}
+      {total>20&&<div className="pagination"><button className="small-button" disabled={loading||page<=1} onClick={()=>setPage(value=>value-1)}>← Trước</button><span>Trang {page} / {Math.ceil(total/20)}</span><button className="small-button" disabled={loading||page*20>=total} onClick={()=>setPage(value=>value+1)}>Sau →</button></div>}
+     </section>
+     <section className="account-panel team-detail-panel">
+      {!detail?<div className="mm-empty"><span>⚽</span><h3>Chọn một đội để xem chi tiết</h3><p>Thông tin đội, danh sách thành viên và yêu cầu tuyển dụng sẽ hiển thị tại đây.</p></div>:<>
+       <div className="account-section-heading"><div><span className="mm-type">CHI TIẾT ĐỘI BÓNG</span><h2>{detail.team_name}</h2><p>{detail.active_member_count} thành viên · {detail.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}</p></div><button className="account-secondary-button" onClick={()=>setEditing(v=>!v)} disabled={!isCaptain}>Chỉnh sửa</button></div>
+       {editing&&<form className="team-inline-edit" onSubmit={submitTeam}><input value={name} onChange={e=>setName(e.target.value)} maxLength={100} aria-label="Tên đội mới"/><button className="account-primary-button" disabled={busy}>Lưu</button></form>}
+       <div className="team-members"><h3>Thành viên</h3>{detail.members.length===0?<p>Chưa có dữ liệu thành viên từ API.</p>:detail.members.map(member=><div className="team-member-row" key={member.user_id}><span className="account-avatar">{member.full_name.split(/\\s+/).slice(-2).map(x=>x[0]).join('').toUpperCase()}</span><div><strong>{member.full_name}</strong><small>{member.role==='CAPTAIN'?'Đội trưởng':'Thành viên'} · {member.status==='ACTIVE'?'Đang tham gia':member.status==='LEFT'?'Đã rời đội':'Đã bị xóa'} · {timeLabel(member.joined_at)}</small></div>{member.role!=='CAPTAIN'&&isCaptain&&member.status==='ACTIVE'&&<button className="account-secondary-button" disabled={busy} onClick={()=>void removeMember(member.user_id)}>Xóa</button>}</div>)}</div>
+       {isCaptain&&<section className="team-requests"><div className="account-section-heading"><div><h3>Yêu cầu tuyển thành viên</h3><p>{recruitment?(recruitment.status==='LOCKED'?'Đề xuất đang chờ xác nhận: ':'Bài tuyển đang mở: ')+recruitment.title:'Đội chưa có bài RECRUIT_MEMBERS đang mở.'}</p></div></div>{applicants.length===0?<p className="input-caption">Chưa có yêu cầu đang chờ xử lý.</p>:applicants.map(item=><div className="team-member-row" key={item.participant_id}><div><strong>Người chơi #{item.user_id}</strong><small>{item.status==='ACCEPTED'?'Đội trưởng đã đồng ý · Chờ ứng viên xác nhận proposal':'Đang chờ đội trưởng xử lý'} · {timeLabel(item.joined_at)}</small></div>{item.status==='PENDING'&&<div className="mm-actions"><button disabled={busy} onClick={()=>void handleApplicant(item.post_id,'ACCEPTED')}>Chấp thuận</button><button className="secondary" disabled={busy} onClick={()=>void handleApplicant(item.post_id,'DECLINED')}>Từ chối</button></div>}</div>)}</section>}
+       <div className="team-detail-actions">{isMember&&!isCaptain&&current?.user.role==='PLAYER'&&<button className="account-secondary-button" onClick={()=>void leaveTeam()} disabled={busy}>Rời đội</button>}</div>
+      </>}
+     </section>
     </div>
-  </div>;
+   </main>
+  </div>
+ </div>;
 }

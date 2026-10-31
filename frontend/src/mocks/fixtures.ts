@@ -5,7 +5,7 @@ export const demoUser: UserSelf = { user_id: 2, full_name: 'Đức · Tài kho�
   phone: null, role: 'PLAYER', skill_level: 'INTERMEDIATE', status: 'ACTIVE' };
 export const initialTeams: Team[] = [
   { team_id: 1, team_name: 'FC Bình Minh', created_by: 2, creation_type: 'USER_CREATED', status: 'ACTIVE', active_member_count: 7 },
-  { team_id: 2, team_name: 'Những người bạn', created_by: 2, creation_type: 'USER_CREATED', status: 'ACTIVE', active_member_count: 5 },
+  { team_id: 2, team_name: 'Những người bạn', created_by: 3, creation_type: 'USER_CREATED', status: 'ACTIVE', active_member_count: 5 },
   { team_id: 3, team_name: 'Đội chiều thứ Bảy', created_by: 2, creation_type: 'AI_RANDOM', status: 'ACTIVE', active_member_count: 4 },
 ];
 export const pitches: Pitch[] = [
@@ -20,10 +20,29 @@ export function createFixtures(now = Date.now()) {
   const start = new Date(tomorrow + 19 * 3600000).toISOString();
   const end = new Date(Date.parse(start) + 90 * 60000).toISOString();
   const created = new Date(now).toISOString();
-  const posts: MatchPost[] = [{ post_id: 1, title: 'FC Bình Minh tìm đối thủ sân 7', description: 'Giao hữu, chia đều tiền sân.',
-    post_type: 'FIND_OPPONENT', team_id: 1, pitch_id: 2, pitch_type: 'PITCH_7', match_time: start,
-    end_time: end, skill_level: 'INTERMEDIATE', payment_rule: 'SPLIT_EQUAL', required_players: null,
-    current_players: 7, expiry_time: new Date(Date.parse(start) - 2 * 3600000).toISOString(), status: 'OPEN', matching_ready: true }];
+  const expiry = new Date(Date.parse(start) - 2 * 3600000).toISOString();
+  const posts: MatchPost[] = [
+    { post_id: 1, title: 'FC Bình Minh tìm đối thủ sân 7', description: 'Giao hữu, chia đều tiền sân.',
+      post_type: 'FIND_OPPONENT', team_id: 1, pitch_id: 2, pitch_type: 'PITCH_7', match_time: start,
+      end_time: end, skill_level: 'INTERMEDIATE', payment_rule: 'SPLIT_EQUAL', required_players: null,
+      current_players: 7, expiry_time: expiry, status: 'LOCKED', matching_ready: true },
+    { post_id: 2, title: 'Những người bạn tuyển thêm cầu thủ', description: 'Cần thêm thành viên cho đội hình sân 7.',
+      post_type: 'RECRUIT_MEMBERS', team_id: 2, pitch_id: null, pitch_type: 'PITCH_7', match_time: start,
+      end_time: end, skill_level: 'INTERMEDIATE', payment_rule: 'SPLIT_EQUAL', required_players: 2,
+      current_players: 5, expiry_time: expiry, status: 'OPEN', matching_ready: true },
+    { post_id: 3, title: 'Tìm đội đá giao hữu cuối tuần', description: 'Cá nhân muốn tìm đội phù hợp.',
+      post_type: 'LOOK_FOR_TEAM', team_id: null, pitch_id: null, pitch_type: null, match_time: null,
+      end_time: null, skill_level: 'AMATEUR', payment_rule: null, required_players: null,
+      current_players: 1, expiry_time: new Date(now + 3 * 86400000).toISOString(), status: 'OPEN', matching_ready: false },
+    { post_id: 4, title: 'Nhóm nhỏ tìm thêm người ghép đội', description: 'Nhóm ba người cần ghép đội.',
+      post_type: 'RANDOM_SQUAD', team_id: 3, pitch_id: null, pitch_type: 'PITCH_5', match_time: start,
+      end_time: end, skill_level: 'BEGINNER', payment_rule: null, required_players: 2,
+      current_players: 3, expiry_time: expiry, status: 'OPEN', matching_ready: true },
+    { post_id: 5, title: 'Những người bạn tìm đối thủ sân 7', description: 'Đội muốn giao hữu với trình độ tương đương.',
+      post_type: 'FIND_OPPONENT', team_id: 2, pitch_id: 2, pitch_type: 'PITCH_7', match_time: start,
+      end_time: end, skill_level: 'INTERMEDIATE', payment_rule: 'SPLIT_EQUAL', required_players: null,
+      current_players: 5, expiry_time: expiry, status: 'LOCKED', matching_ready: true },
+  ];
   const booking: Booking = { booking_id: 21, pitch_id: 2, user_id: 2, start_time: start, end_time: end,
     total_amount: '600000.00', deposit_amount: '120000.00', booking_type: 'ONLINE', status: 'PENDING_HOLD',
     hold_expires_at: new Date(now + 300000).toISOString(), payment_rule: 'SPLIT_EQUAL', created_at: created,
@@ -32,7 +51,7 @@ export function createFixtures(now = Date.now()) {
   const payment: Payment = { payment_id: 31, booking_id: 21, post_id: 1, amount: '60000.00',
     payment_type: 'BOOKING_DEPOSIT', payment_method: 'VNPAY', status: 'PENDING', transaction_code: 'DEMO-ONLY-31',
     refund_for_payment_id: null, paid_at: null };
-  const proposal: ProposalDetail = { proposal_id: 11, source_post_id: 1, target_post_id: 2, candidate_user_id: null,
+  const proposal: ProposalDetail = { proposal_id: 11, source_post_id: 1, target_post_id: 5, candidate_user_id: null,
     proposal_type: 'OPPONENT', compatibility_score: '100.00', status: 'PENDING_CONFIRMATION',
     expires_at: new Date(now + 900000).toISOString(), confirmed_at: null,
     confirmations: [{ user_id: 2, decision: 'PENDING', responded_at: null }, { user_id: 3, decision: 'PENDING', responded_at: null }] };
