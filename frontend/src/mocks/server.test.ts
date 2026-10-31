@@ -23,7 +23,7 @@ describe('matchmaking mock API', () => {
   it('lists all four post types and supports create, edit and cancel', async () => {
     const { api } = await setup();
     const feed = await api.request<{ data: MatchPost[]; meta: { total: number } }>('/match-posts', { auth: false });
-    expect(feed.meta.total).toBe(4);
+    expect(feed.meta.total).toBe(5);
     expect(new Set(feed.data.map(post => post.post_type))).toEqual(new Set([
       'FIND_OPPONENT', 'RECRUIT_MEMBERS', 'LOOK_FOR_TEAM', 'RANDOM_SQUAD',
     ]));
@@ -231,6 +231,54 @@ describe('matchmaking mock API', () => {
     expect(detail.data.members.some(member => member.user_id === candidateLogin.data.user.user_id && member.status === 'ACTIVE')).toBe(true);
     const matches = await api.request<{ data: Match[] }>('/matches');
     expect(matches.data).toHaveLength(0);
+    const finalPost = await api.request<ApiResponse<MatchPost>>('/match-posts/' + post.data.post_id, { auth: false });
+    expect(finalPost.data.status).toBe('MATCHED');
+    expect(finalPost.data.required_players).toBe(0);
+  });
+
+  it('also finalizes membership when the candidate accepts before the captain', async () => {
+    const { api, store } = await setup();
+    const team = await api.request<ApiResponse<{ team_id: number }>>('/teams', {
+      method: 'POST', body: { team_name: 'FC Candidate First' },
+    });
+    const start = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const post = await api.request<ApiResponse<MatchPost>>('/match-posts', {
+      method: 'POST',
+      body: {
+        post_type: 'RECRUIT_MEMBERS', title: 'FC Candidate First tuyển người', team_id: team.data.team_id,
+        pitch_type: 'PITCH_7', match_time: start.toISOString(),
+        end_time: new Date(start.getTime() + 90 * 60 * 1000).toISOString(),
+        skill_level: 'INTERMEDIATE', payment_rule: 'SPLIT_EQUAL', required_players: 1,
+        expiry_time: new Date(start.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    await api.request('/auth/register', {
+      auth: false, method: 'POST',
+      body: { full_name: 'Ứng viên phản hồi trước', email: 'candidate-first@example.test', password: 'password123' },
+    });
+    const candidateLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'candidate-first@example.test', password: 'password123' },
+    });
+    store.set(candidateLogin.data);
+    const request = await api.request<ApiResponse<TeamJoinRequest>>('/teams/' + team.data.team_id + '/join-requests', { method: 'POST' });
+    const candidateAccepted = await api.request<ApiResponse<ProposalDetail>>('/match-proposals/' + request.data.proposal_id + '/respond', {
+      method: 'POST', body: { decision: 'ACCEPTED' },
+    });
+    expect(candidateAccepted.data.status).toBe('PENDING_CONFIRMATION');
+
+    const captainLogin = await api.request<ApiResponse<LoginData>>('/auth/login', {
+      auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' },
+    });
+    store.set(captainLogin.data);
+    const captainAccepted = await api.request<ApiResponse<TeamJoinRequest>>('/teams/' + team.data.team_id + '/join-requests/' + post.data.post_id + '/respond', {
+      method: 'PATCH', body: { decision: 'ACCEPTED' },
+    });
+    expect(captainAccepted.data.status).toBe('ACCEPTED');
+    const detail = await api.request<ApiResponse<TeamDetail>>('/teams/' + team.data.team_id);
+    expect(detail.data.members.some(member => member.user_id === candidateLogin.data.user.user_id && member.status === 'ACTIVE')).toBe(true);
+    const finalPost = await api.request<ApiResponse<MatchPost>>('/match-posts/' + post.data.post_id, { auth: false });
+    expect(finalPost.data.status).toBe('MATCHED');
+    expect(finalPost.data.required_players).toBe(0);
   });
 
 });
