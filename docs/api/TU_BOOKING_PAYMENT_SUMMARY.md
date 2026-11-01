@@ -1,5 +1,5 @@
 
-Cập nhật ngày 02/11/2026. Nhánh `feature/tu-booking-payment`, commit chính `f086bf8`, chưa push và chưa merge.
+Cập nhật ngày 02/11/2026. Nhánh `Tu` trên GitHub, commit chính `f086bf8`, chưa merge.
 
 ## Tình trạng
 

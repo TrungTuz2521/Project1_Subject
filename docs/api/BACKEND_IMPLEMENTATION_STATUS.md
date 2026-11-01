@@ -58,7 +58,7 @@ không sửa seed plaintext để lách bcrypt, không nhận Google Login hoặ
 - Cần kiểm thử staging phần Tú: số dư giảm sau khoản đã ghi; QR không tự ghi SUCCESS; tổng receipt sai bị chặn;
   đủ tiền không ghi thêm, key cũ không đổi payload; PLAYER/booking chưa hết giờ không xác nhận được.
 
-## Phần Tú — cập nhật ngày 01/11/2026 (nhánh feature/tu-booking-payment, chưa merge)
+## Phần Tú — cập nhật ngày 01/11/2026 (nhánh Tu, chưa merge)
 
 Đã triển khai theo API 1.8 và service contract 1.1: Models FieldComplex/Pitch/Booking/Payment; danh sách sân, availability, giữ sân; cọc qua VNPay, IPN; hết hạn, hủy, hoàn tiền; số dư, QR chung, xác nhận thu đủ, ghi thu tại quầy; Admin sân/lịch/khóa bảo trì/giao dịch; doanh thu, thống kê, Excel. Điểm nối `booking_service`, `booking_reader`, `cancel_match` đã đăng ký thật, nên luồng hai xác nhận và hủy trận không còn trả 503. Không tạo bảng, cột hay migration; không có `booking_settlements`.
 
