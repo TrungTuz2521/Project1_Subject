@@ -235,7 +235,7 @@ Không đưa `.env`, mật khẩu, JWT secret hoặc chuỗi kết nối có m�
 
 Luồng ghép trận: đăng bài → AI đề xuất → hai bên xác nhận → giữ sân 5 phút → thu đủ cọc → xác nhận trận. Các quy tắc này cần được triển khai trong backend; migration không tự thực thi chúng.
 
-Quyết toán sau trận tại quầy: Admin đối chiếu với hai đội và chọn đội thắng hoặc hòa đối với thể thức đội thua trả phần còn lại; backend tính tiền, frontend hiện khoản phải trả rồi QR cho đúng người trả. Hòa chia 50–50; không hoàn cọc đội thắng. Thu tiền mặt có nút Admin xác nhận riêng. Không có bước hai đội xác nhận trên ứng dụng hoặc chờ 30 phút. API/schema/frontend quyết toán chưa triển khai; V3 không chứa phần này, cần bổ sung riêng theo mục 15.1 của hợp đồng.
+Thu phần còn lại sau trận (chốt 29/10/2026): Admin xem tổng tiền, cọc thực thu và tổng còn thiếu; hiển thị một QR chuyển khoản chung theo booking. Hai đội tự chia tiền theo thể thức đã chọn, có thể chuyển nhiều lần hoặc trả trực tiếp. Admin kiểm tra thực nhận và bấm Xác nhận đã thu đủ; backend ghi Payment theo từng khoản/phương thức, chống trùng và lưu Admin/thời gian. Không chọn đội thắng/hòa, không chia nghĩa vụ từng đội, không cần bảng booking_settlements hay cột kết quả. Cọc trước trận giữ nguyên. Hợp đồng API mới tại mục 15.1; Tú triển khai balance/xác nhận thu, Huy dựng UI; phần này chưa được triển khai trong code Đức.
 
 Đọc [hợp đồng API và Models](docs/api/API_MODELS_CONTRACT_PROJECT1.md) trước khi bắt đầu code; dùng chung tên cột, ENUM, endpoint và dữ liệu gửi/nhận theo tài liệu.
 

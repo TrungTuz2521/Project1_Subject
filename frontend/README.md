@@ -22,6 +22,9 @@ Build production luôn tắt mock, kể cả khi VITE_USE_MOCKS=true. `npm run p
 
 ## Chuyển sang Flask thật
 
+Xem [hướng dẫn test frontend/backend từng bước](../docs/setup/FRONTEND_BACKEND_TESTING.md), bao gồm tạo .env.local, chạy hai server, tài khoản test và cách xử lý lỗi.
+
+
 Tạo `frontend/.env.local` từ `.env.example`:
 
 ```dotenv
