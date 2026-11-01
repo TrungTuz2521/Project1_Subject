@@ -95,6 +95,18 @@ python -m flask --app app:create_app reconcile-payments
 
 IPN VNPay là `GET /api/v1/payments/vnpay/ipn`, phải khai báo URL HTTPS công khai trong tài khoản merchant.
 
+### Test bằng Postman
+
+Import `postman/football_booking.postman_collection.json`, rồi chạy server thử từ thư mục `backend`:
+
+```powershell
+python postman/run_local.py
+```
+
+Server này luôn dùng SQLite tạm và secret thử, kể cả khi có `.env`, nên không chạm TiDB. Chạy cả collection bằng **Run collection** theo đúng thứ tự. Muốn chạy lại thì khởi động lại server để có dữ liệu mới. Collection tự bỏ qua request nếu `base_url` không phải localhost.
+
+IPN trong collection do script tự ký bằng secret thử, không phải VNPay gọi thật. Collection chỉ gồm route phần Tú; luồng hai đội nằm ở `tests/test_booking_payment.py`.
+
 ### Test đồng thời
 
 SQLite không kiểm chứng được khóa. Các ca trong `tests/test_booking_concurrency.py` cần database thật và tự bỏ qua nếu không có `TEST_DATABASE_URL`:
