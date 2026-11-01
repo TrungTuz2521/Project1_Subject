@@ -2,6 +2,7 @@
 
 Phiên bản 1.1 — cập nhật ngày 29/10/2026: thu phần còn lại theo booking, QR chung và Admin xác nhận thực thu. Đức và Tú dùng tệp này khi triển khai và review backend. Đây là hợp đồng nội bộ giữa các service, chưa phải mã đã có hoặc kết quả kiểm thử. Hợp đồng HTTP/JSON nằm tại [API và Models](API_MODELS_CONTRACT_PROJECT1.md); tài liệu này chốt trách nhiệm, dữ liệu nội bộ, transaction và các điểm tích hợp còn thiếu.
 
+
 ## 1. Phân công và nguồn dữ liệu
 
 | Người | Sở hữu |

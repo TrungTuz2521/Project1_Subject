@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { TeamsPage } from './features/matchmaking/TeamsPage';
+import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
+import { SchedulePage } from './features/matchmaking/SchedulePage';
 import { getCurrentUser, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
 import { session } from './stores/session';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
-const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/matchmaking', '/notifications'] as const;
+const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/matchmaking', '/notifications', '/schedule'] as const;
 type Route = typeof routes[number];
 const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
@@ -72,12 +74,13 @@ export default function App() {
   // Public auth URLs should never display an authenticated user a login form.
   const activeRoute: Route = route === '/login' || route === '/register' ? '/dashboard' : route;
   if (activeRoute === '/teams') return <TeamsPage />;
+  if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage /></AppShell>;
+  if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage initialTab='notifications' /></AppShell>;
+  if (activeRoute === '/schedule') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><SchedulePage /></AppShell>;
   if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} /></AppShell>;
-  if (activeRoute === '/bookings' || activeRoute === '/matchmaking' || activeRoute === '/notifications') {
+  if (activeRoute === '/bookings') {
     const pages = {
       '/bookings': { title: 'Đặt sân', number: '03', description: 'Tìm sân phù hợp và quản lý lịch đặt sân của bạn.' },
-      '/matchmaking': { title: 'Ghép đội và tìm trận', number: '04', description: 'Tìm đối thủ, tìm đồng đội và theo dõi đề xuất ghép trận.' },
-      '/notifications': { title: 'Thông báo', number: '05', description: 'Theo dõi xác nhận trận đấu, lịch sân và trạng thái thanh toán.' },
     } as const;
     return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ComingSoonPage {...pages[activeRoute]} /></AppShell>;
   }
@@ -141,6 +144,12 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
     catch (reason) { setError(errorMessage(reason)); }
     finally { setBusy(false); }
   }
+  async function demoCaptainLogin() {
+    setEmail('captain@example.test'); setPassword('mock-only'); setError(''); setBusy(true);
+    try { await login({ email: 'captain@example.test', password: 'mock-only' }); onLogin(); }
+    catch (reason) { setError(errorMessage(reason)); }
+    finally { setBusy(false); }
+  }
 
   return <div className="auth-screen">
     <aside className="auth-visual">
@@ -167,7 +176,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
           {error && <div className="notice-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">↗</span></button>
         </form>
-        {useMocks && !isRegister && <button type="button" className="demo-login-button" disabled={busy} onClick={demoLogin}>Đăng nhập nhanh bằng tài khoản mẫu</button>}
+        {useMocks && !isRegister && <><button type="button" className="demo-login-button" disabled={busy} onClick={demoLogin}>Đăng nhập nhanh bằng tài khoản mẫu</button><button type="button" className="demo-login-button" disabled={busy} onClick={demoCaptainLogin}>Thử tài khoản đội trưởng mẫu</button></>}
         <p className="auth-switch">{isRegister ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'} <button type="button" onClick={() => { clearNotice(); setError(''); onNavigate(isRegister ? '/login' : '/register'); }}>{isRegister ? 'Đăng nhập' : 'Đăng ký ngay'}</button></p>
         <p className="auth-terms">Bằng việc tiếp tục, bạn đồng ý tuân thủ các quy định sử dụng của hệ thống.</p>
       </section>
@@ -180,7 +189,7 @@ function AppShell({ current, route, onLogout, children }: { current: UserSelf; r
   const navItems: { path: Route; icon: string; label: string }[] = [
     { path: '/dashboard', icon: '⌂', label: 'Tổng quan' }, { path: '/teams', icon: '♧', label: 'Đội bóng của tôi' },
     { path: '/bookings', icon: '▦', label: 'Đặt sân' }, { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận' },
-    { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
+    { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/schedule', icon: '▦', label: 'Lịch thi đấu' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
   ];
   const title = navItems.find((item) => item.path === route)?.label ?? 'Tổng quan';
   return <div className="account-shell">
