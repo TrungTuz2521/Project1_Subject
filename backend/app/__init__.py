@@ -21,6 +21,8 @@ def create_app(config=None):
     from app import models
     from app.routes.api import api
     app.register_blueprint(api, url_prefix='/api/v1')
+    from app.booking_module import install as install_booking
+    install_booking(app)
     from app.middleware.rate_limit import install_auth_limit
     install_auth_limit(app)
     from app.infrastructure.retry import retry_conflicts

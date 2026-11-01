@@ -218,6 +218,8 @@ gateway.cancel_payment(merchant_reference)  # có thể trả UNSUPPORTED
 gateway.verify_callback(raw_body, headers_or_query)
 ```
 
+Bổ sung khi triển khai (01/11/2026): VNPay cần ngày giao dịch gốc nên các hàm nhận thêm keyword: `create_payment(..., created_at, client_ip)`, `query_payment(reference, amount, transaction_date)`, `request_refund(..., transaction_date)`, `query_refund(reference, merchant_reference, amount, transaction_date)`. Hàm query có thêm trạng thái `NOT_FOUND` khi nhà cung cấp trả lời giao dịch không tồn tại; timeout vẫn là UNKNOWN. `plan_refunds` nhận thêm `payment_ids` để chỉ lập hoàn cho các khoản tiền đến muộn, chỉ tính toán chứ không ghi; `execute_refund_plan` mới tạo hàng REFUND.
+
 Kết quả adapter phân biệt SUCCESS / FAILED / PENDING / UNKNOWN. Timeout mạng không chứng minh giao dịch thất bại. Merchant reference dùng mã đã lưu trước khi gọi mạng; không tạo mã mới chỉ vì timeout. Cổng chưa tích hợp trả UNSUPPORTED_PAYMENT_METHOD, không giả thành công.
 
 Trong command ghi nhận callback, Tú khóa các bản ghi đúng mục 5 và gọi:

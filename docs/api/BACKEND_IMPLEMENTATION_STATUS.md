@@ -57,3 +57,42 @@ không sửa seed plaintext để lách bcrypt, không nhận Google Login hoặ
   kiểm thử mới cần tổng thiếu 480000 cho cả hai thể thức, QR chung, nhiều khoản CASH/BANK_TRANSFER, xác nhận lặp/hai tab.
 - Cần kiểm thử staging phần Tú: số dư giảm sau khoản đã ghi; QR không tự ghi SUCCESS; tổng receipt sai bị chặn;
   đủ tiền không ghi thêm, key cũ không đổi payload; PLAYER/booking chưa hết giờ không xác nhận được.
+
+## Phần Tú — cập nhật ngày 01/11/2026 (nhánh feature/tu-booking-payment, chưa merge)
+
+Đã triển khai theo API 1.8 và service contract 1.1: Models FieldComplex/Pitch/Booking/Payment; danh sách sân, availability, giữ sân; cọc qua VNPay, IPN; hết hạn, hủy, hoàn tiền; số dư, QR chung, xác nhận thu đủ, ghi thu tại quầy; Admin sân/lịch/khóa bảo trì/giao dịch; doanh thu, thống kê, Excel. Điểm nối `booking_service`, `booking_reader`, `cancel_match` đã đăng ký thật, nên luồng hai xác nhận và hủy trận không còn trả 503. Không tạo bảng, cột hay migration; không có `booking_settlements`.
+
+### Kết quả xác minh
+
+`python -m unittest discover -s tests` từ thư mục backend: **139 ca đạt**, gồm 25 ca của Đức, 100 ca nghiệp vụ tiền/booking trên SQLite và 14 ca đồng thời. Không đặt `TEST_DATABASE_URL` thì 14 ca đồng thời được bỏ qua.
+
+14 ca đồng thời đã chạy trên một MySQL 8.4 tạm tại máy, READ COMMITTED. Khi tắt `FOR UPDATE` trong tiến trình test, 7/14 ca đỏ, nên các ca này có kiểm chứng được khóa. Test tạo và xóa toàn bộ bảng, vì vậy chỉ chạy khi host là local và tên database kết thúc bằng `_test`; database dùng chung không bao giờ thỏa điều kiện này.
+
+### Chưa kiểm chứng
+
+- **TiDB:** chưa chạy trên TiDB staging, chưa chạy `check-db` với các Model mới. Bảng test do `create_all` tạo dùng VARCHAR thay cho ENUM, nên chưa so khớp được với ENUM thật. Mục 14 của hợp đồng yêu cầu staging trước khi merge.
+- **VNPay thật:** adapter viết theo tài liệu sandbox, mới kiểm tra chữ ký/URL/IPN bằng secret giả và lỗi mạng. querydr/refund chưa gọi thật. Tài liệu VNPay thiếu một dấu `|` trong chuỗi checksum response của querydr; code dùng dấu `|` đầy đủ, cần xác nhận khi có tài khoản sandbox.
+- **MoMo:** chưa tích hợp, trả 422 UNSUPPORTED_PAYMENT_METHOD.
+
+### Giới hạn cần biết
+
+- **Một worker hoàn tiền:** `process-refunds` chỉ chạy một tiến trình. Chưa có outbox/lease nên hai tiến trình song song có thể cùng gửi một yêu cầu hoàn; VNPay được mô tả sẽ từ chối yêu cầu trùng (mã 94) nhưng chưa kiểm chứng.
+- **Audit:** chưa có bảng `audit_events`. Nguyên nhân, người thao tác và lý do hủy tạm ghi vào `bookings.note`/`payments.note` (VARCHAR 255, quá dài thì giữ phần mới nhất). Mã giao dịch của cổng cũng ghi ở `payments.note`.
+- **Hoàn thất bại:** hàng REFUND FAILED không tự gửi lại, Admin đối soát rồi gọi lại `POST /admin/payments/{id}/refund`.
+
+### Hành vi hợp đồng chưa nói rõ, cần Đức/Huy xem
+
+| Nội dung | Cách đã làm |
+| --- | --- |
+| Hoàn CASH/BANK_TRANSFER | Không có cổng để hoàn. `POST /admin/payments/{id}/refund` trên giao dịch gốc nghĩa là Admin đã trả tiền, hoàn tất ngay và trả 200; cổng online trả 202 |
+| Lưới giờ | Lượt cuối 21:00–22:30, vì lưới 90 phút từ 06:00 không có lượt nào kết thúc đúng 23:00 |
+| Người chơi tự hủy | Chặn sau giờ bắt đầu đá (409); Admin vẫn hủy được |
+| GET /pitches | Trả cả sân INACTIVE để màn hình Admin mở lại được; đặt sân vẫn từ chối, availability hiện MAINTENANCE |
+| Availability | Chỉ nhận từ hôm nay đến 10 ngày tới, không trả slot đã bắt đầu |
+| QR chung | Chỉ hiện khi booking CONFIRMED và đã hết giờ đá |
+| Phase Admin | UPCOMING/IN_PROGRESS/PAID có thể trùng nhau: booking đã trả đủ trước giờ đá thuộc cả UPCOMING và PAID |
+
+### Việc của thành viên khác
+
+- **Đức:** review `app/__init__.py`, `models/__init__.py` và fixture `tests/test_backend.py` (bỏ bảng tự tạo, dùng Model thật; logic các ca giữ nguyên). `reschedule_booking` có cập nhật giờ trên Match và MatchPost trong cùng transaction, cần xem có muốn chuyển sang match_service không.
+- **Huy:** `frontend/src/services/huyApi.ts` vẫn gọi `/settlement*` đã bỏ từ bản 1.8, các route này trả 404. Cần đổi sang `GET /admin/bookings/{id}/balance` và `POST /admin/bookings/{id}/confirm-paid`. Bản demo cho bước 30 phút, backend chỉ nhận lưới 90 phút.
