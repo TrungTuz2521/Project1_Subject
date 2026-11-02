@@ -1,0 +1,3882 @@
+{
+  "info": {
+    "_postman_id": "4306c3ba-9468-5276-8f10-df124239b388",
+    "name": "Football - Booking và thanh toán (Tú)",
+    "description": "Kiểm thử 30 route booking, thanh toán và báo cáo.\n\n1. Từ thư mục backend chạy `python postman/run_local.py`.\n2. Chạy cả collection bằng Run collection, theo đúng thứ tự.\n3. Chạy lại thì khởi động lại run_local.py để có dữ liệu mới.\n\nCollection ghi dữ liệu nên tự bỏ qua mọi request khi base_url không phải localhost. Không chạy trên TiDB dùng chung.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "{",
+          "    const base = pm.variables.get('base_url') || '';",
+          "    if (!/^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?\\//.test(base)) {",
+          "        console.error('Collection nay ghi du lieu, chi chay voi server local. base_url = ' + base);",
+          "        pm.execution.skipRequest();",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "admin_email",
+      "value": "admin@example.test",
+      "type": "string"
+    },
+    {
+      "key": "player1_email",
+      "value": "player1@example.test",
+      "type": "string"
+    },
+    {
+      "key": "player2_email",
+      "value": "player2@example.test",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "Password123!",
+      "type": "string"
+    },
+    {
+      "key": "vnp_tmn_code",
+      "value": "POSTMAN1",
+      "type": "string"
+    },
+    {
+      "key": "vnp_hash_secret",
+      "value": "postman-local-only-hash-secret",
+      "type": "string"
+    },
+    {
+      "key": "ended_booking_id",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Chuẩn bị",
+      "description": "Kiểm tra server, đăng nhập và lưu token. Chạy trước các thư mục khác.",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    const vnDate = days => new Date(Date.now() + (7 * 3600 * 1000) + days * 86400000).toISOString().slice(0, 10);",
+                  "    pm.collectionVariables.set('date_yesterday', vnDate(-1));",
+                  "    pm.collectionVariables.set('date_today', vnDate(0));",
+                  "    pm.collectionVariables.set('date_tomorrow', vnDate(1));",
+                  "    pm.collectionVariables.set('date_too_far', vnDate(11));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('status ok', () => pm.expect(pm.response.json().data.status).to.eql('ok'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập sai mật khẩu",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"SaiMatKhau!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "    pm.test('Ma loi INVALID_CREDENTIALS', () => pm.expect(pm.response.json().error.code).to.eql('INVALID_CREDENTIALS'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.collectionVariables.set('admin_token', data.access_token);",
+                  "    pm.collectionVariables.set('admin_id', data.user.user_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập Player 1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{player1_email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.collectionVariables.set('player1_token', data.access_token);",
+                  "    pm.collectionVariables.set('player1_id', data.user.user_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập Player 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{player2_email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.collectionVariables.set('player2_token', data.access_token);",
+                  "    pm.collectionVariables.set('player2_id', data.user.user_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 Danh mục sân",
+      "description": "Route công khai, không cần token.",
+      "item": [
+        {
+          "name": "Thông tin cụm sân",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/field-complex",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const policy = pm.response.json().data.policy;",
+                  "    pm.test('Giữ sân 300 giây, lượt 90 phút', () => { pm.expect(policy.hold_seconds).to.eql(300); pm.expect(policy.slot_duration_minutes).to.eql(90); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Danh sách sân",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const rows = pm.response.json().data;",
+                  "    const active = rows.find(p => p.status === 'ACTIVE' && p.pitch_type === 'PITCH_5');",
+                  "    const inactive = rows.find(p => p.status === 'INACTIVE');",
+                  "    pm.test('Có sân ACTIVE và sân INACTIVE', () => { pm.expect(active).to.exist; pm.expect(inactive).to.exist; });",
+                  "    pm.test('Giá là chuỗi, không phải số', () => pm.expect(active.price_per_slot).to.be.a('string'));",
+                  "    pm.collectionVariables.set('pitch_id', active.pitch_id);",
+                  "    pm.collectionVariables.set('inactive_pitch_id', inactive.pitch_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lọc sân theo loại và giá",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches?pitch_type=PITCH_7&min_price=800000",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const rows = pm.response.json().data;",
+                  "    pm.test('Có kết quả và đúng điều kiện lọc', () => {",
+                  "        pm.expect(rows).to.not.be.empty;",
+                  "        rows.forEach(p => { pm.expect(p.pitch_type).to.eql('PITCH_7'); pm.expect(Number(p.price_per_slot)).to.be.at.least(800000); });",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lọc giá min lớn hơn max",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches?min_price=9&max_price=1",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chi tiết sân",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sân không tồn tại",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/999999",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lịch trống ngày mai",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}/availability?date={{date_tomorrow}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const slots = pm.response.json().data.slots;",
+                  "    const free = slots.filter(s => s.status === 'AVAILABLE');",
+                  "    pm.test('Đủ 5 slot trống. Nếu thiếu, khởi động lại run_local.py', () => pm.expect(free.length).to.be.at.least(5));",
+                  "    ['a', 'b', 'c', 'd', 'e'].forEach((name, i) => {",
+                  "        pm.collectionVariables.set('slot_' + name + '_start', free[i].start_time);",
+                  "        pm.collectionVariables.set('slot_' + name + '_end', free[i].end_time);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lịch quá 10 ngày",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}/availability?date={{date_too_far}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Giữ sân và cọc VNPay",
+      "description": "Luồng chính: giữ sân, tạo phiên cọc, IPN ký bằng secret local, booking CONFIRMED. Giữ sân chỉ có 300 giây, nên chạy liền cả thư mục. IPN do script giả lập, không phải VNPay thật.",
+      "item": [
+        {
+          "name": "Giữ sân không có token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "    pm.test('Ma loi UNAUTHORIZED', () => pm.expect(pm.response.json().error.code).to.eql('UNAUTHORIZED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin không được đặt như Player",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Giữ sân",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "    pm.test('Booking PENDING_HOLD', () => pm.expect(pm.response.json().data.status).to.eql('PENDING_HOLD'));",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Cọc 20% của 600000', () => pm.expect(data.deposit_amount).to.eql('120000.00'));",
+                  "    pm.test('Có hạn giữ sân', () => pm.expect(data.hold_expires_at).to.be.a('string'));",
+                  "    pm.collectionVariables.set('booking_id', data.booking_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Người khác giữ trùng slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi SLOT_UNAVAILABLE', () => pm.expect(pm.response.json().error.code).to.eql('SLOT_UNAVAILABLE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lượt không đúng 90 phút",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_b_start}}\",\n  \"end_time\": \"{{slot_a_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đặt sân INACTIVE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{inactive_pitch_id}},\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi SLOT_UNAVAILABLE', () => pm.expect(pm.response.json().error.code).to.eql('SLOT_UNAVAILABLE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Slot đang giữ hiện HELD",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}/availability?date={{date_tomorrow}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const slot = pm.response.json().data.slots.find(s => s.start_time === pm.collectionVariables.get('slot_a_start'));",
+                  "    pm.test('Slot hiện HELD', () => pm.expect(slot.status).to.eql('HELD'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Booking của tôi",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/bookings/my?status=PENDING_HOLD",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const id = pm.collectionVariables.get('booking_id');",
+                  "    pm.test('Có booking vừa giữ', () => pm.expect(pm.response.json().data.map(b => b.booking_id)).to.include(id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chi tiết booking",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/bookings/{{booking_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Người khác không xem được booking",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/bookings/{{booking_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player2_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạo phiên cọc VNPay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/deposit",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{booking_id}},\n  \"payment_method\": \"VNPAY\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Có URL thanh toán đã ký', () => pm.expect(data.payment_url).to.include('vnp_SecureHash='));",
+                  "    pm.test('Phiên đang PENDING', () => pm.expect(data.status).to.eql('PENDING'));",
+                  "    pm.collectionVariables.set('deposit_payment_id', data.payment_id);",
+                  "    pm.collectionVariables.set('deposit_code', data.transaction_code);",
+                  "    pm.collectionVariables.set('deposit_amount', data.amount);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gọi lại dùng lại phiên cũ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/deposit",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{booking_id}},\n  \"payment_method\": \"VNPAY\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Cùng mã giao dịch', () => pm.expect(pm.response.json().data.transaction_code).to.eql(pm.collectionVariables.get('deposit_code')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cọc qua MoMo chưa hỗ trợ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/deposit",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{booking_id}},\n  \"payment_method\": \"MOMO\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi UNSUPPORTED_PAYMENT_METHOD', () => pm.expect(pm.response.json().error.code).to.eql('UNSUPPORTED_PAYMENT_METHOD'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPN sai chữ ký",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/vnpay/ipn?{{vnp_query}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    const CryptoJS = require('crypto-js');",
+                  "    const vn = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);",
+                  "    const params = {",
+                  "        vnp_Amount: String(Math.round(Number(pm.collectionVariables.get('deposit_amount')) * 100)), vnp_BankCode: 'NCB', vnp_PayDate: vn, vnp_ResponseCode: '00',",
+                  "        vnp_TmnCode: pm.collectionVariables.get('vnp_tmn_code'), vnp_TransactionNo: '14123456', vnp_TransactionStatus: '00', vnp_TxnRef: pm.collectionVariables.get('deposit_code')",
+                  "    };",
+                  "    const signed = Object.keys(params).sort().map(k => k + '=' + encodeURIComponent(params[k])).join('&');",
+                  "    const hash = CryptoJS.HmacSHA512(signed, 'sai-secret').toString(CryptoJS.enc.Hex);",
+                  "    pm.variables.set('vnp_query', signed + '&vnp_SecureHash=' + hash);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('RspCode 97', () => pm.expect(pm.response.json().RspCode).to.eql('97'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPN sai số tiền",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/vnpay/ipn?{{vnp_query}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    const CryptoJS = require('crypto-js');",
+                  "    const vn = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);",
+                  "    const params = {",
+                  "        vnp_Amount: String(Math.round(Number(Number(pm.collectionVariables.get('deposit_amount')) + 1) * 100)), vnp_BankCode: 'NCB', vnp_PayDate: vn, vnp_ResponseCode: '00',",
+                  "        vnp_TmnCode: pm.collectionVariables.get('vnp_tmn_code'), vnp_TransactionNo: '14123456', vnp_TransactionStatus: '00', vnp_TxnRef: pm.collectionVariables.get('deposit_code')",
+                  "    };",
+                  "    const signed = Object.keys(params).sort().map(k => k + '=' + encodeURIComponent(params[k])).join('&');",
+                  "    const hash = CryptoJS.HmacSHA512(signed, pm.collectionVariables.get('vnp_hash_secret')).toString(CryptoJS.enc.Hex);",
+                  "    pm.variables.set('vnp_query', signed + '&vnp_SecureHash=' + hash);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('RspCode 04', () => pm.expect(pm.response.json().RspCode).to.eql('04'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPN mã đơn không tồn tại",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/vnpay/ipn?{{vnp_query}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    const CryptoJS = require('crypto-js');",
+                  "    const vn = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);",
+                  "    const params = {",
+                  "        vnp_Amount: String(Math.round(Number(pm.collectionVariables.get('deposit_amount')) * 100)), vnp_BankCode: 'NCB', vnp_PayDate: vn, vnp_ResponseCode: '00',",
+                  "        vnp_TmnCode: pm.collectionVariables.get('vnp_tmn_code'), vnp_TransactionNo: '14123456', vnp_TransactionStatus: '00', vnp_TxnRef: 'KHONG-TON-TAI'",
+                  "    };",
+                  "    const signed = Object.keys(params).sort().map(k => k + '=' + encodeURIComponent(params[k])).join('&');",
+                  "    const hash = CryptoJS.HmacSHA512(signed, pm.collectionVariables.get('vnp_hash_secret')).toString(CryptoJS.enc.Hex);",
+                  "    pm.variables.set('vnp_query', signed + '&vnp_SecureHash=' + hash);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('RspCode 01', () => pm.expect(pm.response.json().RspCode).to.eql('01'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sau IPN lỗi booking vẫn chờ cọc",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/bookings/{{booking_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking PENDING_HOLD', () => pm.expect(pm.response.json().data.status).to.eql('PENDING_HOLD'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPN thành công",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/vnpay/ipn?{{vnp_query}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    const CryptoJS = require('crypto-js');",
+                  "    const vn = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);",
+                  "    const params = {",
+                  "        vnp_Amount: String(Math.round(Number(pm.collectionVariables.get('deposit_amount')) * 100)), vnp_BankCode: 'NCB', vnp_PayDate: vn, vnp_ResponseCode: '00',",
+                  "        vnp_TmnCode: pm.collectionVariables.get('vnp_tmn_code'), vnp_TransactionNo: '14123456', vnp_TransactionStatus: '00', vnp_TxnRef: pm.collectionVariables.get('deposit_code')",
+                  "    };",
+                  "    const signed = Object.keys(params).sort().map(k => k + '=' + encodeURIComponent(params[k])).join('&');",
+                  "    const hash = CryptoJS.HmacSHA512(signed, pm.collectionVariables.get('vnp_hash_secret')).toString(CryptoJS.enc.Hex);",
+                  "    pm.variables.set('vnp_query', signed + '&vnp_SecureHash=' + hash);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('RspCode 00', () => pm.expect(pm.response.json().RspCode).to.eql('00'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPN gửi lại",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/vnpay/ipn?{{vnp_query}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    const CryptoJS = require('crypto-js');",
+                  "    const vn = new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);",
+                  "    const params = {",
+                  "        vnp_Amount: String(Math.round(Number(pm.collectionVariables.get('deposit_amount')) * 100)), vnp_BankCode: 'NCB', vnp_PayDate: vn, vnp_ResponseCode: '00',",
+                  "        vnp_TmnCode: pm.collectionVariables.get('vnp_tmn_code'), vnp_TransactionNo: '14123456', vnp_TransactionStatus: '00', vnp_TxnRef: pm.collectionVariables.get('deposit_code')",
+                  "    };",
+                  "    const signed = Object.keys(params).sort().map(k => k + '=' + encodeURIComponent(params[k])).join('&');",
+                  "    const hash = CryptoJS.HmacSHA512(signed, pm.collectionVariables.get('vnp_hash_secret')).toString(CryptoJS.enc.Hex);",
+                  "    pm.variables.set('vnp_query', signed + '&vnp_SecureHash=' + hash);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('RspCode 02', () => pm.expect(pm.response.json().RspCode).to.eql('02'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Booking đã CONFIRMED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/bookings/{{booking_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));",
+                  "    pm.test('Player đã trả đủ phần cọc', () => pm.expect(pm.response.json().data.payer_progress[0].status).to.eql('PAID'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Slot đã đặt hiện BOOKED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}/availability?date={{date_tomorrow}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const slot = pm.response.json().data.slots.find(s => s.start_time === pm.collectionVariables.get('slot_a_start'));",
+                  "    pm.test('Slot hiện BOOKED', () => pm.expect(slot.status).to.eql('BOOKED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cọc lại sau khi đã xác nhận",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/deposit",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{booking_id}},\n  \"payment_method\": \"VNPAY\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi STATE_CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('STATE_CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chi tiết giao dịch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/{{deposit_payment_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Giao dịch SUCCESS', () => pm.expect(pm.response.json().data.status).to.eql('SUCCESS'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Người khác không xem được giao dịch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/{{deposit_payment_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player2_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Giao dịch của tôi",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/payments/my",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const id = pm.collectionVariables.get('deposit_payment_id');",
+                  "    pm.test('Có giao dịch cọc', () => pm.expect(pm.response.json().data.map(p => p.payment_id)).to.include(id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "IPN MoMo chưa hỗ trợ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/momo/ipn",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi UNSUPPORTED_PAYMENT_METHOD', () => pm.expect(pm.response.json().error.code).to.eql('UNSUPPORTED_PAYMENT_METHOD'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Hủy khi đang giữ sân",
+      "description": "Hủy lúc chưa trả tiền nên không có khoản hoàn.",
+      "item": [
+        {
+          "name": "Giữ sân để hủy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_b_start}}\",\n  \"end_time\": \"{{slot_b_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "    pm.collectionVariables.set('hold_id', pm.response.json().data.booking_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy thiếu lý do",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings/{{hold_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Người khác không hủy được",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings/{{hold_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Thử hủy hộ\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy giữ sân",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings/{{hold_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Đổi ý\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CANCELLED', () => pm.expect(pm.response.json().data.status).to.eql('CANCELLED'));",
+                  "    pm.test('Không có khoản hoàn', () => pm.expect(pm.response.json().data.refund_summary.refund_count).to.eql(0));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy lại vẫn 200",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings/{{hold_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Đổi ý\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CANCELLED', () => pm.expect(pm.response.json().data.status).to.eql('CANCELLED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Slot đã hủy trống lại",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}/availability?date={{date_tomorrow}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const slot = pm.response.json().data.slots.find(s => s.start_time === pm.collectionVariables.get('slot_b_start'));",
+                  "    pm.test('Slot hiện AVAILABLE', () => pm.expect(slot.status).to.eql('AVAILABLE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Admin quản lý sân",
+      "description": "Tạo và sửa sân.",
+      "item": [
+        {
+          "name": "Player bị chặn",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_name\": \"Sân X\",\n  \"pitch_type\": \"PITCH_5\",\n  \"price_per_slot\": \"500000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Loại sân không hợp lệ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_name\": \"Sân X\",\n  \"pitch_type\": \"PITCH_11\",\n  \"price_per_slot\": \"500000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Giá lẻ đồng bị từ chối",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_name\": \"Sân X\",\n  \"pitch_type\": \"PITCH_5\",\n  \"price_per_slot\": \"500000.50\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạo sân",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_name\": \"Sân 5 mới\",\n  \"pitch_type\": \"PITCH_5\",\n  \"price_per_slot\": \"500000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Sân mới ACTIVE', () => pm.expect(data.status).to.eql('ACTIVE'));",
+                  "    pm.collectionVariables.set('new_pitch_id', data.pitch_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sửa giá sân",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches/{{new_pitch_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_per_slot\": \"550000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Giá đã đổi', () => pm.expect(pm.response.json().data.price_per_slot).to.eql('550000.00'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạm dừng sân",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches/{{new_pitch_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Sân INACTIVE', () => pm.expect(pm.response.json().data.status).to.eql('INACTIVE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sửa sân không tồn tại",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/pitches/999999",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Admin lịch và thu tại quầy",
+      "description": "Booking do Admin tạo, ghi cọc tiền mặt, đổi lịch, khóa bảo trì.",
+      "item": [
+        {
+          "name": "Player bị chặn",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Danh sách booking",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings?status=CONFIRMED",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const rows = pm.response.json().data;",
+                  "    pm.test('Chỉ có CONFIRMED, kèm tên sân và số dư', () => {",
+                  "        pm.expect(rows).to.not.be.empty;",
+                  "        rows.forEach(b => { pm.expect(b.status).to.eql('CONFIRMED'); pm.expect(b.pitch_name).to.be.a('string'); pm.expect(b.balance).to.exist; });",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lọc đã đá chưa thu đủ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings?phase=ENDED_UNPAID",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const id = Number(pm.collectionVariables.get('ended_booking_id'));",
+                  "    pm.test('Có booking đã kết thúc', () => pm.expect(pm.response.json().data.map(b => b.booking_id)).to.include(id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Phase không hợp lệ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings?phase=ABC",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin tạo booking cho khách",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{player2_id}},\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_c_start}}\",\n  \"end_time\": \"{{slot_c_end}}\",\n  \"note\": \"Khách gọi điện\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "    pm.test('Booking PENDING_HOLD', () => pm.expect(pm.response.json().data.status).to.eql('PENDING_HOLD'));",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Loại MANUAL_ADMIN', () => pm.expect(data.booking_type).to.eql('MANUAL_ADMIN'));",
+                  "    pm.collectionVariables.set('manual_id', data.booking_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ghi cọc vượt phần phải trả",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/record",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{manual_id}},\n  \"user_id\": {{player2_id}},\n  \"amount\": \"999999\",\n  \"payment_type\": \"BOOKING_DEPOSIT\",\n  \"payment_method\": \"CASH\",\n  \"reference\": \"PHIEU-0\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ghi cọc tiền mặt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/record",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{manual_id}},\n  \"user_id\": {{player2_id}},\n  \"amount\": \"120000\",\n  \"payment_type\": \"BOOKING_DEPOSIT\",\n  \"payment_method\": \"CASH\",\n  \"reference\": \"PHIEU-1\",\n  \"note\": \"Thu tại quầy\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "    pm.test('Giao dịch SUCCESS', () => pm.expect(pm.response.json().data.status).to.eql('SUCCESS'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ghi lại cùng phiếu không tạo thêm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/record",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{manual_id}},\n  \"user_id\": {{player2_id}},\n  \"amount\": \"120000\",\n  \"payment_type\": \"BOOKING_DEPOSIT\",\n  \"payment_method\": \"CASH\",\n  \"reference\": \"PHIEU-1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cùng phiếu khác số tiền",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/record",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{manual_id}},\n  \"user_id\": {{player2_id}},\n  \"amount\": \"100000\",\n  \"payment_type\": \"BOOKING_DEPOSIT\",\n  \"payment_method\": \"CASH\",\n  \"reference\": \"PHIEU-1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi STATE_CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('STATE_CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đủ cọc thì CONFIRMED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/bookings/{{manual_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CONFIRMED', () => pm.expect(pm.response.json().data.status).to.eql('CONFIRMED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đổi lịch sang slot D",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{manual_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_time\": \"{{slot_d_start}}\",\n  \"end_time\": \"{{slot_d_end}}\",\n  \"reason\": \"Khách xin đổi giờ\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Đã sang giờ mới', () => pm.expect(pm.response.json().data.start_time).to.eql(pm.collectionVariables.get('slot_d_start')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đổi lịch vào slot đã có người",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{manual_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\",\n  \"reason\": \"Thử trùng\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi SLOT_UNAVAILABLE', () => pm.expect(pm.response.json().error.code).to.eql('SLOT_UNAVAILABLE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đổi lịch sang sân khác giá",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{manual_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_time\": \"{{slot_d_start}}\",\n  \"end_time\": \"{{slot_d_end}}\",\n  \"pitch_id\": 2,\n  \"reason\": \"Thử đổi sân\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi PRICE_CHANGE_REQUIRES_REBOOK', () => pm.expect(pm.response.json().error.code).to.eql('PRICE_CHANGE_REQUIRES_REBOOK'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Khóa bảo trì",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/maintenance-locks",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_e_start}}\",\n  \"end_time\": \"{{slot_e_end}}\",\n  \"reason\": \"Sửa đèn\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "    pm.test('Booking MAINTENANCE', () => pm.expect(pm.response.json().data.status).to.eql('MAINTENANCE'));",
+                  "    pm.test('Khóa bảo trì không có tiền', () => pm.expect(pm.response.json().data.total_amount).to.eql('0.00'));",
+                  "    pm.collectionVariables.set('lock_id', pm.response.json().data.booking_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Khóa đè booking khách",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/maintenance-locks",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_a_start}}\",\n  \"end_time\": \"{{slot_a_end}}\",\n  \"reason\": \"Thử đè\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi SLOT_UNAVAILABLE', () => pm.expect(pm.response.json().error.code).to.eql('SLOT_UNAVAILABLE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Slot khóa hiện MAINTENANCE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/pitches/{{pitch_id}}/availability?date={{date_tomorrow}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const slot = pm.response.json().data.slots.find(s => s.start_time === pm.collectionVariables.get('slot_e_start'));",
+                  "    pm.test('Slot hiện MAINTENANCE', () => pm.expect(slot.status).to.eql('MAINTENANCE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Không đặt được slot đang khóa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch_id\": {{pitch_id}},\n  \"start_time\": \"{{slot_e_start}}\",\n  \"end_time\": \"{{slot_e_end}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi SLOT_UNAVAILABLE', () => pm.expect(pm.response.json().error.code).to.eql('SLOT_UNAVAILABLE'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mở khóa bảo trì",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/maintenance-locks/{{lock_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Đã sửa xong\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CANCELLED', () => pm.expect(pm.response.json().data.status).to.eql('CANCELLED'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mở khóa với booking thường",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/maintenance-locks/{{manual_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Thử sai\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 Số dư và xác nhận thu đủ",
+      "description": "Dùng booking đã kết thúc do run_local.py tạo sẵn: giá 600000, đã cọc 120000. Chỉ xác nhận được một lần, muốn chạy lại thì khởi động lại run_local.py.",
+      "item": [
+        {
+          "name": "Player bị chặn xem số dư",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Số dư booking chưa đá chưa có QR",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings/{{booking_id}}/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Chưa có QR vì chưa hết giờ', () => { pm.expect(data.qr_payload).to.be.null; pm.expect(data.qr_unavailable_reason).to.be.a('string'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác nhận khi chưa hết giờ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"480000\",\n  \"idempotency_key\": \"chua-het-gio-1\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"480000\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi STATE_CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('STATE_CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Số dư có QR chung",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Còn thiếu 480000', () => { pm.expect(data.outstanding_amount).to.eql('480000.00'); pm.expect(data.payment_status).to.eql('PARTIAL'); });",
+                  "    pm.test('QR EMVCo đúng số tiền', () => { pm.expect(data.qr_payload).to.include('5406480000'); pm.expect(data.qr_payload.slice(-8, -4)).to.eql('6304'); });",
+                  "    pm.test('Mã chuyển khoản theo booking', () => pm.expect(data.transfer_reference).to.eql('BOOKING-' + pm.collectionVariables.get('ended_booking_id')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Player bị chặn xác nhận",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"480000\",\n  \"idempotency_key\": \"player-thu-1\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"480000\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Số dư mong đợi đã cũ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"100000\",\n  \"idempotency_key\": \"so-du-cu-1\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"100000\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi STATE_CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('STATE_CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tổng khoản thu không khớp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"480000\",\n  \"idempotency_key\": \"sai-tong-1\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"400000\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác nhận thu đủ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"480000\",\n  \"idempotency_key\": \"thu-du-0001\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"200000\",\n      \"reference\": \"PHIEU-2\"\n    },\n    {\n      \"payment_method\": \"BANK_TRANSFER\",\n      \"amount\": \"280000\",\n      \"reference\": \"FT123\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Đã thu đủ', () => { pm.expect(data.outstanding_amount).to.eql('0.00'); pm.expect(data.payment_status).to.eql('PAID'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gửi lại cùng mã không ghi thêm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"480000\",\n  \"idempotency_key\": \"thu-du-0001\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"200000\",\n      \"reference\": \"PHIEU-2\"\n    },\n    {\n      \"payment_method\": \"BANK_TRANSFER\",\n      \"amount\": \"280000\",\n      \"reference\": \"FT123\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Tiền đã thu không tăng', () => pm.expect(pm.response.json().data.collected_amount).to.eql('600000.00'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cùng mã khác nội dung",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"480000\",\n  \"idempotency_key\": \"thu-du-0001\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"480000\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi STATE_CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('STATE_CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mã mới khi đã đủ tiền",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{ended_booking_id}}/confirm-paid",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expected_outstanding\": \"0\",\n  \"idempotency_key\": \"thu-du-0002\",\n  \"receipts\": [\n    {\n      \"payment_method\": \"CASH\",\n      \"amount\": \"1\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "    pm.test('Ma loi STATE_CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('STATE_CONFLICT'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Thu thêm khi đã đủ tiền",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/record",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{ended_booking_id}},\n  \"user_id\": {{player1_id}},\n  \"amount\": \"1\",\n  \"payment_type\": \"BOOKING_REMAINING_PAYMENT\",\n  \"payment_method\": \"CASH\",\n  \"reference\": \"PHIEU-3\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 Hủy có tiền và hoàn tiền",
+      "description": "Player tự hủy mất cọc, Admin hủy thì hoàn cọc, hoàn thủ công một giao dịch tiền mặt.",
+      "item": [
+        {
+          "name": "Thu thêm tiền mặt để thử hoàn",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/record",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": {{manual_id}},\n  \"user_id\": {{player2_id}},\n  \"amount\": \"100000\",\n  \"payment_type\": \"BOOKING_REMAINING_PAYMENT\",\n  \"payment_method\": \"CASH\",\n  \"reference\": \"PHIEU-4\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "    pm.collectionVariables.set('cash_payment_id', pm.response.json().data.payment_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Player bị chặn hoàn tiền",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/{{cash_payment_id}}/refund",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Thử hoàn\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hoàn giao dịch không tồn tại",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/999999/refund",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Thử sai\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "    pm.test('Ma loi NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hoàn tiền mặt hoàn tất ngay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/{{cash_payment_id}}/refund",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Trả lại khách\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Khoản hoàn SUCCESS', () => { pm.expect(data.payment_type).to.eql('REFUND'); pm.expect(data.status).to.eql('SUCCESS'); });",
+                  "    pm.collectionVariables.set('refund_id', data.payment_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hoàn lại không tạo khoản mới",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/payments/{{cash_payment_id}}/refund",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Trả lại khách\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Vẫn là khoản hoàn cũ', () => pm.expect(pm.response.json().data.payment_id).to.eql(pm.collectionVariables.get('refund_id')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Player tự hủy thì mất cọc",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/bookings/{{manual_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player2_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Bận việc\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CANCELLED', () => pm.expect(pm.response.json().data.status).to.eql('CANCELLED'));",
+                  "    const summary = pm.response.json().data.refund_summary;",
+                  "    pm.test('Nguyên nhân USER_CANCEL, mất cọc 120000', () => { pm.expect(summary.cause).to.eql('USER_CANCEL'); pm.expect(Number(summary.forfeited_amount)).to.eql(120000); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin hủy thì hoàn cọc VNPay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/admin/bookings/{{booking_id}}/cancel",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Sân gặp sự cố\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('Booking CANCELLED', () => pm.expect(pm.response.json().data.status).to.eql('CANCELLED'));",
+                  "    const summary = pm.response.json().data.refund_summary;",
+                  "    pm.test('Tạo một khoản hoàn đang xử lý', () => {",
+                  "        pm.expect(summary.cause).to.eql('ADMIN_INCIDENT');",
+                  "        pm.expect(summary.refund_count).to.eql(1);",
+                  "        pm.expect(summary.refunds[0].status).to.eql('REFUND_PROCESSING');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 Báo cáo",
+      "description": "Doanh thu theo paid_at, thống kê theo giờ đá, Excel. Tổng tiền chỉ đúng khi chạy cả bộ trên dữ liệu vừa khởi tạo.",
+      "item": [
+        {
+          "name": "Player bị chặn",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue?from={{date_yesterday}}&to={{date_today}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{player1_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "    pm.test('Ma loi FORBIDDEN', () => pm.expect(pm.response.json().error.code).to.eql('FORBIDDEN'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Thiếu khoảng ngày",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đến trước từ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue?from={{date_today}}&to={{date_yesterday}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+                  "    pm.test('Ma loi VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Doanh thu",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue?from=2020-01-01&to=2020-12-31&period=month",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Năm không có giao dịch thì bằng 0', () => pm.expect(pm.response.json().data.totals.net_receipts).to.eql('0.00'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Doanh thu theo ngày",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue/daily?from={{date_yesterday}}&to={{date_today}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const totals = pm.response.json().data.totals;",
+                  "    pm.test('Tổng khớp các khoản đã thu trong hai ngày', () => {",
+                  "        pm.expect(totals.gross_receipts).to.eql('940000.00');",
+                  "        pm.expect(totals.refunds).to.eql('100000.00');",
+                  "        pm.expect(totals.net_receipts).to.eql('840000.00');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Doanh thu theo tháng",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue/monthly?from={{date_yesterday}}&to={{date_today}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Gộp theo tháng', () => pm.expect(pm.response.json().data.period).to.eql('month'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Giao dịch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/transactions?from={{date_yesterday}}&to={{date_today}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const rows = pm.response.json().data;",
+                  "    pm.test('Có người trả và tên sân', () => { pm.expect(rows).to.not.be.empty; rows.forEach(p => { pm.expect(p.payer_name).to.be.a('string'); pm.expect(p.pitch_name).to.be.a('string'); }); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Giao dịch lọc khoản hoàn",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/transactions?from={{date_yesterday}}&to={{date_today}}&payment_type=REFUND&status=SUCCESS",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Đúng một khoản hoàn SUCCESS', () => pm.expect(pm.response.json().data.length).to.eql(1));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Thống kê booking",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/booking-statistics?from={{date_yesterday}}&to={{date_tomorrow}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    const data = pm.response.json().data;",
+                  "    pm.test('Đếm trạng thái, không tính khóa bảo trì', () => {",
+                  "        pm.expect(data.total_bookings).to.eql(4);",
+                  "        pm.expect(data.confirmed_bookings).to.eql(1);",
+                  "        pm.expect(data.cancelled_bookings).to.eql(3);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xuất Excel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/admin/revenue/export?from={{date_yesterday}}&to={{date_today}}&period=day",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "{",
+                  "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "    pm.test('Đúng định dạng xlsx', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('spreadsheetml.sheet'));",
+                  "    pm.test('Có tên file tải về', () => pm.expect(pm.response.headers.get('Content-Disposition')).to.include('.xlsx'));",
+                  "    pm.test('File không rỗng', () => pm.expect(pm.response.responseSize).to.be.above(1000));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

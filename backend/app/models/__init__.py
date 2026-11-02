@@ -121,3 +121,9 @@ class Notification(db.Model):
     created_at = db.Column(UTCDateTime(), nullable=False, default=utcnow)
     sent_at = db.Column(UTCDateTime(), default=utcnow)
     read_at = db.Column(UTCDateTime())
+
+# Models owned by Tú, registered on the same metadata.
+from app.models.field_complex import FieldComplex  # noqa: E402
+from app.models.pitch import Pitch  # noqa: E402
+from app.models.booking import Booking  # noqa: E402
+from app.models.payment import Payment  # noqa: E402

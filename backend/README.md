@@ -65,6 +65,7 @@ Bổ sung giao thức khóa: `ctx.locks.users(all_participant_ids)` trước Tea
 thuộc nhiều đội nhận hai kèo cùng giờ. Discovery roster rồi khóa và đọc lại roster; roster thay đổi trả
 STATE_CONFLICT để retry từ đầu. Các lệnh đổi thành viên phải dùng cùng khóa user → team.
 
+Phần Tú đăng ký booking_service, booking_reader, cancel_match qua `app/booking_module.py`, xem mục Booking và thanh toán bên dưới.
 Khi chưa gắn booking_service, xác nhận cuối OPPONENT trả 503, rollback phản hồi cuối để thử lại khi tích hợp.
 Không tạo hold giả. Route hủy trận cũng trả 503 khi chưa có orchestration tiền của Tú.
 Booking/Payment/balance/QR chung/xác nhận thu đủ/gateway cọc thuộc Tú; các migration sau V3, outbox/audit/email cần triển khai chung
@@ -79,3 +80,40 @@ Không có winner/outcome/phân bổ từng đội hoặc payment session quyế
 Không tạo bảng/cột mới cho thu gộp; recorded_by_admin_id, paid_at, note, transaction_code trong payments V3 đủ dùng.
 Thu gộp dùng booking.user_id làm tài khoản quy chiếu, không đại diện cho người thực chuyển; không áp dụng cho cọc.
 Protocol/DTO chỉ mô tả điểm nối; code Đức không giả thành công các endpoint tài chính của Tú.
+
+## Booking và thanh toán — phần Tú
+
+Điền `VNPAY_*` và `BANK_*` trong `.env` theo `.env.example`. Thiếu `VNPAY_*` thì tạo phiên cọc trả 503; thiếu `BANK_*` thì số dư trả `qr_unavailable_reason`. Không có chế độ giả thành công; `FakeGateway` chỉ nằm trong `tests/`.
+
+```powershell
+python -m flask --app app:create_app expire-booking-holds
+python -m flask --app app:create_app process-refunds
+python -m flask --app app:create_app reconcile-payments
+```
+
+Đây là lệnh chạy một lượt; scheduler gọi mỗi 15 giây. `process-refunds` chỉ chạy một tiến trình, vì chưa có outbox/lease.
+
+IPN VNPay là `GET /api/v1/payments/vnpay/ipn`, phải khai báo URL HTTPS công khai trong tài khoản merchant.
+
+### Test bằng Postman
+
+Import `postman/football_booking.postman_collection.json`, rồi chạy server thử từ thư mục `backend`:
+
+```powershell
+python postman/run_local.py
+```
+
+Server này luôn dùng SQLite tạm và secret thử, kể cả khi có `.env`, nên không chạm TiDB. Chạy cả collection bằng **Run collection** theo đúng thứ tự. Muốn chạy lại thì khởi động lại server để có dữ liệu mới. Collection tự bỏ qua request nếu `base_url` không phải localhost.
+
+IPN trong collection do script tự ký bằng secret thử, không phải VNPay gọi thật. Collection chỉ gồm route phần Tú; luồng hai đội nằm ở `tests/test_booking_payment.py`.
+
+### Test đồng thời
+
+SQLite không kiểm chứng được khóa. Các ca trong `tests/test_booking_concurrency.py` cần database thật và tự bỏ qua nếu không có `TEST_DATABASE_URL`:
+
+```powershell
+$env:TEST_DATABASE_URL = 'mysql+pymysql://USER:PASSWORD@127.0.0.1:3306/project1_test?charset=utf8mb4'
+python -m unittest discover -s tests -p 'test_booking_concurrency.py'
+```
+
+Test **tạo và xóa toàn bộ bảng**, nên chỉ chạy khi host là local và tên database kết thúc bằng `_test`. Tài khoản MySQL có mật khẩu dùng `caching_sha2_password` có thể cần thêm gói `cryptography`.
