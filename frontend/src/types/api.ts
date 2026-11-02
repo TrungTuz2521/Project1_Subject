@@ -120,3 +120,24 @@ export interface BookingStatistics {
   by_pitch: { pitch_id: number; pitch_name: string; total_bookings: number; utilization_rate: number }[];
   peak_hours: { hour: number; booking_count: number }[];
 }
+
+/** Booking-wide amounts from Tu's balance endpoint. Money is serialized as strings. */
+export interface BookingBalance {
+  booking_id: number; payment_rule: BookingPaymentRule | null; total_amount: Money;
+  deposit_collected_amount: Money; remaining_collected_amount: Money;
+  collected_amount: Money; outstanding_amount: Money;
+  payment_status: 'UNPAID' | 'PARTIAL' | 'PAID';
+  qr_payload: string | null; transfer_reference: string | null; qr_unavailable_reason: string | null;
+}
+export interface ManualReceipt {
+  payment_method: 'CASH' | 'BANK_TRANSFER'; amount: Money; reference?: string;
+}
+export interface ConfirmBookingPaid {
+  expected_outstanding: Money; idempotency_key: string; receipts: ManualReceipt[];
+}
+export type BookingPhase = 'UPCOMING' | 'IN_PROGRESS' | 'ENDED_UNPAID' | 'PAID';
+export interface AdminBooking extends Booking {
+  pitch_name?: string;
+  teams?: { source: { team_name?: string }; opponent: { team_name?: string } } | null;
+  balance?: BookingBalance | null;
+}

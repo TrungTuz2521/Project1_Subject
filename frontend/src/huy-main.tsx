@@ -1,10 +1,2 @@
-
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { FieldApp } from './features/field-management/FieldApp';
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <FieldApp />
-  </StrictMode>
-);
+// Legacy san-bong.html now uses the same login, role guards and navigation.
+import './main';

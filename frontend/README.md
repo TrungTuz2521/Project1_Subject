@@ -126,3 +126,25 @@ Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh s
 7. GitHub Actions workflow `Frontend checks` chạy `npm ci`, `npm test` và `npm run build` khi push lên nhánh tính năng hoặc pull request.
 
 **Bảo mật:** token chỉ ở bộ nhớ, bị xóa sau 60 phút hoặc khi API bảo vệ trả 401. Tải lại trang cần đăng nhập lại theo hợp đồng hiện tại; chưa có refresh token hoặc API thu hồi JWT. Chế độ mock chỉ để phát triển giao diện và không thay thế xác thực/kiểm tra quyền của backend.
+
+
+## Tích hợp frontend Huy vào ứng dụng chung
+
+Chạy `npm ci`, `npm run dev`; dùng `index.html` (địa chỉ gốc Vite). `san-bong.html` cũng dùng cùng App và đăng nhập, không có phiên Admin riêng.
+Trong `.env.local`: `VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1` và `VITE_USE_MOCKS=false`; khởi động lại Vite sau khi đổi env. Không commit env riêng.
+
+- Sau đăng nhập: `#/bookings` tìm sân, `#/my-bookings` theo dõi hold/cọc. Tạo booking sẽ mở chi tiết trong cùng phiên; hold 300 giây từ server, không gia hạn do tải lại/tạo thanh toán.
+- Chỉ ADMIN thấy và mở được `#/admin/bookings`, `#/admin/pitches`, `#/admin/balance`, `#/admin/revenue`. Backend vẫn là nơi kiểm tra quyền; không coi ẩn menu là bảo mật API.
+- Lịch Admin lọc `UPCOMING`, `IN_PROGRESS`, `ENDED_UNPAID`, `PAID` qua API; đã thu đủ lấy từ balance, độc lập giờ đá. Danh sách Admin hiện lấy tối đa 100 mục/lần.
+- Thu tiền dùng `GET /admin/bookings/{id}/balance` và `POST /admin/bookings/{id}/confirm-paid`. Không gọi endpoint settlement/result hoặc tạo QR riêng từng đội. Thể thức chỉ để hai đội tự chia.
+- QR được tạo cục bộ từ payload server bằng thư viện qrcode. Không gửi dữ liệu ngân hàng ra dịch vụ tạo QR. Nếu backend chưa cấu hình BANK_BIN/BANK_ACCOUNT_NO thì hiển thị lý do thiếu QR.
+- Admin chọn một/nhiều khoản thực nhận CASH/BANK_TRANSFER, tổng đúng số còn thiếu; gửi expected_outstanding + idempotency_key. Retry sau lỗi giữ nguyên payload/key; form khóa đến khi thử lại hoặc tải lại số dư. Backend xử lý chống trùng và số dư thay đổi.
+- Cọc online hiện chỉ có nút VNPay phù hợp backend đang triển khai. Không tự xác nhận SUCCESS bằng frontend.
+
+Kiểm tra trên DB thử nghiệm: PLAYER đăng nhập, mở sân/giữ 90 phút, xem hạn giữ; PLAYER mở URL Admin phải bị chặn. ADMIN mở lịch, lọc giai đoạn, mở booking đã kết thúc và đối chiếu balance; nhập tổng receipts sai phải bị chặn, thu đủ một/multiple khoản phải về PAID, gọi lại cùng key không thêm Payment. Hai tab số dư cũ phải báo conflict. Không thử thu/hoàn tiền thật hoặc chạy migration trên DB nhóm.
+
+Mock chỉ là dữ liệu trong bộ nhớ riêng cho giao diện sân và không đại diện cho luồng ghép trận/tiền thật. Khi đánh giá tích hợp cần `VITE_USE_MOCKS=false`.
+
+### Cấu hình tài khoản nhận QR sau trận
+
+Trong `backend/.env` riêng của máy chạy server, điền `BANK_BIN` (mã BIN của ngân hàng nhận) và `BANK_ACCOUNT_NO` (số tài khoản nhận), rồi khởi động lại backend. Không đặt trong frontend, không commit `.env`, không cần tải ảnh QR cá nhân. Payload VietQR do backend tạo theo tài khoản đã cấu hình + outstanding_amount + BOOKING-{id}; frontend chỉ mã hóa payload thành ảnh QR. Kiểm tra tên người nhận, số tài khoản, số tiền và nội dung trên ứng dụng ngân hàng trước khi dùng. QR ngân hàng này dành cho phần còn lại sau trận; cọc VNPay dùng cấu hình gateway riêng. Không nhập mật khẩu ngân hàng hoặc OTP vào dự án.

@@ -3,13 +3,14 @@ import type { FormEvent, ReactNode } from 'react';
 import { TeamsPage } from './features/matchmaking/TeamsPage';
 import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
 import { SchedulePage } from './features/matchmaking/SchedulePage';
+import { FieldApp } from './features/field-management/FieldApp';
 import { getCurrentUser, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
 import { session } from './stores/session';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
-const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/matchmaking', '/notifications', '/schedule'] as const;
+const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/matchmaking', '/notifications', '/schedule'] as const;
 type Route = typeof routes[number];
 const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
@@ -78,11 +79,16 @@ export default function App() {
   if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage initialTab='notifications' /></AppShell>;
   if (activeRoute === '/schedule') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><SchedulePage /></AppShell>;
   if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} /></AppShell>;
-  if (activeRoute === '/bookings') {
-    const pages = {
-      '/bookings': { title: 'Đặt sân', number: '03', description: 'Tìm sân phù hợp và quản lý lịch đặt sân của bạn.' },
-    } as const;
-    return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ComingSoonPage {...pages[activeRoute]} /></AppShell>;
+  const fieldTabs = {
+    '/bookings': 'pitches', '/my-bookings': 'bookings', '/admin/bookings': 'adminBookings',
+    '/admin/pitches': 'adminPitches', '/admin/balance': 'settlement', '/admin/revenue': 'revenue',
+  } as const;
+  if (activeRoute in fieldTabs) {
+    const allowed = !activeRoute.startsWith('/admin/') || current.user.role === 'ADMIN';
+    return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}>
+      {allowed ? <FieldApp key={current.user.user_id} tab={fieldTabs[activeRoute as keyof typeof fieldTabs]} />
+        : <section role="alert" className="notice-error">Bạn không có quyền truy cập chức năng quản trị.</section>}
+    </AppShell>;
   }
   return <AppShell current={current.user} route="/dashboard" onLogout={onLogout}><DashboardPage user={current.user} /></AppShell>;
 }
@@ -188,9 +194,15 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
 function AppShell({ current, route, onLogout, children }: { current: UserSelf; route: Route; onLogout: () => void; children: ReactNode }) {
   const navItems: { path: Route; icon: string; label: string }[] = [
     { path: '/dashboard', icon: '⌂', label: 'Tổng quan' }, { path: '/teams', icon: '♧', label: 'Đội bóng của tôi' },
-    { path: '/bookings', icon: '▦', label: 'Đặt sân' }, { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận' },
+    { path: '/bookings', icon: '▦', label: 'Đặt sân' }, { path: '/my-bookings', icon: '▤', label: 'Booking của tôi' }, { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận' },
     { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/schedule', icon: '▦', label: 'Lịch thi đấu' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
   ];
+  if (current.role === 'ADMIN') navItems.push(
+    { path: '/admin/bookings', icon: '▦', label: 'Quản lý lịch sân' },
+    { path: '/admin/pitches', icon: '⚽', label: 'Quản lý sân' },
+    { path: '/admin/balance', icon: '◈', label: 'Thu tiền sau trận' },
+    { path: '/admin/revenue', icon: '▥', label: 'Doanh thu' },
+  );
   const title = navItems.find((item) => item.path === route)?.label ?? 'Tổng quan';
   return <div className="account-shell">
     <aside className="account-sidebar">
@@ -272,13 +284,5 @@ function ProfilePage({ currentUser }: { currentUser: UserSelf }) {
         </form>
       </section>
     </div>}
-  </>;
-}
-
-function ComingSoonPage({ title, number, description }: { title: string; number: string; description: string }) {
-  return <>
-    <div className="account-eyebrow">MỞ RỘNG HỆ THỐNG</div>
-    <div className="account-page-heading"><div><h1>{title}<span>.</span></h1><p>{description}</p></div><span className="account-page-index">{number} / MODULE</span></div>
-    <section className="account-panel coming-soon"><span className="coming-soon-icon">⌁</span><span className="welcome-kicker">ĐANG CHỜ TÍCH HỢP</span><h2>Khung điều hướng đã sẵn sàng.</h2><p>Module nghiệp vụ này chưa được kết nối ở bản hiện tại. Màn hình không tạo dữ liệu giả và không hiển thị giao dịch giả thành công.</p><a className="account-primary-button" href="#/dashboard">Quay về tổng quan ↗</a></section>
   </>;
 }

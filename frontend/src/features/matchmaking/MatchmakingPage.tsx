@@ -5,7 +5,7 @@ import { proposalsService } from '../../services/proposals';
 import { matchesService } from '../../services/matches';
 import { notificationsService } from '../../services/notifications';
 import { teamsService } from '../../services/teams';
-import { errorMessage } from '../../services/api';
+import { formErrorMessage as errorMessage } from '../../services/formErrors';
 import { session } from '../../stores/session';
 import type { Match, MatchDetail, MatchPost, Notification, NotificationType, PostCreate, PostSummary, PostType, Proposal, ProposalDetail, Team, PitchType, SkillLevel, TeamPaymentRule } from '../../types/api';
 
