@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Booking, PaymentSession } from '../../types/api';
-import { cancelMyBooking, createDepositSession, getBooking, getMyBookings, huyDemo, moneyVN, dateVN, serverNow } from '../../services/huyApi';
+import { cancelMyBooking, createDepositSession, getBooking, getMyBookings, huyDemo, moneyVN, dateVN } from '../../services/huyApi';
 import { Banner, Button, Card, Empty, Head, Status, Warning, countdown, useNow } from '../field-management/ui';
 import { PaymentBox } from '../payments/PaymentBox';
 
@@ -37,7 +37,7 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
     } catch (e) { setError(e); } finally { setBusy(false); }
   }
   async function cancel() {
-    if (!active || busy || !window.confirm('Xác nhận hủy? Theo quy định, người dùng tự hủy sau cọc có thể mất khoản cọc của mình.')) return;
+    if (!active || busy || !window.confirm('Xác nhận hủy? Theo quy định, người dùng tự hủy sau cọc sẽ mất khoản cọc của mình.')) return;
     setBusy(true); setError(null);
     try { await cancelMyBooking(active.booking_id, 'Người dùng chủ động hủy'); setNotice('Đã xử lý yêu cầu hủy' + (huyDemo ? ' (demo)' : '') + '.'); await reload(); }
     catch (e) { setError(e); } finally { setBusy(false); }
@@ -54,7 +54,7 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
         <div className="huy-flex huy-gap"><Status state={active.status}/>{active.status === 'PENDING_HOLD' && <strong className={validHold ? 'huy-timer' : 'huy-danger'}>⏱ {countdown(active.hold_expires_at, now)}</strong>}</div>
         {active.payer_progress.map(p => <div key={p.user_id} className="huy-payer">Người trả #{p.user_id}<span>{moneyVN(p.paid_amount)} / {moneyVN(p.required_amount)} · {p.status}</span></div>)}
         {active.status === 'PENDING_HOLD' && <><Banner>{validHold ? 'Thời hạn giữ sân tính theo đồng hồ server, không gia hạn khi tải lại trang.' : 'Giữ sân đã hết hạn. Phải chọn lại giờ, không tiếp tục thanh toán.'}</Banner>
-          <div className="huy-actions"><Button onClick={() => void pay('VNPAY')} disabled={!validHold || busy}>Thanh toán cọc VNPay</Button><Button variant="outline" onClick={() => void pay('MOMO')} disabled={!validHold || busy}>MoMo</Button></div></>}
+          <div className="huy-actions"><Button onClick={() => void pay('VNPAY')} disabled={!validHold || busy}>Thanh toán cọc VNPay</Button></div></>}
         {payment && <PaymentBox payment={payment} />}
         {(active.status === 'PENDING_HOLD' || active.status === 'CONFIRMED') && <div className="huy-actions"><Button variant="danger" disabled={busy} onClick={() => void cancel()}>Hủy booking</Button></div>}
         {active.status === 'PENDING_HOLD' && !validHold && <Button variant="outline" onClick={() => void reload()}>Kiểm tra trạng thái với server</Button>}

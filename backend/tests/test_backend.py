@@ -6,7 +6,7 @@ import jwt
 from sqlalchemy import select, text
 from app import create_app
 from app.extensions import db
-from app.models import User, Team, TeamMember, MatchPost, MatchProposal, ProposalConfirmation, Match, Notification
+from app.models import User, Team, TeamMember, MatchPost, MatchProposal, ProposalConfirmation, Match, Notification, FieldComplex, Pitch, Booking, Payment
 from app.utils.time import utcnow, VIETNAM
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.contracts.dto import Actor, BookingHold
@@ -27,12 +27,13 @@ class FakeBooking:
         self.calls += 1
         if self.unavailable:
             raise SlotUnavailable()
-        import json
         deadline = ctx.now() + timedelta(minutes=5)
         plan = [dict(user_id=kwargs['source_user_id'], amount='60000.00'),
                 dict(user_id=kwargs['opponent_user_id'], amount='60000.00')]
-        ctx.session.execute(text('INSERT INTO bookings (booking_id,status,hold_expires_at,payer_plan) VALUES (1,:status,:deadline,:plan)'),
-                            dict(status='PENDING_HOLD', deadline=deadline.replace(tzinfo=None).isoformat(), plan=json.dumps(plan)))
+        ctx.session.add(Booking(booking_id=1, pitch_id=kwargs['pitch_id'], user_id=kwargs['source_user_id'],
+                                start_time=kwargs['start_time'], end_time=kwargs['end_time'], status='PENDING_HOLD',
+                                hold_expires_at=deadline, payer_plan=plan))
+        ctx.session.flush()
         return BookingHold(1, 'PENDING_HOLD', deadline, Decimal('600000'), Decimal('120000'), plan)
 
 class BackendTests(unittest.TestCase):
@@ -41,11 +42,9 @@ class BackendTests(unittest.TestCase):
         self.context = self.app.app_context()
         self.context.push()
         db.create_all()  # ONLY isolated test DB; never application startup.
-        with db.engine.begin() as conn:
-            conn.execute(text('CREATE TABLE pitches (pitch_id INTEGER PRIMARY KEY, pitch_type TEXT, status TEXT)'))
-            conn.execute(text("INSERT INTO pitches VALUES (1,'PITCH_5','ACTIVE')"))
-            conn.execute(text('CREATE TABLE bookings (booking_id INTEGER PRIMARY KEY, status TEXT, hold_expires_at TEXT, payer_plan TEXT)'))
-            conn.execute(text('CREATE TABLE payments (payment_id INTEGER PRIMARY KEY,booking_id INTEGER,user_id INTEGER,payment_type TEXT,status TEXT,amount NUMERIC)'))
+        with UnitOfWork() as ctx:
+            ctx.session.add(FieldComplex(complex_id=1, name='Cụm test', phone='0900000000', address='Hà Nội'))
+            ctx.session.add(Pitch(pitch_id=1, complex_id=1, pitch_name='Sân 1', pitch_type='PITCH_5', price_per_slot=600000))
         self.client = self.app.test_client()
         self.users = [self.seed_user(f'u{i}@example.test') for i in range(1, 4)]
         self.a, self.b, self.c = [self.header(u) for u in self.users]
@@ -187,6 +186,7 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(ctx.session.get(MatchPost, b).status, 'OPEN')
 
     def test_missing_booking_adapter_rolls_back_second_confirmation(self):
+        self.app.extensions.pop('booking_service')  # The real service is registered by default now.
         a, b, pid = self.pair()
         self.assertEqual(self.respond(pid, self.a).status_code, 200)
         self.assertEqual(self.respond(pid, self.b).status_code, 503)
@@ -229,12 +229,13 @@ class BackendTests(unittest.TestCase):
         self.respond(pid, self.b)
         with UnitOfWork() as ctx:
             ctx.session.execute(text("UPDATE bookings SET status='CONFIRMED'"))
-            ctx.session.execute(text("INSERT INTO payments VALUES(1,1,:uid,'BOOKING_DEPOSIT','SUCCESS',120000)"), {'uid': self.users[0]})
+            ctx.session.add(Payment(booking_id=1, user_id=self.users[0], payment_type='BOOKING_DEPOSIT', payment_method='VNPAY', status='SUCCESS', amount=120000))
         with UnitOfWork() as ctx:
             with self.assertRaises(DomainError):
                 match_service.confirm_after_deposit(ctx, booking_id=1)
         with UnitOfWork() as ctx:
-            ctx.session.execute(text("INSERT INTO payments VALUES(2,1,:uid,'BOOKING_DEPOSIT','SUCCESS',60000)"), {'uid': self.users[1]})
+            ctx.session.add(Payment(booking_id=1, user_id=self.users[1], payment_type='BOOKING_DEPOSIT', payment_method='VNPAY', status='SUCCESS', amount=60000))
+            ctx.session.flush()
             match = match_service.confirm_after_deposit(ctx, booking_id=1)
             self.assertEqual(match.status, 'CONFIRMED')
             match_service.confirm_after_deposit(ctx, booking_id=1)

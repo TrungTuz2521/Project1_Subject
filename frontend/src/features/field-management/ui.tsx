@@ -22,7 +22,7 @@ export function Button({ children, type = 'button', variant = 'primary', disable
 }) { return <button className={`huy-btn huy-btn-${variant}`} type={type} onClick={onClick} disabled={disabled}>{children}</button>; }
 export function Status({ state }: { state: string }) {
   const labels: Record<string, string> = { AVAILABLE: 'Còn trống', HELD: 'Đang giữ', BOOKED: 'Đã đặt', MAINTENANCE: 'Bảo trì', ACTIVE: 'Hoạt động', INACTIVE: 'Ngừng hoạt động',
-    PENDING_HOLD: 'Chờ cọc', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn', SUCCESS: 'Đã thu', PENDING: 'Đang chờ', FAILED: 'Thất bại', REFUND_PROCESSING: 'Đang hoàn', REFUNDED: 'Đã hoàn' };
+    PENDING_HOLD: 'Chờ cọc', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn', SUCCESS: 'Đã thu', PENDING: 'Đang chờ', FAILED: 'Thất bại', REFUND_PROCESSING: 'Đang hoàn', REFUNDED: 'Đã hoàn', UNPAID: 'Chưa thu', PARTIAL: 'Chưa thu đủ', PAID: 'Đã thu đủ' };
   return <span className={`huy-pill huy-pill-${state.toLowerCase()}`}>{labels[state] ?? state}</span>;
 }
 export const showDate = (date: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(`${date}T00:00:00+07:00`));

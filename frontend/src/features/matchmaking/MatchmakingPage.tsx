@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { PostTimePicker } from './PostTimePicker';
+import { advanceDate, postStartOptions, vietnamDate } from './postSchedule';
 import { matchPostsService } from '../../services/matchPosts';
 import { proposalsService } from '../../services/proposals';
 import { matchesService } from '../../services/matches';
 import { notificationsService } from '../../services/notifications';
 import { teamsService } from '../../services/teams';
-import { errorMessage } from '../../services/api';
+import { formErrorMessage as errorMessage } from '../../services/formErrors';
 import { session } from '../../stores/session';
 import type { Match, MatchDetail, MatchPost, Notification, NotificationType, PostCreate, PostSummary, PostType, Proposal, ProposalDetail, Team, PitchType, SkillLevel, TeamPaymentRule } from '../../types/api';
 
@@ -38,7 +40,7 @@ function localInput(date:Date){
  return val('year')+'-'+val('month')+'-'+val('day')+'T'+val('hour')+':'+val('minute');
 }
 function asOffset(value:string){return value?value+':00+07:00':undefined;}
-function initialForm(){const start=new Date(Date.now()+24*3600000);const end=new Date(start.getTime()+90*60000);return {type:'FIND_OPPONENT' as PostType,title:'',description:'',teamId:'',pitchType:'PITCH_7' as PitchType,skill:'INTERMEDIATE' as SkillLevel,matchTime:localInput(start),endTime:localInput(end),expiryTime:localInput(new Date(start.getTime()-2*3600000)),paymentRule:'SPLIT_EQUAL' as TeamPaymentRule,requiredPlayers:'1'};}
+function initialForm(){const start=new Date(advanceDate(vietnamDate(),1)+'T18:00:00+07:00');const end=new Date(start.getTime()+90*60000);return {type:'FIND_OPPONENT' as PostType,title:'',description:'',teamId:'',pitchType:'PITCH_7' as PitchType,skill:'INTERMEDIATE' as SkillLevel,matchTime:localInput(start),endTime:localInput(end),expiryTime:localInput(new Date(start.getTime()-2*3600000)),paymentRule:'SPLIT_EQUAL' as TeamPaymentRule,requiredPlayers:'1'};}
 export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
  const current=session.getSnapshot();const isPlayer=current?.user.role==='PLAYER';const [tab,setTab]=useState<Tab>(initialTab);
  const [posts,setPosts]=useState<PostSummary[]>([]);const [myPosts,setMyPosts]=useState<MatchPost[]>([]);const [teams,setTeams]=useState<Team[]>([]);
@@ -77,6 +79,7 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
   const matchTime=hasTime?asOffset(form.matchTime):undefined;const endTime=hasTime?asOffset(form.endTime):undefined;const expiry=asOffset(form.expiryTime);
   if(!expiry||Date.parse(expiry)<=Date.now()){setDetailError('Thời hạn bài đăng phải nằm trong tương lai.');return;}
   if(hasTime&&(!matchTime||!endTime||Date.parse(endTime)-Date.parse(matchTime)!==90*60000)){setDetailError('Thời gian trận đấu phải đủ 90 phút.');return;}
+  if(form.type==='FIND_OPPONENT'&&!postStartOptions(form.matchTime.slice(0,10)).includes(form.matchTime.slice(11,16))){setDetailError('Chọn lại một khung giờ còn hiệu lực trong danh sách.');return;}
   if(hasTime&&Date.parse(expiry!)>Date.parse(matchTime!)){setDetailError('Bài đăng phải hết hạn trước hoặc tại giờ bắt đầu trận.');return;}
   if(form.type!=='LOOK_FOR_TEAM'&&!form.teamId){setDetailError('Chọn đội bóng cho loại bài này.');return;}
   if(form.type!=='LOOK_FOR_TEAM'&&!form.pitchType){setDetailError('Chọn loại sân.');return;}
@@ -163,7 +166,7 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
     <div className="form-field"><label htmlFor="post-description">Mô tả</label><textarea id="post-description" maxLength={3000} rows={3} value={form.description} onChange={e=>setField('description',e.target.value)} placeholder="Thông tin bổ sung về trình độ, địa điểm, cách liên hệ…"/></div>
     <div className="form-row"><div className="form-field"><label htmlFor="post-skill">Trình độ</label><select id="post-skill" value={form.skill} onChange={e=>setField('skill',e.target.value as SkillLevel)}>{Object.entries(skillNames).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
      <div className="form-field"><label htmlFor="post-pitch">Loại sân {form.type==='LOOK_FOR_TEAM'?'(có thể bổ sung sau)':'*'}</label><select id="post-pitch" value={form.pitchType} onChange={e=>setField('pitchType',e.target.value as PitchType)}><option value="">Chưa chọn</option><option value="PITCH_5">Sân 5</option><option value="PITCH_7">Sân 7</option></select></div></div>
-    {form.type!=='LOOK_FOR_TEAM'&&<div className="form-row"><div className="form-field"><label htmlFor="post-start">Giờ bắt đầu (giờ Việt Nam)</label><input id="post-start" type="datetime-local" value={form.matchTime} onChange={e=>{setField('matchTime',e.target.value);setField('endTime',localInput(new Date(new Date(e.target.value+':00+07:00').getTime()+90*60000)));}} required/></div><div className="form-field"><label htmlFor="post-end">Giờ kết thúc</label><input id="post-end" type="datetime-local" value={form.endTime} onChange={e=>setField('endTime',e.target.value)} required/></div></div>}
+    {form.type==='FIND_OPPONENT'?<PostTimePicker value={form.matchTime} onChange={(start,end)=>setForm(old=>({...old,matchTime:start,endTime:end}))}/>:form.type!=='LOOK_FOR_TEAM'&&<div className="form-row"><div className="form-field"><label htmlFor="post-start">Giờ bắt đầu (giờ Việt Nam)</label><input id="post-start" type="datetime-local" value={form.matchTime} onChange={e=>{setField('matchTime',e.target.value);setField('endTime',localInput(new Date(new Date(e.target.value+':00+07:00').getTime()+90*60000)));}} required/></div><div className="form-field"><label htmlFor="post-end">Giờ kết thúc</label><input id="post-end" type="datetime-local" value={form.endTime} onChange={e=>setField('endTime',e.target.value)} required/></div></div>}
     <div className="form-field"><label htmlFor="post-expiry">Hạn nhận yêu cầu (giờ Việt Nam)</label><input id="post-expiry" type="datetime-local" value={form.expiryTime} onChange={e=>setField('expiryTime',e.target.value)} required/></div>
     {['FIND_OPPONENT','RECRUIT_MEMBERS'].includes(form.type)&&<div className="form-field"><label htmlFor="post-payment">Quy tắc chia tiền sân</label><select id="post-payment" value={form.paymentRule} onChange={e=>setField('paymentRule',e.target.value as TeamPaymentRule)}><option value="SPLIT_EQUAL">Chia đều</option><option value="LOSER_PAYS_REMAINDER">Đội thua trả phần còn lại</option></select></div>}
     {(form.type==='RECRUIT_MEMBERS'||form.type==='RANDOM_SQUAD')&&<div className="form-field"><label htmlFor="post-required">Số người cần tuyển / ghép</label><input id="post-required" type="number" min={1} step={1} value={form.requiredPlayers} onChange={e=>setField('requiredPlayers',e.target.value)}/></div>}

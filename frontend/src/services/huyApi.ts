@@ -1,33 +1,19 @@
 /**
  * HUY — Pitch / Booking / Admin frontend adapter.
- * API routes follow docs/api/API_MODELS_CONTRACT_PROJECT1.md v1.7.
+ * API routes follow docs/api/API_MODELS_CONTRACT_PROJECT1.md booking-wide balance/confirm-paid contract.
  * Local development uses explicit, in-memory DEMO data (NOT payments).
  */
-import { api } from './client';
+import { api, useMocks } from './client';
 import type {
   ApiResponse, Availability, Booking, BookingCreate, Payment, PaymentSession,
-  Pitch, RevenueReport, BookingStatistics, PaginatedResponse,
+  Pitch, RevenueReport, BookingStatistics, PaginatedResponse, BookingBalance, ConfirmBookingPaid, AdminBooking, BookingPhase,
 } from '../types/api';
 
-export const huyDemo = import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS !== 'false';
-export type MatchOutcome = 'SOURCE_WIN' | 'OPPONENT_WIN' | 'DRAW';
-export interface SettlementPayer {
-  user_id: number; team_id: number | null; display_name: string; remaining_amount: string;
-}
-export interface Settlement {
-  booking_id: number; payment_rule: string | null; outcome: MatchOutcome | null;
-  version: number; total_amount: string; collected_amount: string;
-  outstanding_amount: string; payers: SettlementPayer[];
-}
+export const huyDemo = useMocks;
 export interface Transaction extends Payment {
   payer_name?: string; pitch_name?: string;
 }
 export interface TransactionList { data: Transaction[]; meta: { page: number; page_size: number; total: number; server_time: string } }
-export interface ReceiptInput {
-  booking_id: number; user_id: number; amount: string;
-  payment_type: 'BOOKING_DEPOSIT' | 'BOOKING_REMAINING_PAYMENT';
-  payment_method: 'CASH' | 'BANK_TRANSFER'; reference?: string; note?: string;
-}
 export interface PitchQuery { pitch_type?: string; min_price?: string; max_price?: string }
 const todayVN = () => {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -94,7 +80,7 @@ let demoTransactions: Transaction[] = [
   { payment_id: 302, booking_id: 102, post_id: null, amount: '60000.00', payment_type: 'BOOKING_DEPOSIT', payment_method: 'VNPAY', status: 'SUCCESS', transaction_code: 'DEMO-302', refund_for_payment_id: null, paid_at: new Date().toISOString(), payer_name: 'FC Bình Minh', pitch_name: 'Sân 7A' },
   { payment_id: 303, booking_id: 102, post_id: null, amount: '60000.00', payment_type: 'BOOKING_DEPOSIT', payment_method: 'MOMO', status: 'SUCCESS', transaction_code: 'DEMO-303', refund_for_payment_id: null, paid_at: new Date().toISOString(), payer_name: 'FC Sao Mai', pitch_name: 'Sân 7A' },
 ];
-let demoOutcome = new Map<number, { outcome: MatchOutcome; version: number }>();
+const demoReceipts = new Map<string, { payload: string; balance: BookingBalance }>();
 const findPitch = (id: number) => {
   const p = demoPitches.find(p => p.pitch_id === id);
   if (!p) throw err('NOT_FOUND', 'Không tìm thấy sân.');
@@ -117,7 +103,7 @@ function normalizeExpired() {
   }
 }
 const outstanding = (b: Booking) => {
-  const paid = demoTransactions.filter(t => t.booking_id === b.booking_id && t.payment_type !== 'REFUND' && t.status === 'SUCCESS')
+  const paid = demoTransactions.filter(t => t.booking_id === b.booking_id && t.payment_type !== 'REFUND' && ['SUCCESS', 'REFUNDED'].includes(t.status))
     .reduce((sum, t) => sum + integer(t.amount), 0n);
   const refund = demoTransactions.filter(t => t.booking_id === b.booking_id && t.payment_type === 'REFUND' && t.status === 'SUCCESS')
     .reduce((sum, t) => sum + integer(t.amount), 0n);
@@ -140,40 +126,15 @@ function validateSlot(pitchId: number, start: string, end: string, exempt?: numb
   if (mins < 360 || mins + 90 > 1380 || mins % 30 !== 0) throw err('VALIDATION_ERROR', 'Khung giờ phải nằm trong 06:00–23:00, bước 30 phút.');
   checkSlot(pitchId, start, end, exempt);
 }
-function demoSettlement(id: number): Settlement {
+function demoBalance(id: number): BookingBalance {
   const b = findBooking(id);
-  if (b.status !== 'CONFIRMED') throw err('STATE_CONFLICT', 'Chỉ quyết toán booking đã xác nhận.');
-  if (Date.parse(b.end_time) > Date.now()) throw err('STATE_CONFLICT', 'Chỉ quyết toán sau khi trận kết thúc.');
-  const outcomeState = demoOutcome.get(id);
-  const rule = b.payment_rule;
   const { paid, remaining } = outstanding(b);
-  const isTeam = rule === 'LOSER_PAYS_REMAINDER' || rule === 'SPLIT_EQUAL';
-  const p1 = demoTransactions.filter(t => t.booking_id === id && t.payment_type !== 'REFUND' && t.status === 'SUCCESS' && t.payer_name === 'FC Bình Minh').reduce((x, p) => x + integer(p.amount), 0n);
-  const p2 = demoTransactions.filter(t => t.booking_id === id && t.payment_type !== 'REFUND' && t.status === 'SUCCESS' && t.payer_name === 'FC Sao Mai').reduce((x, p) => x + integer(p.amount), 0n);
-  let payers: SettlementPayer[] = [];
-  if (isTeam) {
-    const total = integer(b.total_amount);
-    if (rule === 'SPLIT_EQUAL' || outcomeState?.outcome === 'DRAW') {
-      payers = [
-        { user_id: 2, team_id: 1, display_name: 'FC Bình Minh', remaining_amount: asMoney(total / 2n - p1) },
-        { user_id: 3, team_id: 2, display_name: 'FC Sao Mai', remaining_amount: asMoney(total - total / 2n - p2) },
-      ];
-    } else if (outcomeState?.outcome === 'SOURCE_WIN') {
-      payers = [
-        { user_id: 2, team_id: 1, display_name: 'FC Bình Minh', remaining_amount: '0.00' },
-        { user_id: 3, team_id: 2, display_name: 'FC Sao Mai', remaining_amount: asMoney(remaining) },
-      ];
-    } else if (outcomeState?.outcome === 'OPPONENT_WIN') {
-      payers = [
-        { user_id: 2, team_id: 1, display_name: 'FC Bình Minh', remaining_amount: asMoney(remaining) },
-        { user_id: 3, team_id: 2, display_name: 'FC Sao Mai', remaining_amount: '0.00' },
-      ];
-    }
-  } else {
-    payers = [{ user_id: b.user_id, team_id: null, display_name: 'Người đặt sân', remaining_amount: asMoney(remaining) }];
-  }
-  return { booking_id: id, payment_rule: rule, outcome: outcomeState?.outcome ?? null, version: outcomeState?.version ?? 1,
-    total_amount: b.total_amount, collected_amount: asMoney(paid), outstanding_amount: asMoney(remaining), payers };
+  const gross = (kind: string) => demoTransactions.filter(t => t.booking_id === id && t.payment_type === kind && ['SUCCESS', 'REFUNDED'].includes(t.status)).reduce((sum, t) => sum + integer(t.amount), 0n);
+  return { booking_id: id, payment_rule: b.payment_rule, total_amount: b.total_amount,
+    deposit_collected_amount: asMoney(gross('BOOKING_DEPOSIT')), remaining_collected_amount: asMoney(gross('BOOKING_REMAINING_PAYMENT')),
+    collected_amount: asMoney(paid), outstanding_amount: asMoney(remaining > 0n ? remaining : 0n),
+    payment_status: remaining <= 0n ? 'PAID' : paid > 0n ? 'PARTIAL' : 'UNPAID',
+    qr_payload: null, transfer_reference: null, qr_unavailable_reason: 'Chế độ demo không tạo QR chuyển tiền.' };
 }
 
 // ---------- Public + Player APIs ----------
@@ -249,9 +210,14 @@ export async function createDepositSession(bookingId: number, method: 'VNPAY' | 
   return data;
 }
 // ---------- Admin APIs ----------
-export async function getAdminBookings(): Promise<Booking[]> {
-  if (!huyDemo) return (await api.request<PaginatedResponse<Booking>>('/admin/bookings', { query: { page: 1, page_size: 100 } })).data;
-  await pause(); normalizeExpired(); return structuredClone(demoBookings);
+export async function getAdminBookings(phase?: BookingPhase): Promise<AdminBooking[]> {
+  if (!huyDemo) return (await api.request<PaginatedResponse<AdminBooking>>('/admin/bookings', { query: { page: 1, page_size: 100, phase } })).data;
+  await pause(); normalizeExpired();
+  const rows = demoBookings.map(b => ({ ...structuredClone(b), balance: b.booking_type === 'MAINTENANCE_LOCK' ? null : demoBalance(b.booking_id) }));
+  return rows.filter(b => !phase || (b.status === 'CONFIRMED' && (
+    phase === 'UPCOMING' ? Date.parse(b.start_time) > Date.now() :
+    phase === 'IN_PROGRESS' ? Date.parse(b.start_time) <= Date.now() && Date.now() < Date.parse(b.end_time) :
+    phase === 'ENDED_UNPAID' ? Date.parse(b.end_time) <= Date.now() && b.balance?.payment_status !== 'PAID' : b.balance?.payment_status === 'PAID')));
 }
 export async function addAdminBooking(input: { user_id: number; pitch_id: number; start_time: string; end_time: string; note: string }): Promise<Booking> {
   if (!huyDemo) return (await api.request<ApiResponse<Booking>>('/admin/bookings', { method: 'POST', body: input })).data;
@@ -302,61 +268,29 @@ export async function changePitch(id: number, patch: { pitch_name?: string; pric
   if (!huyDemo) return (await api.request<ApiResponse<Pitch>>(`/admin/pitches/${id}`, { method: 'PATCH', body: patch })).data;
   await pause(); const p = findPitch(id); Object.assign(p, patch); return structuredClone(p);
 }
-export async function getSettlement(id: number): Promise<Settlement> {
-  if (!huyDemo) return (await api.request<ApiResponse<Settlement>>(`/admin/bookings/${id}/settlement`)).data;
-  await pause(); return demoSettlement(id);
+export async function getBookingBalance(id: number): Promise<BookingBalance> {
+  if (!huyDemo) return (await api.request<ApiResponse<BookingBalance>>(`/admin/bookings/${id}/balance`)).data;
+  await pause(); return demoBalance(id);
 }
-export async function setSettlementResult(id: number, outcome: MatchOutcome, expectedVersion: number): Promise<Settlement> {
-  if (!huyDemo) return (await api.request<ApiResponse<Settlement>>(`/admin/bookings/${id}/settlement/result`, { method: 'PATCH', body: { outcome, expected_version: expectedVersion } })).data;
-  await pause(); const b = findBooking(id); const s = demoSettlement(id);
-  if (b.payment_rule !== 'LOSER_PAYS_REMAINDER') throw err('VALIDATION_ERROR', 'Booking này không cần chốt kết quả.');
-  if (Date.parse(b.end_time) > Date.now()) throw err('STATE_CONFLICT', 'Trận chưa kết thúc.');
-  if (s.version !== expectedVersion) throw err('STATE_CONFLICT', 'Thông tin đã đổi; hãy tải lại.');
-  if (demoTransactions.some(t => t.booking_id === id && t.payment_type === 'BOOKING_REMAINING_PAYMENT')) throw err('STATE_CONFLICT', 'Đã tạo giao dịch quyết toán; không thể đổi kết quả.');
-  demoOutcome.set(id, { outcome, version: s.version + 1 }); return demoSettlement(id);
-}
-export async function createSettlementSession(id: number, payerId: number, method: 'VNPAY' | 'MOMO', expectedVersion: number): Promise<PaymentSession> {
-  if (!huyDemo) return (await api.request<ApiResponse<PaymentSession>>(`/admin/bookings/${id}/settlement/payment-sessions`, { method: 'POST', body: { payer_user_id: payerId, payment_method: method, expected_version: expectedVersion } })).data;
-  await pause(); const s = demoSettlement(id);
-  if (s.version !== expectedVersion) throw err('STATE_CONFLICT', 'Phiên quyết toán đã thay đổi.');
-  const payer = s.payers.find(p => p.user_id === payerId);
-  if (!payer || integer(payer.remaining_amount) <= 0n) throw err('VALIDATION_ERROR', 'Không có khoản cần thu.');
-  if (s.payment_rule === 'LOSER_PAYS_REMAINDER' && !s.outcome) throw err('STATE_CONFLICT', 'Cần chốt kết quả trước khi tạo mã thanh toán.');
-  const pending = demoTransactions.find(p => p.booking_id === id && p.payment_type === 'BOOKING_REMAINING_PAYMENT' && p.status === 'PENDING' && (p as Transaction & { payer_id?: number }).payer_id === payerId);
-  if (pending) return { ...pending, qr_payload: 'DEMO ONLY - NO PAYMENT', expires_at: new Date(Date.now() + 300000).toISOString() };
-  const data: PaymentSession = { payment_id: nextPaymentId++, booking_id: id, post_id: null, amount: payer.remaining_amount,
-    payment_type: 'BOOKING_REMAINING_PAYMENT', payment_method: method, status: 'PENDING',
-    transaction_code: 'DEMO-NOT-PAYABLE', refund_for_payment_id: null, paid_at: null,
-    qr_payload: 'DEMO ONLY - NO PAYMENT', expires_at: new Date(Date.now() + 300000).toISOString() };
-  demoTransactions.unshift({ ...data, payer_name: payer.display_name, pitch_name: findPitch(findBooking(id).pitch_id).pitch_name, payer_id: payerId } as Transaction & { payer_id: number });
-  return data;
-}
-export async function recordCash(input: ReceiptInput): Promise<Payment> {
-  if (!huyDemo) return (await api.request<ApiResponse<Payment>>('/admin/payments/record', { method: 'POST', body: input })).data;
+export async function confirmBookingPaid(id: number, input: ConfirmBookingPaid): Promise<BookingBalance> {
+  if (!huyDemo) return (await api.request<ApiResponse<BookingBalance>>(`/admin/bookings/${id}/confirm-paid`, { method: 'POST', body: input })).data;
   await pause();
-  if (!['CASH', 'BANK_TRANSFER'].includes(input.payment_method)) throw err('VALIDATION_ERROR', 'Chỉ hỗ trợ tiền mặt/chuyển khoản tại quầy.');
-  const b = findBooking(input.booking_id);
-  if (b.status !== 'CONFIRMED' && b.status !== 'PENDING_HOLD') throw err('STATE_CONFLICT', 'Booking không thể ghi thu.');
-  if (integer(input.amount) <= 0n) throw err('VALIDATION_ERROR', 'Số tiền phải lớn hơn 0.');
-  if (input.payment_type === 'BOOKING_REMAINING_PAYMENT' && demoTransactions.some(t => t.booking_id === b.booking_id && t.payment_type === 'BOOKING_REMAINING_PAYMENT' && t.status === 'PENDING')) {
-    throw err('STATE_CONFLICT', 'Đã có phiên QR chưa đối soát; không thể thu thêm trong demo để tránh trùng.');
+  const key = `${id}:${input.idempotency_key}`;
+  const previous = demoReceipts.get(key);
+  if (previous) {
+    if (previous.payload !== JSON.stringify(input)) throw err('STATE_CONFLICT', 'Mã xác nhận đã dùng cho nội dung khác.');
+    return structuredClone(previous.balance);
   }
-  const s = b.status === 'CONFIRMED' ? demoSettlement(b.booking_id) : null;
-  const payer = s?.payers.find(p => p.user_id === input.user_id);
-  if (input.payment_type === 'BOOKING_REMAINING_PAYMENT' && (!payer || (s?.payment_rule === 'LOSER_PAYS_REMAINDER' && !s.outcome) || integer(input.amount) > integer(payer.remaining_amount))) {
-    throw err('VALIDATION_ERROR', 'Khoản thu không khớp kế hoạch quyết toán.');
-  }
-  const t: Transaction = { payment_id: nextPaymentId++, booking_id: b.booking_id, post_id: null,
-    amount: input.amount, payment_type: input.payment_type, payment_method: input.payment_method,
-    status: 'SUCCESS', transaction_code: `DEMO-CASH-${nextPaymentId}`, refund_for_payment_id: null,
-    paid_at: new Date().toISOString(), payer_name: payer?.display_name ?? 'Người đặt sân', pitch_name: findPitch(b.pitch_id).pitch_name };
-  demoTransactions.unshift(t);
-  // Demo status is NOT a real gateway or persisted backend payment.
-  if (b.status === 'PENDING_HOLD' && input.payment_type === 'BOOKING_DEPOSIT' && integer(input.amount) >= integer(b.deposit_amount)) {
-    b.status = 'CONFIRMED'; b.hold_expires_at = null;
-    b.payer_progress = [{ user_id: input.user_id, required_amount: b.deposit_amount, paid_amount: input.amount, status: 'PAID' }];
-  }
-  return structuredClone(t);
+  const b = findBooking(id), balance = demoBalance(id);
+  if (b.status !== 'CONFIRMED' || Date.parse(b.end_time) > Date.now()) throw err('STATE_CONFLICT', 'Chỉ thu đủ sau giờ kết thúc của booking đã xác nhận.');
+  if (integer(balance.outstanding_amount) <= 0n || integer(input.expected_outstanding) !== integer(balance.outstanding_amount)) throw err('STATE_CONFLICT', 'Số dư đã thay đổi. Hãy tải lại.');
+  if (!input.receipts.length || input.receipts.some(r => !/^[1-9]\d*(?:\.00)?$/.test(r.amount) || !['CASH', 'BANK_TRANSFER'].includes(r.payment_method)) || input.receipts.reduce((sum, r) => sum + integer(r.amount), 0n) !== integer(balance.outstanding_amount)) throw err('VALIDATION_ERROR', 'Tổng khoản thực nhận phải bằng số còn thiếu.');
+  input.receipts.forEach((r, index) => demoTransactions.unshift({ payment_id: nextPaymentId++, booking_id: id, post_id: null, amount: r.amount,
+    payment_type: 'BOOKING_REMAINING_PAYMENT', payment_method: r.payment_method, status: 'SUCCESS',
+    transaction_code: `DEMO-${key}-${index}`, refund_for_payment_id: null, paid_at: new Date().toISOString() }));
+  const result = demoBalance(id);
+  demoReceipts.set(key, { payload: JSON.stringify(input), balance: structuredClone(result) });
+  return result;
 }
 export async function getTransactions(from?: string, to?: string): Promise<TransactionList> {
   if (!huyDemo) return await api.request<TransactionList>('/admin/transactions', { query: { page: 1, page_size: 100, from, to } });
