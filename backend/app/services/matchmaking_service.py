@@ -29,9 +29,9 @@ def score(ctx, source, target):
     if active != users:
         return 0
     size = 5 if source.pitch_type == 'PITCH_5' else 7
-    if opponent and (len(source_users) < size or len(target_users) < size):
+    if opponent and (len(source_users) + post_service.guest_players(source) < size or len(target_users) + post_service.guest_players(target) < size):
         return 0
-    if recruitment and len(target_users) > (source.required_players or 0):
+    if recruitment and len(target_users) + post_service.guest_players(target) > (source.required_players or 0):
         return 0
     try:
         post_service.assert_available(ctx, users, source.match_time, source.end_time, [source.post_id, target.post_id])

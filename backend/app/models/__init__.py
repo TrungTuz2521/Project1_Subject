@@ -57,6 +57,8 @@ class MatchPost(Timestamped, db.Model):
     payment_rule = db.Column(db.String(100))
     required_players = db.Column(db.Integer)
     current_players = db.Column(db.Integer, nullable=False, default=1)
+    # Per-post snapshot, independent of permanent TeamMember membership. NULL = legacy.
+    attendance_plan = db.Column(db.JSON, nullable=True)
     required_deposit = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     expiry_time = db.Column(UTCDateTime(), nullable=False)
     is_fallback_scanned = db.Column(db.Boolean, nullable=False, default=False)

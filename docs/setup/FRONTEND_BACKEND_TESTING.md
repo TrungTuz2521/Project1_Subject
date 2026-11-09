@@ -51,7 +51,7 @@ Giữ xác minh TLS/hostname, cấu hình TIDB_CA_PATH nếu môi trường cầ
 
 Giữ Terminal mở. Truy cập http://127.0.0.1:5000/api/v1/health: mong đợi HTTP 200 và data.status=ok. Health thành công chỉ chứng minh Flask đang chạy, không tự chứng minh đăng nhập hoặc mọi truy vấn database đều thành công.
 
-Không chạy lại schema gốc/V2/V3 trên TiDB dùng chung. Đăng ký, sửa hồ sơ, tạo đội và đặt sân đều có thể ghi dữ liệu thật khi tắt mock. Dùng database thử nghiệm riêng cho các thao tác đó, được cấu hình bằng các TIDB_* tương ứng. Không thay TIDB_DATABASE tùy ý rồi chạy migration để tự dựng schema thiếu căn cứ.
+TiDB test nhóm đã áp dụng schema gốc/V2/V3 và migration 004 (06/11/2026); không chạy lại những SQL này khi pull code. Đăng ký, sửa hồ sơ, tạo đội và đặt sân đều có thể ghi dữ liệu thật khi tắt mock. Dùng database thử nghiệm riêng cho các thao tác đó, được cấu hình bằng các TIDB_* tương ứng. Không thay TIDB_DATABASE tùy ý rồi chạy migration để tự dựng schema thiếu căn cứ.
 
 ## 4. Tạo cấu hình frontend thật
 
@@ -129,3 +129,9 @@ Khi báo lỗi, gửi nhánh/commit, URL trang, HTTP status và error.code, nộ
 ## 8. Chạy lại vào những lần sau
 
 Giữ các file local trên máy. Khi pull có đổi package-lock, chạy npm ci; khi requirements đổi thì cài lại thư viện backend. Khởi động backend và frontend ở hai Terminal như trên. Chuyển nhánh không có nghĩa cấu hình local tự đổi theo: kiểm tra lại mock/API URL nếu chuyển giữa nhánh demo và nhánh tích hợp.
+
+## 8. Demo quân số theo buổi đá
+
+Làm theo [hướng dẫn từng chức năng](../api/SESSION_ATTENDANCE_GUIDE.md#demo-từng-bước). Để người demo thực hiện một bước rồi xác nhận kết quả trước khi chuyển bước kế tiếp. Dùng backend thật, tắt mock; mock hiện trả 501 cho payload quân số mới. Không chỉ nhìn số thành viên ở trang đội để kết luận một buổi đá đã đủ người.
+
+Đã xác minh trên giao diện ngày 06/11: chọn đại diện + 4 người ngoài ứng dụng cho sân 7 hiển thị 5/7 và thiếu 2. Luồng nhận thêm hai người, chống cộng trùng và đủ 7 nhưng đội chỉ có 3 tài khoản đã kiểm thử trên SQLite cô lập. Chưa dùng dữ liệu nhóm để tạo booking/thu tiền thử cho ca này.

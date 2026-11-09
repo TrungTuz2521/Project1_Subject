@@ -118,8 +118,14 @@ def next_actor(ctx, uid):
 def accept_member_proposal(ctx, proposal, posts):
     source = posts[0]
     target = posts[1] if len(posts) > 1 else None
+    original_ids = post_service.party_users(ctx, source)
+    original_guests = post_service.guest_players(source)
     candidate_ids = post_service.party_users(ctx, target) if target else {proposal.candidate_user_id}
-    if not candidate_ids or None in candidate_ids or len(candidate_ids) > (source.required_players or 0):
+    candidate_guests = post_service.guest_players(target) if target else 0
+    joining_count = len(candidate_ids) + candidate_guests
+    if original_ids & candidate_ids:
+        raise DomainError('STATE_CONFLICT', 'Người chơi đã được tính trong quân số buổi đá.')
+    if not candidate_ids or None in candidate_ids or joining_count > (source.required_players or 0):
         raise DomainError('STATE_CONFLICT', 'Không đủ chỗ nhận thành viên.')
     if not source.team_id:
         team = Team(team_name=source.title[:100], created_by=source.creator_id, creation_type='AI_RANDOM')
@@ -136,10 +142,10 @@ def accept_member_proposal(ctx, proposal, posts):
     ctx.locks.lock(MatchParticipant, [p.participant_id for p in participants])
     for uid in sorted(candidate_ids):
         membership = next((m for m in existing if m.team_id == team_id and m.user_id == uid), None)
-        if membership and membership.status == 'ACTIVE':
-            raise DomainError('STATE_CONFLICT', 'Thành viên đã ở trong đội.')
-        if membership:
+        if membership and membership.status != 'ACTIVE':
             membership.status, membership.role = 'ACTIVE', 'MEMBER'
+        elif membership:
+            pass  # Existing team member joins this particular session; count once.
         else:
             ctx.session.add(TeamMember(team_id=team_id, user_id=uid, role='MEMBER'))
         participant = next((p for p in participants if p.user_id == uid), None)
@@ -156,8 +162,10 @@ def accept_member_proposal(ctx, proposal, posts):
         if target.team_id:
             ctx.session.get(Team, target.team_id).status = 'INACTIVE'
     ctx.session.flush()
-    source.current_players = team_service.count_members(ctx, team_id)
-    source.required_players -= len(candidate_ids)
+    source.attendance_plan = {'user_ids': sorted(original_ids | candidate_ids),
+                              'guest_players': original_guests + candidate_guests}
+    source.current_players = len(original_ids | candidate_ids) + original_guests + candidate_guests
+    source.required_players -= joining_count
     source.status = 'OPEN' if source.required_players else 'MATCHED'
     notification_service.notify(ctx, candidate_ids | {source.creator_id}, 'TEAM_JOINED', 'Đã ghép thành viên',
                                 'Thành viên đã được cập nhật vào đội.', proposal_id=proposal.proposal_id)
@@ -166,7 +174,7 @@ def accept_member_proposal(ctx, proposal, posts):
         ctx.session.add(MatchPost(creator_id=source.creator_id, team_id=team_id, post_type='FIND_OPPONENT',
             title=source.title, pitch_id=source.pitch_id, pitch_type=source.pitch_type, match_time=source.match_time,
             end_time=source.end_time, skill_level=source.skill_level, payment_rule=source.payment_rule or 'SPLIT_EQUAL',
-            current_players=source.current_players, expiry_time=source.expiry_time))
+            current_players=source.current_players, attendance_plan=dict(source.attendance_plan), expiry_time=source.expiry_time))
     from app.contracts.dto import MembershipResult
     ctx.session.flush()
     first = ctx.session.scalar(select(MatchParticipant).where(MatchParticipant.post_id == source.post_id,

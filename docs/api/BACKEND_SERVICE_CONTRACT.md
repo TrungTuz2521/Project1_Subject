@@ -1,6 +1,6 @@
 # Hợp đồng service backend giữa Đức và Tú
 
-Phiên bản 1.1 — cập nhật ngày 29/10/2026: thu phần còn lại theo booking, QR chung và Admin xác nhận thực thu. Đức và Tú dùng tệp này khi triển khai và review backend. Đây là hợp đồng nội bộ giữa các service, chưa phải mã đã có hoặc kết quả kiểm thử. Hợp đồng HTTP/JSON nằm tại [API và Models](API_MODELS_CONTRACT_PROJECT1.md); tài liệu này chốt trách nhiệm, dữ liệu nội bộ, transaction và các điểm tích hợp còn thiếu.
+Phiên bản 1.2 — cập nhật tài liệu ngày 08/11/2026, gồm quân số buổi đá (06/11) và luồng thu tiền (29/10): thu phần còn lại theo booking, QR chung và Admin xác nhận thực thu. Đức và Tú dùng tệp này khi triển khai và review backend. Đây là hợp đồng nội bộ giữa các service, chưa phải mã đã có hoặc kết quả kiểm thử. Hợp đồng HTTP/JSON nằm tại [API và Models](API_MODELS_CONTRACT_PROJECT1.md); tài liệu này chốt trách nhiệm, dữ liệu nội bộ, transaction và các điểm tích hợp còn thiếu.
 
 
 ## 1. Phân công và nguồn dữ liệu
@@ -13,7 +13,7 @@ Phiên bản 1.1 — cập nhật ngày 29/10/2026: thu phần còn lại theo b
 
 Đức điều phối tệp models/__init__.py và constants; Tú viết các Model mình sở hữu rồi export dùng chung. Một bảng chỉ có một ORM Model. Không sao chép User/Match/Booking sang module khác. Controller không tự cập nhật trạng thái hay tiền bằng ORM ngoài service đã phân công.
 
-Database test dùng chung đã áp dụng V3: không chạy lại schema gốc/V2/V3, không create_all khi khởi động. Không tự sửa database để vừa với code; tạo migration riêng và review trước. Backend hiện là khung; các hàm và module được mô tả dưới đây là phần phải triển khai.
+Database test dùng chung đã áp dụng V3 và 004: không chạy lại schema gốc/V2/V3/004, không create_all khi khởi động. Không tự sửa database để vừa với code; tạo migration riêng và review trước. Hợp đồng mô tả trách nhiệm tích hợp; phần đã có code và kết quả kiểm thử xem [trạng thái triển khai](BACKEND_IMPLEMENTATION_STATUS.md).
 
 ## 2. Quy tắc nghiệp vụ dùng chung
 
@@ -192,7 +192,7 @@ Use case commit các thay đổi thất bại đã xử lý rồi trả outcome 
 team_service.accept_member_proposal(ctx, *, proposal_id: int) -> MembershipResult
 ```
 
-Chỉ gọi khi TEAM_MEMBER có đủ hai confirmation ACCEPTED và còn hạn; khóa Team, bài/proposal rồi các hàng thành viên/đăng ký theo thứ tự chung. Kiểm tra còn chỗ, khả năng tham gia và không trùng người. Cập nhật TeamMember/MatchParticipant cùng số người còn thiếu một lần; unique hiện có và transaction bảo vệ gọi lặp.
+Chỉ gọi khi TEAM_MEMBER có đủ hai confirmation ACCEPTED và còn hạn; khóa Team, bài/proposal rồi các hàng thành viên/đăng ký theo thứ tự chung. Kiểm tra còn chỗ, khả năng tham gia và không trùng người. Cập nhật TeamMember/MatchParticipant cùng snapshot attendance_plan, current_players và required_players một lần; giữ nguyên số khách của buổi đá, hợp nhất ID và chống đếm trùng. Thành viên lâu dài chưa được chọn cho buổi này có thể tham gia sau hai xác nhận mà không tạo TeamMember trùng. Unique hiện có và transaction bảo vệ gọi lặp.
 
 Bài tìm đội của người được nhận đóng MATCHED. Bài tuyển OPEN nếu còn thiếu, MATCHED khi đủ. Nhóm AI_RANDOM tiếp tục theo luồng đã có trong hợp đồng API. Không gọi BookingService/PaymentService trong thao tác nhận người; không tự thu khoản cọc tham gia mới.
 
@@ -357,3 +357,7 @@ Các ca concurrency/payment phải được kiểm thử tích hợp trên datab
 5. Ghép frontend thật theo hợp đồng; chỉ chọn một gateway để triển khai trước. Backend mock gateway dùng trong test phải được phân biệt rõ với gateway thật.
 
 Mỗi PR thay một điểm nối phải cập nhật hợp đồng, service caller/callee và test liên quan. Không đổi tên hàm/ENUM/DTO riêng lẻ rồi yêu cầu bên kia tự đoán. Không có endpoint/hàm giả báo thành công cho phần chưa triển khai. Trước khi merge, Đức và Tú cùng xác nhận checklist mục 14 của luồng đó đã đạt.
+
+### Bổ sung quân số từng buổi (06/11/2026)
+
+MatchPost.attendance_plan là snapshot JSON riêng từng bài: user_ids và guest_players. PostService.party_users chỉ lấy user_ids của snapshot để khóa/kiểm tra trùng lịch/thông báo; NULL mới fallback roster đội cũ. Matchmaking so tổng tài khoản + khách để đủ sân 5/7. AcceptMemberProposal giữ khách, hợp nhất ID không trùng rồi tính lại current_players; TeamMember vẫn đếm tài khoản lâu dài. Nhóm AI_RANDOM sao chép snapshot khi tạo FIND_OPPONENT. Xem [migration 004 đã áp dụng](../../database/schema/004_session_attendance_README.md) và [luồng quân số/API/demo](SESSION_ATTENDANCE_GUIDE.md) cho ví dụ 7 người/3 tài khoản.

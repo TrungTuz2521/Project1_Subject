@@ -3,6 +3,7 @@ import type { Booking, PaymentSession } from '../../types/api';
 import { cancelMyBooking, createDepositSession, getBooking, getMyBookings, huyDemo, moneyVN, dateVN } from '../../services/huyApi';
 import { Banner, Button, Card, Empty, Head, Status, Warning, countdown, useNow } from '../field-management/ui';
 import { PaymentBox } from '../payments/PaymentBox';
+import { bookingHash } from '../../services/bookingNavigation';
 
 export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | null; onRefresh?: () => void }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -16,9 +17,11 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
   useEffect(() => { if (selectedId !== null) setActiveId(selectedId); }, [selectedId]);
   useEffect(() => {
     let valid = true;
-    getMyBookings().then(data => { if (valid) setBookings(data); }).catch(e => { if (valid) setError(e); });
+    Promise.all([getMyBookings(), selectedId ? getBooking(selectedId) : Promise.resolve(null)]).then(([data, selected]) => {
+      if (valid) setBookings(selected && !data.some(b => b.booking_id === selected.booking_id) ? [selected, ...data] : data);
+    }).catch(e => { if (valid) setError(e); });
     return () => { valid = false; };
-  }, [refreshCounter]);
+  }, [refreshCounter, selectedId]);
   const active = bookings.find(b => b.booking_id === activeId) ?? null;
   const validHold = !!active?.hold_expires_at && Date.parse(active.hold_expires_at) > now && active.status === 'PENDING_HOLD';
   async function reload() {
@@ -45,7 +48,7 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
   return <>
     <Head kicker="PLAYER / 02" title="Booking của tôi" description="Theo dõi trạng thái giữ sân, khoản cọc và lịch đã đặt." aside={<Button variant="outline" onClick={() => void reload()}>↻ Làm mới</Button>} />
     <Warning error={error} />{notice && <Banner tone="success">{notice}</Banner>}
-    <div className="huy-two-col"><Card><h2>Danh sách đặt sân</h2>{bookings.length === 0 ? <Empty>Chưa có booking nào.</Empty> : <div className="huy-booking-list">{bookings.map(b => <button type="button" className={`huy-booking-item ${activeId === b.booking_id ? 'active' : ''}`} key={b.booking_id} onClick={() => { setActiveId(b.booking_id); setPayment(null); setError(null); }}>
+    <div className="huy-two-col"><Card><h2>Danh sách đặt sân</h2>{bookings.length === 0 ? <Empty>Chưa có booking nào.</Empty> : <div className="huy-booking-list">{bookings.map(b => <button type="button" className={`huy-booking-item ${activeId === b.booking_id ? 'active' : ''}`} key={b.booking_id} onClick={() => { setActiveId(b.booking_id); setPayment(null); setError(null); window.location.hash = bookingHash(b.booking_id); }}>
       <span><b>Đơn #{b.booking_id}</b><small>{dateVN(b.start_time)}</small><small>{moneyVN(b.total_amount)}</small></span><Status state={b.status}/></button>)}</div>}</Card>
       <Card><h2>Chi tiết booking</h2>{active ? <>
         <div className="huy-info-grid"><div><small>Mã đơn</small><strong>#{active.booking_id}</strong></div><div><small>Loại đặt</small><strong>{active.booking_type}</strong></div>

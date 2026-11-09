@@ -8,6 +8,7 @@ import { getCurrentUser, login, logout, register, updateCurrentUser } from './se
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
 import { session } from './stores/session';
+import { selectedBookingFromHash } from './services/bookingNavigation';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
 const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/matchmaking', '/notifications', '/schedule'] as const;
@@ -16,7 +17,7 @@ const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
 };
 function readRoute(): Route {
-  const value = window.location.hash.replace(/^#/, '') || '/login';
+  const value = window.location.hash.replace(/^#/, '').split('?')[0] || '/login';
   return routes.includes(value as Route) ? value as Route : '/login';
 }
 function go(path: Route) {
@@ -35,12 +36,13 @@ function fieldError(error: unknown, field: string) {
 export default function App() {
   const current = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const [route, setRoute] = useState<Route>(readRoute);
+  const [bookingTarget, setBookingTarget] = useState(() => selectedBookingFromHash(window.location.hash));
   const [notice, setNotice] = useState('');
   const previousSession = useRef(Boolean(session.getSnapshot()));
   const manualLogout = useRef(false);
 
   useEffect(() => {
-    const onHashChange = () => setRoute(readRoute());
+    const onHashChange = () => { setRoute(readRoute()); setBookingTarget(selectedBookingFromHash(window.location.hash)); };
     const onManualLogout = () => { manualLogout.current = true; setNotice('Bạn đã đăng xuất khỏi hệ thống.'); };
     window.addEventListener('hashchange', onHashChange);
     window.addEventListener('app:manual-logout', onManualLogout);
@@ -69,7 +71,7 @@ export default function App() {
 
   if (!current) {
     return <AuthPage mode={route === '/register' ? 'register' : 'login'} notice={notice} clearNotice={() => setNotice('')}
-      onNavigate={go} onSuccess={(message) => { setNotice(message); go('/login'); }} onLogin={() => { setNotice(''); go('/dashboard'); }} />;
+      onNavigate={go} onSuccess={(message) => { setNotice(message); go('/login'); }} onLogin={() => { setNotice(''); if(route!=='/my-bookings') go('/dashboard'); }} />;
   }
 
   // Public auth URLs should never display an authenticated user a login form.
@@ -86,7 +88,7 @@ export default function App() {
   if (activeRoute in fieldTabs) {
     const allowed = !activeRoute.startsWith('/admin/') || current.user.role === 'ADMIN';
     return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}>
-      {allowed ? <FieldApp key={current.user.user_id} tab={fieldTabs[activeRoute as keyof typeof fieldTabs]} />
+      {allowed ? <FieldApp key={current.user.user_id} tab={fieldTabs[activeRoute as keyof typeof fieldTabs]} selectedBookingId={bookingTarget} />
         : <section role="alert" className="notice-error">Bạn không có quyền truy cập chức năng quản trị.</section>}
     </AppShell>;
   }

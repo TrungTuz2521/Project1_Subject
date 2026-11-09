@@ -1,6 +1,7 @@
 import { ApiError, errorMessage } from './api';
 
 const labels: Record<string, string> = {
+  attendance_user_ids: 'Người có tài khoản tham gia', guest_players: 'Người ngoài ứng dụng',
   team_id: 'Đội bóng', match_time: 'Giờ bắt đầu', end_time: 'Giờ kết thúc',
   expiry_time: 'Hạn nhận yêu cầu', pitch_type: 'Loại sân', pitch_id: 'Sân',
   title: 'Tiêu đề', skill_level: 'Trình độ', payment_rule: 'Quy tắc chia tiền',

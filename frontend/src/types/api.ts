@@ -36,10 +36,12 @@ export interface PostSummary {
   post_id: number; title: string; post_type: PostType; team_id: number | null;
   pitch_id: number | null; pitch_type: PitchType | null; match_time: ISODateTime | null;
   end_time: ISODateTime | null; skill_level: SkillLevel; payment_rule: TeamPaymentRule | null;
+  guest_players?: number; registered_players?: number; attendance_mode?: 'SESSION' | 'LEGACY_TEAM';
   required_players: number | null; current_players: number; expiry_time: ISODateTime; status: PostStatus;
 }
-export interface MatchPost extends PostSummary { description: string | null; matching_ready: boolean }
+export interface MatchPost extends PostSummary { attendance_user_ids?: number[] | null; description: string | null; matching_ready: boolean }
 export interface PostCreate {
+  attendance_user_ids?: number[]; guest_players?: number;
   post_type: PostType; title: string; skill_level: SkillLevel; expiry_time: ISODateTime;
   description?: string; team_id?: number | null; pitch_id?: number | null; pitch_type?: MvpPitchType;
   match_time?: ISODateTime; end_time?: ISODateTime; payment_rule?: TeamPaymentRule; required_players?: number;

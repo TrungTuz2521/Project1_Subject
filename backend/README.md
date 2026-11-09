@@ -4,7 +4,7 @@
 
 Từ thư mục `backend`, tạo virtualenv, cài `python -m pip install -r requirements.txt`.
 Sao chép `.env.example` sang `.env`, cấu hình TiDB và `JWT_SECRET_KEY` ngẫu nhiên ít nhất 32 byte.
-Không commit `.env`. Không chạy lại migration V3 trên database chung.
+Không commit `.env`. TiDB test nhóm đã áp dụng V3 và 004 (attendance_plan); không chạy lại các migration này trên database chung. Database khác chưa có cột cần theo [hướng dẫn 004](../database/schema/004_session_attendance_README.md) trước khi chạy code mới.
 
 ```powershell
 python -m flask --app app:create_app check-db
@@ -117,3 +117,11 @@ python -m unittest discover -s tests -p 'test_booking_concurrency.py'
 ```
 
 Test **tạo và xóa toàn bộ bảng**, nên chỉ chạy khi host là local và tên database kết thúc bằng `_test`. Tài khoản MySQL có mật khẩu dùng `caching_sha2_password` có thể cần thêm gói `cryptography`.
+
+## Quân số buổi đá
+
+`MatchPost.attendance_plan` lưu `{user_ids, guest_players}` cho từng bài. `Team.active_member_count` vẫn đếm tài khoản ACTIVE lâu dài. `PostService.party_users` lấy tài khoản của snapshot để kiểm tra lịch; ghép đối thủ xét tài khoản + khách. Nhận ứng viên sau đủ hai xác nhận chỉ cộng một lần, không tạo booking/cọc.
+
+Xem [hợp đồng và các tình huống demo](../docs/api/SESSION_ATTENDANCE_GUIDE.md). Kiểm thử riêng cho tính năng: `python -m unittest discover -s tests -p test_attendance.py -v` trên SQLite trong bộ nhớ. Không dùng TiDB nhóm để tạo dữ liệu kiểm thử tự động.
+
+Hướng dẫn điền env, đăng ký IPN và thử cọc: [VNPay sandbox](../docs/setup/VNPAY_SANDBOX.md).

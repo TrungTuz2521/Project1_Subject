@@ -147,7 +147,7 @@ npm run build
 
 Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO; `mocks` cho dữ liệu tổng hợp và handler; `features/matchmaking/TeamsPage.tsx` cho luồng tải danh sách/gửi form/báo lỗi.
 
-Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Form đăng nhập thật và các chức năng backend chưa được triển khai trong bộ mẫu.
+Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [trạng thái triển khai và kiểm thử](docs/api/BACKEND_IMPLEMENTATION_STATUS.md) cho phạm vi đã xác minh.
 
 Build production luôn tắt mock. Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
 
@@ -157,9 +157,9 @@ Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để th
 
 ### Trạng thái database dùng chung
 
-Database `test` trên TiDB Serverless v8.5.3 đã chạy migration V2 và **V3 ngày 27/10/2026**. Kết nối TLS và cấu trúc đã được kiểm tra; kết quả V3 do người quản lý dự án chạy và xác minh. Đây là trạng thái database, không có nghĩa Models hoặc API đã được lập trình.
+Database `test` trên TiDB Serverless v8.5.3 đã chạy migration V2, **V3 ngày 27/10/2026** và **004 ngày 06/11/2026**. Migration 004 thêm `match_posts.attendance_plan JSON NULL` để lưu quân số riêng cho từng buổi đá; giữ nguyên các dòng dữ liệu cũ. Kết nối TLS và cấu trúc đã được kiểm tra; kết quả V3 do người quản lý dự án chạy và xác minh. Đây là trạng thái database, không có nghĩa Models hoặc API đã được lập trình.
 
-**Thành viên pull code về chỉ cấu hình kết nối, không chạy lại schema gốc, V2 hoặc V3 trên database dùng chung; không dùng `db.create_all()` để tự thay schema.**
+**Thành viên pull code về chỉ cấu hình kết nối, không chạy lại schema gốc, V2, V3 hoặc 004 trên database dùng chung đã cập nhật; không dùng `db.create_all()` để tự thay schema.**
 
 ### Các bảng hiện có
 
@@ -192,7 +192,15 @@ Báo cáo doanh thu của ứng dụng tổng hợp toàn cụm theo ngày/thán
 
 Kết quả kiểm tra sau V3: còn 1 bài đăng thiếu thông tin phục vụ ghép và 1 booking lịch sử chưa có kế hoạch cọc. Backend cần nhận diện dữ liệu này; không tự đưa bài thiếu thông tin vào AI ghép hoặc thu thêm tiền lịch sử.
 
-Các tệp trong repository:
+### Migration 004: quân số từng buổi — đã áp dụng
+
+- Một đội có thể có 3 tài khoản nhưng buổi đá đủ 7 người: 3 tài khoản tham gia + 4 người ngoài ứng dụng.
+- Đội trưởng khai báo quân số trong bài đăng, không phải thay danh sách đội mỗi ngày. Nhận thêm người chỉ được cộng sau đủ hai xác nhận.
+- Đội thường tuyển đủ có nút **Tạo bài tìm đối thủ với quân số này**; AI_RANDOM giữ luồng tự tạo bài tìm đối thủ khi đủ người.
+- [Quy tắc, API và hướng dẫn demo](docs/api/SESSION_ATTENDANCE_GUIDE.md).
+- [SQL 004](database/schema/004_session_attendance.sql) và [trạng thái/hướng dẫn migration](database/schema/004_session_attendance_README.md). File SQL phục vụ môi trường khác chưa cập nhật; thành viên dùng TiDB nhóm không chạy lại.
+
+Các tệp V3 trong repository:
 
 - [Kiểm tra trước V3](database/schema/003_contract_v3_preflight.sql)
 - [Migration V3](database/schema/003_contract_v3.sql)
@@ -226,6 +234,7 @@ Không đưa `.env`, mật khẩu, JWT secret hoặc chuỗi kết nối có m�
 | Giữ sân | 5 phút từ lúc server tạo hold |
 | Cọc | 20% tổng tiền sân |
 | Hai đội chia tiền | Chọn 50–50 hoặc đội thua trả toàn bộ phần còn thiếu của cả hai đội, không hoàn cọc; hòa tính như 50–50. Mỗi đội đều cọc 10% tổng tiền sân |
+| Quân số buổi đá | Tài khoản được chọn tham gia + người ngoài ứng dụng; đủ 5/7 theo loại sân, độc lập danh sách đội lâu dài |
 | Lượt đá | 90 phút |
 | Giờ mở cửa | 06:00–23:00 giờ Việt Nam |
 | Đặt trước | Tối đa 10 ngày |
@@ -235,7 +244,7 @@ Không đưa `.env`, mật khẩu, JWT secret hoặc chuỗi kết nối có m�
 
 Luồng ghép trận: đăng bài → AI đề xuất → hai bên xác nhận → giữ sân 5 phút → thu đủ cọc → xác nhận trận. Các quy tắc này cần được triển khai trong backend; migration không tự thực thi chúng.
 
-Thu phần còn lại sau trận (chốt 29/10/2026): Admin xem tổng tiền, cọc thực thu và tổng còn thiếu; hiển thị một QR chuyển khoản chung theo booking. Hai đội tự chia tiền theo thể thức đã chọn, có thể chuyển nhiều lần hoặc trả trực tiếp. Admin kiểm tra thực nhận và bấm Xác nhận đã thu đủ; backend ghi Payment theo từng khoản/phương thức, chống trùng và lưu Admin/thời gian. Không chọn đội thắng/hòa, không chia nghĩa vụ từng đội, không cần bảng booking_settlements hay cột kết quả. Cọc trước trận giữ nguyên. Hợp đồng API mới tại mục 15.1; Tú triển khai balance/xác nhận thu, Huy dựng UI; phần này chưa được triển khai trong code Đức.
+Thu phần còn lại sau trận (chốt 29/10/2026): Admin xem tổng tiền, cọc thực thu và tổng còn thiếu; hiển thị một QR chuyển khoản chung theo booking. Hai đội tự chia tiền theo thể thức đã chọn, có thể chuyển nhiều lần hoặc trả trực tiếp. Admin kiểm tra thực nhận và bấm Xác nhận đã thu đủ; backend ghi Payment theo từng khoản/phương thức, chống trùng và lưu Admin/thời gian. Không chọn đội thắng/hòa, không chia nghĩa vụ từng đội, không cần bảng booking_settlements hay cột kết quả. Cọc trước trận giữ nguyên. Hợp đồng API mới tại mục 15.1; Tú triển khai balance/xác nhận thu, Huy dựng UI; backend balance/xác nhận thu của Tú và giao diện Huy đã được nối trên `integration/team`; kiểm thử ghi thu tiền phải dùng database thử nghiệm riêng.
 
 Đọc [hợp đồng API và Models](docs/api/API_MODELS_CONTRACT_PROJECT1.md) trước khi bắt đầu code; dùng chung tên cột, ENUM, endpoint và dữ liệu gửi/nhận theo tài liệu.
 

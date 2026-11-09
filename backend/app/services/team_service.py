@@ -61,7 +61,18 @@ def remove_member(ctx, team_id, actor, user_id, reason=None):
     membership.status = 'LEFT' if user_id == actor.user_id else 'REMOVED'
     ctx.session.flush()
     for post in posts:
-        if post.status == 'OPEN':
+        if post.status == 'OPEN' and post.attendance_plan is not None:
+            ids = set(post.attendance_plan['user_ids'])
+            if user_id not in ids:
+                continue
+            ids.remove(user_id)
+            post.attendance_plan = {**post.attendance_plan, 'user_ids': sorted(ids)}
+            post.current_players = len(ids) + post.attendance_plan['guest_players']
+            if post.post_type == 'FIND_OPPONENT':
+                post.status = 'CANCELLED'  # A listed player left; captain must publish a new session.
+            elif post.post_type in ('RECRUIT_MEMBERS', 'RANDOM_SQUAD'):
+                post.required_players = (5 if post.pitch_type == 'PITCH_5' else 7) - post.current_players
+        elif post.status == 'OPEN':
             post.current_players = count_members(ctx, team_id)
             if post.post_type == 'RECRUIT_MEMBERS':
                 post.required_players = (post.required_players or 0) + 1

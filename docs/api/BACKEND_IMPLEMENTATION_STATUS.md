@@ -3,7 +3,7 @@
 ## Đã triển khai
 
 - Flask app factory, cấu hình TiDB/TLS/UTC, CORS, error envelope/data/meta, kiểm tra JSON và phân trang.
-- SQLAlchemy Models phần Đức ánh xạ schema V3. Không tạo bảng/migration khi khởi động.
+- SQLAlchemy Models phần Đức ánh xạ schema V3 + 004 (attendance_plan). Không tạo bảng/migration khi khởi động.
 - UnitOfWork, khóa thứ tự users → teams → pitches → posts → proposal → confirmation → match → booking → payment → membership; retry conflict DB xác định tối đa 3 lần.
 - Đăng ký PLAYER bằng bcrypt; đăng nhập JWT HS256 hạn 3600 giây; kiểm tra issuer/audience/exp, tài khoản ACTIVE và vai trò hiện tại; GET/PATCH hồ sơ.
 - Tạo/sửa/xem đội, Captain/member permissions, rời/xóa thành viên; không rời đội khi có trận hoạt động.
@@ -96,3 +96,14 @@ không sửa seed plaintext để lách bcrypt, không nhận Google Login hoặ
 
 - **Đức:** review `app/__init__.py`, `models/__init__.py` và fixture `tests/test_backend.py` (bỏ bảng tự tạo, dùng Model thật; logic các ca giữ nguyên). `reschedule_booking` có cập nhật giờ trên Match và MatchPost trong cùng transaction, cần xem có muốn chuyển sang match_service không.
 - **Huy:** `frontend/src/services/huyApi.ts` vẫn gọi `/settlement*` đã bỏ từ bản 1.8, các route này trả 404. Cần đổi sang `GET /admin/bookings/{id}/balance` và `POST /admin/bookings/{id}/confirm-paid`. Bản demo cho bước 30 phút, backend chỉ nhận lưới 90 phút.
+
+## Quân số theo buổi đá — 06/11/2026
+
+Đã triển khai snapshot attendance_plan, PostCreate attendance_user_ids/guest_players, DTO quân số, tuyển người không cộng trùng, ghép đối thủ theo tài khoản + khách, sao chép snapshot nhóm AI_RANDOM và form frontend. Đội thường tuyển đủ có nút tạo bài tìm đối thủ, không tự đăng. TiDB test đã thêm cột mới bằng migration 004, giữ nguyên dữ liệu. Kiểm tra staging: 131 backend đạt, 14 ca concurrency skip do chưa có DB thử row-locking; frontend 26 đạt và build thành công. Giao diện xác minh 1 tài khoản + 4 người ngoài app = 5/7, còn thiếu 2; không tạo bài/booking/giao dịch thử trên DB nhóm.
+
+## Hướng dẫn sử dụng bản tích hợp hiện tại
+
+- [Quân số từng buổi: quy tắc, API và demo](SESSION_ATTENDANCE_GUIDE.md).
+- Database nhóm đã có migration 004; không chạy lại SQL khi pull code. Đổi quân số có sẵn bằng bài mới, không thêm tài khoản giả hoặc sửa danh sách đội mỗi buổi.
+- Chức năng mời trực tiếp bằng email chưa được triển khai. Thành viên có tài khoản chưa thuộc đội tham gia qua bài tuyển và hai xác nhận; người ngoài ứng dụng được khai báo bằng số lượng.
+- Các con số kiểm thử ở mục 06/11 là kết quả đã ghi nhận ngày đó. Lần cập nhật tài liệu 08/11 không chạy lại kiểm thử nghiệp vụ hoặc thay schema.

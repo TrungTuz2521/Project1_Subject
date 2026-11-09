@@ -321,6 +321,7 @@ export function createMockServer(delayMs = 80) {
     }
     if(path==='/match-posts'&&method==='POST'){
       const body=parseBody(init) as Partial<PostCreate>|null;if(!body)return fail(422,'VALIDATION_ERROR','Dữ liệu bài đăng không hợp lệ.');
+      if(body.attendance_user_ids!==undefined||body.guest_players!==undefined)return fail(501,'MOCK_NOT_IMPLEMENTED','Quân số theo buổi đá cần kết nối backend thật; chế độ demo chưa hỗ trợ.');
       const fields:Record<string,string>={};
       if(typeof body.title!=='string'||body.title.trim().length<1||body.title.trim().length>150)fields.title='Tiêu đề cần từ 1 đến 150 ký tự.';
       if(!body.post_type||!postTypes.includes(body.post_type))fields.post_type='Loại bài đăng không hợp lệ.';

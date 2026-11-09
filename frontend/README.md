@@ -148,3 +148,13 @@ Mock chỉ là dữ liệu trong bộ nhớ riêng cho giao diện sân và khô
 ### Cấu hình tài khoản nhận QR sau trận
 
 Trong `backend/.env` riêng của máy chạy server, điền `BANK_BIN` (mã BIN của ngân hàng nhận) và `BANK_ACCOUNT_NO` (số tài khoản nhận), rồi khởi động lại backend. Không đặt trong frontend, không commit `.env`, không cần tải ảnh QR cá nhân. Payload VietQR do backend tạo theo tài khoản đã cấu hình + outstanding_amount + BOOKING-{id}; frontend chỉ mã hóa payload thành ảnh QR. Kiểm tra tên người nhận, số tài khoản, số tiền và nội dung trên ứng dụng ngân hàng trước khi dùng. QR ngân hàng này dành cho phần còn lại sau trận; cọc VNPay dùng cấu hình gateway riêng. Không nhập mật khẩu ngân hàng hoặc OTP vào dự án.
+
+### Quân số buổi đá (06/11/2026)
+
+Form tạo bài chọn các thành viên có tài khoản sẽ đi đá (người đăng luôn được tính) và số người ngoài ứng dụng. Tổng/thiếu được tính ngay; không sửa danh sách đội mỗi ngày. Sau tuyển đủ, chủ bài có nút tạo bài tìm đối thủ và giữ nguyên quân số này. Danh sách đội ghi số thành viên có tài khoản, bảng tin ghi tổng quân số buổi đá. TiDB nhóm đã có migration 004 ngày 06/11/2026, không chạy lại SQL khi pull code; database khác cần được cập nhật trước khi chạy backend mới; mock frontend trả 501 cho tính năng mới, dùng VITE_USE_MOCKS=false.
+
+Hướng dẫn từng bước và ví dụ request/response: [Quân số theo buổi đá](../docs/api/SESSION_ATTENDANCE_GUIDE.md). Đội có 3 tài khoản và buổi đá 7 người là hai thông tin riêng; luôn hiển thị phần người ngoài ứng dụng để người dùng đối chiếu. Nút tạo bài tìm đối thủ sau tuyển đủ sao chép quân số, vẫn cần người dùng kiểm tra ngày/giờ/hạn bài và bấm Đăng bài.
+
+Bộ chọn giờ đá áp dụng cho tạo và sửa bài tìm đối thủ, tuyển thành viên và ghép nhóm: chọn ngày rồi chọn giờ trong danh sách hợp lệ, tự tính kết thúc sau 90 phút. Khi sửa bài cá nhân tìm đội, lịch vẫn có thể bỏ trống; nếu bổ sung lịch thì chọn từ cùng danh sách. Hạn nhận yêu cầu là thời hạn riêng, vẫn cho chọn phút tùy ý trước hoặc bằng giờ đá.
+
+Thông báo Đã giữ sân có nút Thanh toán tiền cọc, mở Booking của tôi và chọn đúng booking theo booking_id trên hash URL. Đây là chuyển trang; người dùng vẫn phải bấm Thanh toán cọc VNPay trong chi tiết. Xem [thiết lập và demo VNPay](../docs/setup/VNPAY_SANDBOX.md).

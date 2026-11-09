@@ -213,8 +213,8 @@ def create_participant(post_id):
         ctx.locks.lock(MatchPost, [post_id])
         if post.post_type != 'RECRUIT_MEMBERS' or not post.team_id or not post.required_players:
             raise DomainError('RECRUITMENT_NOT_OPEN', 'Bài không tuyển thành viên.')
-        if teams.member(ctx, post.team_id, g.actor.user_id):
-            raise DomainError('STATE_CONFLICT', 'Đã là thành viên đội.')
+        if g.actor.user_id in posts.party_users(ctx, post):
+            raise DomainError('STATE_CONFLICT', 'Người chơi đã được tính trong buổi đá này.')
         posts.assert_available(ctx, {g.actor.user_id}, post.match_time, post.end_time)
         proposal = mm.create_proposal(ctx, post, candidate_user_id=g.actor.user_id)
         participant = ctx.session.scalar(select(MatchParticipant).where(MatchParticipant.post_id == post_id, MatchParticipant.user_id == g.actor.user_id))

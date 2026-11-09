@@ -1,10 +1,10 @@
 # Hợp đồng API và Models Project1
 
-Phiên bản 1.8 — ngày 29/10/2026. Dùng chung cho 5 thành viên khi lập trình Flask, React và TiDB. Đây là hợp đồng triển khai, không phải danh sách chức năng đã có trong mã nguồn.
+Phiên bản 1.9 — cập nhật tài liệu ngày 08/11/2026; bổ sung quân số buổi đá đã triển khai ngày 06/11/2026. Dùng chung cho 5 thành viên khi lập trình Flask, React và TiDB. Đây là hợp đồng triển khai, không phải danh sách chức năng đã có trong mã nguồn.
 
 ## 1. Cơ sở và quyết định thống nhất
 
-Đã đối chiếu báo cáo `bài tập lớn Project1(updated diagrams).docx`, schema gốc, migration TiDB V2 và khung `Project1_Subject-main.zip` do chủ dự án cung cấp. ZIP hiện chứa khung thư mục; các tệp Flask chính còn rỗng, frontend chưa có `package.json`, thư mục database chưa có SQL. Không suy ra database đang chạy thực tế chỉ từ ZIP hoặc hai tệp SQL.
+Đã đối chiếu báo cáo `bài tập lớn Project1(updated diagrams).docx`, schema gốc, migration TiDB V2 và khung `Project1_Subject-main.zip` do chủ dự án cung cấp. ZIP gốc tại thời điểm đối chiếu chỉ là khung thư mục. Trạng thái hiện tại của code tích hợp nằm ở [BACKEND_IMPLEMENTATION_STATUS.md](BACKEND_IMPLEMENTATION_STATUS.md), không suy từ nội dung ZIP cũ. Không suy ra database đang chạy thực tế chỉ từ ZIP hoặc hai tệp SQL.
 
 Thứ tự áp dụng: yêu cầu trực tiếp của chủ dự án → quyết định nghiệp vụ trong tài liệu này → tên bảng/cột của schema sau migration. Điểm lệch được liệt kê tại mục 13; cần cập nhật migration và sơ đồ tương ứng trước khi tích hợp.
 
@@ -79,7 +79,7 @@ ORM ánh xạ đúng tên bảng/cột SQL. Tên Python PascalCase không đổi
 | Payment | payments | payment_id, user_id, booking_id, post_id, amount, payment_type, payment_method, transaction_code, refund_for_payment_id, recorded_by_admin_id, status, paid_at, note | Người 4 |
 | Team | teams | team_id, team_name, created_by, creation_type, status | Người 2 |
 | TeamMember | team_members | team_member_id, team_id, user_id, role, status, joined_at | Người 2 |
-| MatchPost | match_posts | post_id, creator_id, team_id, pitch_id, booking_id, post_type, title, description, match_time, skill_level, payment_rule, required_players, current_players, required_deposit, expiry_time, status | Người 2 |
+| MatchPost | match_posts | post_id, creator_id, team_id, pitch_id, booking_id, post_type, title, description, match_time, skill_level, payment_rule, required_players, current_players, attendance_plan (004), required_deposit, expiry_time, status | Người 2 |
 | MatchParticipant | match_participants | participant_id, post_id, user_id, status, joined_at, updated_at | Người 2 |
 | MatchProposal | match_proposals | proposal_id, source_post_id, target_post_id, candidate_user_id, proposal_type, compatibility_score, status, expires_at, confirmed_at | Người 3 |
 | ProposalConfirmation | proposal_confirmations | confirmation_id, proposal_id, user_id, decision, responded_at | Người 3 |
@@ -157,14 +157,14 @@ MANUAL_ADMIN vẫn phải có cọc thực tế: có thể tạo hold rồi thu 
 
 | Nhu cầu trong báo cáo | post_type | Điều kiện |
 | --- | --- | --- |
-| TEAM_VS_TEAM | FIND_OPPONENT | team_id, pitch_type, match_time, end_time, payment_rule; đội đủ số người ACTIVE |
+| TEAM_VS_TEAM | FIND_OPPONENT | team_id, pitch_type, match_time, end_time, payment_rule; quân số buổi đá đủ 5/7 người, gồm tài khoản đã chọn và người ngoài ứng dụng |
 | RECRUITMENT tuyển người | RECRUIT_MEMBERS | team_id, required_players, pitch_type, thời gian, payment_rule |
 | RECRUITMENT cá nhân tìm đội | LOOK_FOR_TEAM | creator là người chơi; team_id=null; thời gian/loại sân có thể bỏ trống khi đăng, nhưng phải bổ sung trước khi AI tự ghép |
 | RANDOM_SQUAD | RANDOM_SQUAD | Cá nhân hoặc nhóm nhỏ đăng ký gom thành đội tạm; cần loại sân và thời gian cụ thể |
 
-Mỗi bài có title 1–150 ký tự, description tối đa 3000, skill_level, expiry_time ở tương lai và trước hoặc bằng match_time nếu có. `current_players` tính từ đội/nhóm đăng ký, không tin số client tự khai. `required_players` là số người còn thiếu, backend cập nhật sau mỗi lần nhận người. Đủ đội là ít nhất 5/7 người ACTIVE tương ứng loại sân; số dự bị không tự làm tăng tiền sân.
+Mỗi bài có title 1–150 ký tự, description tối đa 3000, skill_level, expiry_time ở tương lai và trước hoặc bằng match_time nếu có. `current_players` của bài mới được backend tính từ attendance_user_ids đã xác minh cộng guest_players khai báo cho buổi đá, không lấy tổng TeamMember lâu dài và không cho client ghi trực tiếp current_players. `required_players` là số người còn thiếu, backend cập nhật sau mỗi lần nhận người. Bài mới đủ quân số khi tổng người tham gia buổi đá đạt 5/7 tương ứng loại sân. Chỉ các tài khoản được chọn được kiểm tra trùng lịch; người đại diện chịu trách nhiệm quân số ngoài ứng dụng.
 
-Nhóm nhỏ RANDOM_SQUAD dùng team_id và các thành viên ACTIVE đã tự nguyện tham gia nhóm qua TeamMember. Không nhận danh sách ID tùy ý để tự thêm người vào nhóm. Mỗi người chỉ được nằm trong một yêu cầu gom nhóm còn hiệu lực cho cùng khoảng giờ. Khi ghép nhóm, hai đại diện đồng ý, chuyển thành viên sang đội đích AI_RANDOM trong transaction; giữ nhóm nguồn INACTIVE nếu đã hợp nhất toàn bộ, không xóa lịch sử. Kiểm tra lại khả năng tham gia từng người trước khi commit.
+Nhóm nhỏ RANDOM_SQUAD có thể có team_id; nếu có đội, attendance_user_ids chỉ chọn các thành viên ACTIVE của đội tham gia buổi này. Nếu chưa có đội thì chỉ có tài khoản người đăng và guest_players khai báo; server tạo đội AI_RANDOM khi hợp nhất nhóm. Không nhận danh sách ID tùy ý để tự thêm người vào nhóm. Mỗi người chỉ được nằm trong một yêu cầu gom nhóm còn hiệu lực cho cùng khoảng giờ. Khi ghép nhóm, hai đại diện đồng ý, chuyển thành viên sang đội đích AI_RANDOM trong transaction; giữ nhóm nguồn INACTIVE nếu đã hợp nhất toàn bộ, không xóa lịch sử. Kiểm tra lại khả năng tham gia từng người trước khi commit.
 
 Đội đích gom ngẫu nhiên do server tạo với creation_type=AI_RANDOM; đại diện đầu tiên theo (created_at,post_id) làm CAPTAIN. Sinh bài RECRUIT_MEMBERS để nhận thêm cá nhân/nhóm qua các proposal TEAM_MEMBER. Khi đủ người: đóng bài tuyển và tạo FIND_OPPONENT nếu chưa có đối thủ. Nếu đã gắn vào trận hiện hữu thì chỉ cập nhật đội, không tạo thêm trận và không thu thêm cọc sân.
 
@@ -228,13 +228,13 @@ UserSelf: user_id, full_name, email, phone, role, skill_level, status. Email chu
 | POST /match-posts/{post_id}/participants | Player | — | Participant + proposal_id; 201 |
 | DELETE /match-posts/{post_id}/participants/me | Người đăng ký | — | Participant |
 
-Team: team_id, team_name, created_by, creation_type, status, active_member_count. Member: user_id, full_name, role, status, joined_at. Participant: participant_id, post_id, user_id, status, joined_at. PostSummary: post_id, title, post_type, team_id, pitch_id, pitch_type, match_time, end_time, skill_level, payment_rule, required_players, current_players, expiry_time, status. MatchPost thêm description và thông tin của chính chủ bài, không thêm email/phone của người khác.
+Team: team_id, team_name, created_by, creation_type, status, active_member_count (số tài khoản thành viên ACTIVE lâu dài, không phải quân số buổi đá). Member: user_id, full_name, role, status, joined_at. Participant: participant_id, post_id, user_id, status, joined_at. PostSummary: post_id, title, post_type, team_id, pitch_id, pitch_type, match_time, end_time, skill_level, payment_rule, required_players, current_players, registered_players, guest_players, attendance_mode, expiry_time, status. MatchPost thêm attendance_user_ids (nullable cho legacy), description và thông tin của chính chủ bài, không thêm email/phone của người khác.
 
-Đăng ký vào đội không tạo bảng join_requests mới trong bản này: TeamJoinRequest ánh xạ một bài RECRUIT_MEMBERS của đội và MatchParticipant PENDING. `POST /teams/{id}/join-requests` chỉ hoạt động khi đội có đúng một bài tuyển OPEN phù hợp; không có trả 409 RECRUITMENT_NOT_OPEN, nhiều bài yêu cầu dùng endpoint post cụ thể. Response gồm post_id, participant_id, proposal_id, status. Captain ACCEPTED tương đương confirmation của chủ bài; người xin vào đã bày tỏ đồng ý bằng yêu cầu nhưng vẫn phải xác nhận proposal qua mục 6.3 trước khi ACTIVE. Không thêm thành viên chỉ nhờ Captain đồng ý. Captain muốn rời đội phải chuyển vai trò trước; v1 chưa có endpoint chuyển quyền nên trả 409 CAPTAIN_TRANSFER_REQUIRED.
+Đăng ký tham gia buổi đá qua bài tuyển không tạo bảng join_requests mới trong bản này: TeamJoinRequest ánh xạ một bài RECRUIT_MEMBERS của đội và MatchParticipant PENDING. `POST /teams/{id}/join-requests` chỉ hoạt động khi đội có đúng một bài tuyển OPEN phù hợp; không có trả 409 RECRUITMENT_NOT_OPEN, nhiều bài yêu cầu dùng endpoint post cụ thể. Response gồm post_id, participant_id, proposal_id, status. Captain ACCEPTED tương đương confirmation của chủ bài; người xin vào đã bày tỏ đồng ý bằng yêu cầu nhưng vẫn phải xác nhận proposal qua mục 6.3 trước khi ACTIVE. Không thêm thành viên chỉ nhờ Captain đồng ý. Người đã là thành viên lâu dài nhưng chưa được chọn trong snapshot của buổi đá vẫn có thể đăng ký; khi đủ hai xác nhận chỉ thêm vào snapshot, không tạo trùng TeamMember. Người đã có trong snapshot bị từ chối đăng ký lại. Captain muốn rời đội phải chuyển vai trò trước; v1 chưa có endpoint chuyển quyền nên trả 409 CAPTAIN_TRANSFER_REQUIRED.
 
 PATCH lịch/tiêu chí chỉ khi OPEN và chưa có đề xuất hoạt động; không sửa số tiền hoặc status trực tiếp. Hủy bài liên quan Match đang thu cọc phải đi qua luồng hủy Match, không cập nhật một bảng riêng lẻ. Quyền DELETE thành viên chỉ áp dụng trước khi người đó bị ràng buộc vào trận sắp diễn ra; nếu có ràng buộc trả 409 ACTIVE_MATCH_MEMBERSHIP.
 
-PostCreate ví dụ:
+PostCreate ví dụ sân 7 có 1 người đại diện + 6 người ngoài ứng dụng (ID phải thuộc đội đang chọn; đổi ngày tương lai trong 10 ngày khi thử):
 
 ```json
 {
@@ -244,11 +244,13 @@ PostCreate ví dụ:
   "team_id":1,
   "pitch_id":2,
   "pitch_type":"PITCH_7",
-  "match_time":"2026-10-30T19:00:00+07:00",
-  "end_time":"2026-10-30T20:30:00+07:00",
+  "match_time":"2026-11-09T18:00:00+07:00",
+  "end_time":"2026-11-09T19:30:00+07:00",
+  "attendance_user_ids":[2],
+  "guest_players":6,
   "skill_level":"INTERMEDIATE",
   "payment_rule":"SPLIT_EQUAL",
-  "expiry_time":"2026-10-30T17:00:00+07:00"
+  "expiry_time":"2026-11-09T16:00:00+07:00"
 }
 ```
 
@@ -760,3 +762,16 @@ Access token hết hạn sau 60 phút từ lúc cấp; người dùng đăng nh�
 ### 15.3 Google Login
 
 Chủ dự án đang hỏi độ khó, chưa yêu cầu đưa vào phạm vi triển khai. Hướng triển khai: Google Identity Services trên React; backend nhận ID token, kiểm tra chữ ký/aud/iss/exp qua thư viện google-auth, ánh xạ sub sang users.google_id rồi cấp phiên của ứng dụng. Không tin email hoặc user_id do frontend tự khai, không tự cấp ADMIN; liên kết tài khoản đã có phải xác minh quyền sở hữu. users.google_id đã có trong schema, vì vậy thường không cần cột mới chỉ để nhận dạng Google, nhưng vẫn cần Client ID, cấu hình origin, dependency và kiểm thử. Tài liệu chính thức: https://developers.google.com/identity/gsi/web/guides/verify-google-id-token
+
+
+## Bổ sung ngày 06/11/2026: quân số theo buổi đá
+
+PostCreate thêm attendance_user_ids (mảng ID không trùng, gồm người đăng, chỉ chọn thành viên ACTIVE của đội) và guest_players (số người ngoài ứng dụng, không tính lại các tài khoản đã chọn). current_players = số ID đã xác minh + guest_players. required_players của bài tuyển/ghép nhóm mới được tính theo loại sân. Thông tin chỉ thuộc bài đăng, không cộng vào Team.active_member_count.
+
+PostSummary thêm registered_players, guest_players, attendance_mode SESSION/LEGACY_TEAM; chi tiết bài thêm attendance_user_ids. Đủ người tìm đối thủ dựa trên quân số buổi đá, không dựa số tài khoản của đội. Ví dụ 1 đội trưởng + 4 khách, tuyển thêm 2 => 7 người, 3 tài khoản. Chỉ cộng sau đủ hai xác nhận; retry không cộng lại, không phát sinh booking/cọc khi nhận người.
+
+Đội thông thường sau khi tuyển đủ dùng nút Tạo bài tìm đối thủ với quân số này để sao chép snapshot; không tự đăng thay người dùng. AI_RANDOM giữ cơ chế tự tạo bài tìm đối thủ và sao chép cả khách. Snapshot quân số không sửa trực tiếp sau khi tạo; muốn thay danh sách có sẵn thì hủy bài mở và tạo bài mới. Bài cũ attendance_plan=NULL giữ hành vi legacy, không suy diễn khách.
+
+DDL và chi tiết triển khai: [Migration 004](../../database/schema/004_session_attendance_README.md). **TiDB test dùng chung đã áp dụng 004 ngày 06/11/2026; thành viên chỉ pull code và cấu hình kết nối, không chạy lại V1/V2/V3/004.** Môi trường khác chưa có cột phải được cập nhật trước khi khởi động code mới. Mock frontend chưa hỗ trợ quân số buổi đá: trả 501 thay vì báo thành công với số người sai; dùng backend thật khi demo tính năng này.
+
+Chi tiết điều kiện đầu vào, các DTO, xử lý legacy và checklist demo: [Quân số theo buổi đá](SESSION_ATTENDANCE_GUIDE.md). Nếu API client bỏ cả attendance_user_ids và guest_players, backend giữ cách xử lý legacy để tương thích; frontend hiện tại luôn gửi snapshot quân số. Không nhầm việc tạo bài với việc giữ sân hoặc đặt cọc.
