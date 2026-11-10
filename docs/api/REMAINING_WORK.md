@@ -1,6 +1,6 @@
 # Những phần còn cần hoàn thiện
 
-Cập nhật ngày 10/11/2026 trên bản local `integration/team`, sau khi thêm đổi mật khẩu.
+Cập nhật ngày 10/11/2026 trên bản tích hợp `integration/team`, sau khi thêm đổi mật khẩu.
 Đối chiếu các endpoint, worker, adapter, giao diện, workflow CI và trạng thái kiểm thử hiện có.
 Đây là danh sách việc còn lại từ lượt kiểm tra mã/tài liệu, không phải chứng nhận đã kiểm thử mọi màn hình thực tế.
 
@@ -36,7 +36,7 @@ Cập nhật ngày 10/11/2026 trên bản local `integration/team`, sau khi thê
 - **Hoàn tiền nhiều worker/audit**: process-refunds hiện chỉ nên chạy một tiến trình; chưa có lease/outbox đa worker. Audit chưa có bảng sự kiện đầy đủ, một phần thông tin đang ghi note. Cần kiểm chứng query/refund với merchant thật.
 - **Hosting và worker production**: chưa cấu hình hoàn chỉnh HTTPS, domain, origin/CORS, URL trong email, IPN, quản lý process tự khởi động lại và giám sát/backup. `localhost` chỉ là môi trường máy cá nhân.
 - **CI backend**: repo hiện chỉ có workflow `frontend-checks.yml`, không chạy bộ Python test. Trigger push hiện chỉ nêu `feature/quang-team-matchmaking`; cần bổ sung backend CI và chính sách cho nhánh tích hợp/main.
-- **Review, commit, push**: các sửa đổi gần đây còn local, chưa push lên `integration/team`. Không stage `.env`/credential hoặc `outputs/`; cần kiểm tra bản `.env.example` gốc đang có thay đổi riêng trước khi đưa lên Git.
+- **Review, commit, push**: các thay đổi Auth/tuyển người/worker/cọc DEMO đã push lên `integration/team` trong commit `9e15d19`. Các thay đổi tiếp theo vẫn cần review trước khi gộp main. Không stage `.env`/credential hoặc `outputs/`; cần kiểm tra bản `.env.example` gốc đang có thay đổi riêng trước khi đưa lên Git.
 - **Dữ liệu nhiều/trải nghiệm UI**: cần demo và rà soát phân trang/lỗi mạng ở các màn hình đang lấy trang đầu tối đa 100 mục; chưa có kiểm thử trình duyệt toàn bộ app.
 
 ## Phần mở rộng cần chốt phạm vi trước khi làm
