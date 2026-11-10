@@ -12,7 +12,9 @@ export type PitchType = 'PITCH_5' | 'PITCH_7' | 'PITCH_11';
 export type MvpPitchType = Exclude<PitchType, 'PITCH_11'>;
 export type TeamPaymentRule = 'SPLIT_EQUAL' | 'LOSER_PAYS_REMAINDER';
 export type BookingPaymentRule = TeamPaymentRule | 'DIRECT_BOOKING';
+export interface ChangePasswordRequest { current_password: string; new_password: string; confirm_password: string }
 export interface UserSelf {
+  has_password?: boolean;
   user_id: number; full_name: string; email: string; phone: string | null;
   role: 'PLAYER' | 'ADMIN'; skill_level: SkillLevel; status: 'ACTIVE' | 'BANNED' | 'INACTIVE';
 }
@@ -92,6 +94,7 @@ export interface PayerProgress {
   user_id: number; required_amount: Money; paid_amount: Money; status: 'UNPAID' | 'PARTIAL' | 'PAID';
 }
 export interface Booking {
+  is_demo?: boolean;
   booking_id: number; pitch_id: number; user_id: number; start_time: ISODateTime; end_time: ISODateTime;
   total_amount: Money; deposit_amount: Money; booking_type: 'ONLINE' | 'MANUAL_ADMIN' | 'MAINTENANCE_LOCK';
   status: BookingStatus; hold_expires_at: ISODateTime | null; payment_rule: BookingPaymentRule | null;
@@ -105,9 +108,21 @@ export type PaymentMethod = 'VNPAY' | 'MOMO' | 'CASH' | 'BANK_TRANSFER';
 export type PaymentType = 'BOOKING_DEPOSIT' | 'BOOKING_REMAINING_PAYMENT' | 'REFUND' | 'MATCH_HOST_DEPOSIT' | 'MATCH_JOIN_DEPOSIT';
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUND_PROCESSING' | 'REFUNDED';
 export interface Payment {
+  is_demo?: boolean;
   payment_id: number; booking_id: number | null; post_id: number | null; amount: Money;
   payment_type: PaymentType; payment_method: PaymentMethod; status: PaymentStatus;
   transaction_code: string | null; refund_for_payment_id: number | null; paid_at: ISODateTime | null;
+}
+export interface BankDepositPayer extends PayerProgress {
+  due_amount: Money; transfer_reference: string; qr_payload: string | null;
+  unavailable_reason: string | null; can_confirm: boolean; full_name?: string;
+}
+export interface DemoDepositResult { demo: true; payment: Payment; booking: Booking }
+export interface BankDepositInstructions {
+  demo_payment_enabled?: boolean;
+  booking_id: number; status: BookingStatus; expires_at: ISODateTime | null; payment_method: 'BANK_TRANSFER';
+  bank_bin: string | null; bank_name: string; account_no: string | null; account_name: string | null;
+  payers: BankDepositPayer[];
 }
 export interface DepositRequest { booking_id: number; payment_method: 'VNPAY' | 'MOMO' }
 export interface PaymentSession extends Payment { payment_url?: string; qr_payload?: string; expires_at: ISODateTime }

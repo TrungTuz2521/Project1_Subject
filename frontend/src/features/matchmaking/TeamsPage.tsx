@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { session } from '../../stores/session';
 import { logout } from '../../services/auth';
+import { recruitmentApprovalNotice } from './recruitmentApprovalNotice';
 import { teamsService } from '../../services/teams';
 import { matchPostsService } from '../../services/matchPosts';
 import { errorMessage } from '../../services/api';
@@ -47,9 +48,14 @@ export function TeamsPage(){
   }catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
  async function handleApplicant(postId:number,decision:'ACCEPTED'|'DECLINED'){
-  if(!detail||!window.confirm(decision==='ACCEPTED'?'Chấp thuận yêu cầu này? Ứng viên vẫn cần xác nhận đề xuất ghép.':'Từ chối yêu cầu tham gia đội?'))return;
+  if(!detail||!window.confirm(decision==='ACCEPTED'?'Chấp thuận và thêm người chơi này vào đội?':'Từ chối yêu cầu tham gia đội?'))return;
   setBusy(true);setError('');setNotice('');
-  try{await teamsService.respondJoinRequest(detail.team_id,postId,decision);setNotice('Đã ghi nhận phản hồi. Việc thêm thành viên chỉ hoàn tất sau khi hai bên xác nhận proposal.');await openTeam(detail.team_id,true);}
+  try{
+   const result=await teamsService.respondJoinRequest(detail.team_id,postId,decision);
+   await openTeam(detail.team_id,true);await loadList();
+   const message=recruitmentApprovalNotice(decision,result.data.status);
+   if(message.error)setError(message.text);else setNotice(message.text);
+  }
   catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
  async function leaveTeam(){
@@ -83,7 +89,7 @@ export function TeamsPage(){
        <div className="account-section-heading"><div><span className="mm-type">CHI TIẾT ĐỘI BÓNG</span><h2>{detail.team_name}</h2><p>{detail.active_member_count} thành viên có tài khoản · {detail.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}</p></div><button className="account-secondary-button" onClick={()=>setEditing(v=>!v)} disabled={!isCaptain}>Chỉnh sửa</button></div>
        {editing&&<form className="team-inline-edit" onSubmit={submitTeam}><input value={name} onChange={e=>setName(e.target.value)} maxLength={100} aria-label="Tên đội mới"/><button className="account-primary-button" disabled={busy}>Lưu</button></form>}
        <div className="team-members"><h3>Thành viên có tài khoản</h3><p className="input-caption">Quân số mỗi buổi đá được khai báo trong bài đăng, bao gồm cả người ngoài ứng dụng.</p>{detail.members.length===0?<p>Chưa có dữ liệu thành viên từ API.</p>:detail.members.map(member=><div className="team-member-row" key={member.user_id}><span className="account-avatar">{member.full_name.split(/\\s+/).slice(-2).map(x=>x[0]).join('').toUpperCase()}</span><div><strong>{member.full_name}</strong><small>{member.role==='CAPTAIN'?'Đội trưởng':'Thành viên'} · {member.status==='ACTIVE'?'Đang tham gia':member.status==='LEFT'?'Đã rời đội':'Đã bị xóa'} · {timeLabel(member.joined_at)}</small></div>{member.role!=='CAPTAIN'&&isCaptain&&member.status==='ACTIVE'&&<button className="account-secondary-button" disabled={busy} onClick={()=>void removeMember(member.user_id)}>Xóa</button>}</div>)}</div>
-       {isCaptain&&<section className="team-requests"><div className="account-section-heading"><div><h3>Yêu cầu tuyển thành viên</h3><p>{recruitment?(recruitment.status==='LOCKED'?'Đề xuất đang chờ xác nhận: ':'Bài tuyển đang mở: ')+recruitment.title:'Đội chưa có bài RECRUIT_MEMBERS đang mở.'}</p></div></div>{applicants.length===0?<p className="input-caption">Chưa có yêu cầu đang chờ xử lý.</p>:applicants.map(item=><div className="team-member-row" key={item.participant_id}><div><strong>Người chơi #{item.user_id}</strong><small>{item.status==='ACCEPTED'?'Đội trưởng đã đồng ý · Chờ ứng viên xác nhận proposal':'Đang chờ đội trưởng xử lý'} · {timeLabel(item.joined_at)}</small></div>{item.status==='PENDING'&&<div className="mm-actions"><button disabled={busy} onClick={()=>void handleApplicant(item.post_id,'ACCEPTED')}>Chấp thuận</button><button className="secondary" disabled={busy} onClick={()=>void handleApplicant(item.post_id,'DECLINED')}>Từ chối</button></div>}</div>)}</section>}
+       {isCaptain&&<section className="team-requests"><div className="account-section-heading"><div><h3>Yêu cầu tuyển thành viên</h3><p>{recruitment?(recruitment.status==='LOCKED'?'Yêu cầu đang chờ duyệt: ':'Bài tuyển đang mở: ')+recruitment.title:'Đội chưa có bài RECRUIT_MEMBERS đang mở.'}</p></div></div>{applicants.length===0?<p className="input-caption">Chưa có yêu cầu đang chờ xử lý.</p>:applicants.map(item=><div className="team-member-row" key={item.participant_id}><div><strong>Người chơi #{item.user_id}</strong><small>{item.status==='ACCEPTED'?'Đã được duyệt tham gia':'Đang chờ đội trưởng xử lý'} · {timeLabel(item.joined_at)}</small></div>{item.status==='PENDING'&&<div className="mm-actions"><button disabled={busy} onClick={()=>void handleApplicant(item.post_id,'ACCEPTED')}>Chấp thuận</button><button className="secondary" disabled={busy} onClick={()=>void handleApplicant(item.post_id,'DECLINED')}>Từ chối</button></div>}</div>)}</section>}
        <div className="team-detail-actions">{isMember&&!isCaptain&&current?.user.role==='PLAYER'&&<button className="account-secondary-button" onClick={()=>void leaveTeam()} disabled={busy}>Rời đội</button>}</div>
       </>}
      </section>

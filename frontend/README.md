@@ -110,7 +110,7 @@ Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh s
 - **Duy Minh:** module tài khoản/khung ứng dụng đã được tích hợp tại `src/App.tsx`; tiếp tục đồng bộ giao diện với backend theo `services/auth.ts` và `stores/session.ts`. Không tự lưu token ở localStorage/sessionStorage hoặc tạo một luồng refresh token riêng.
 - **Quang:** phụ trách phân hệ frontend đội bóng/ghép trận/thông báo/lịch trên nhánh `feature/quang-team-matchmaking`; các thay đổi chờ review/PR, không commit vào `main`.
 - **Huy:** dùng fixtures sân/booking/doanh thu để dựng màn hình; không giả báo đã thanh toán thành công.
-- **Đức/Tú:** triển khai backend theo cùng hợp đồng, review service/DTO và nối API thật. Google Login chưa nằm trong bộ mẫu này.
+- **Đức/Tú:** triển khai backend theo cùng hợp đồng, review service/DTO và nối API thật. Google Login đã được bổ sung cho backend thật; không giả lập trong mock.
 
 Đối chiếu nguồn chính tại [API và Models](../docs/api/API_MODELS_CONTRACT_PROJECT1.md). DTO BookingStatistics.by_pitch trong bản mẫu là cấu trúc đề xuất cho mảng thống kê hoạt động; hợp đồng hiện mới chốt tên trường, cần đồng bộ với backend khi triển khai. Không có báo cáo doanh thu theo mặt sân.
 
@@ -139,7 +139,7 @@ Trong `.env.local`: `VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1` và `VITE_U
 - Thu tiền dùng `GET /admin/bookings/{id}/balance` và `POST /admin/bookings/{id}/confirm-paid`. Không gọi endpoint settlement/result hoặc tạo QR riêng từng đội. Thể thức chỉ để hai đội tự chia.
 - QR được tạo cục bộ từ payload server bằng thư viện qrcode. Không gửi dữ liệu ngân hàng ra dịch vụ tạo QR. Nếu backend chưa cấu hình BANK_BIN/BANK_ACCOUNT_NO thì hiển thị lý do thiếu QR.
 - Admin chọn một/nhiều khoản thực nhận CASH/BANK_TRANSFER, tổng đúng số còn thiếu; gửi expected_outstanding + idempotency_key. Retry sau lỗi giữ nguyên payload/key; form khóa đến khi thử lại hoặc tải lại số dư. Backend xử lý chống trùng và số dư thay đổi.
-- Cọc online hiện chỉ có nút VNPay phù hợp backend đang triển khai. Không tự xác nhận SUCCESS bằng frontend.
+- Luồng cọc hiện dùng QR và nút xác nhận DEMO gọi backend khi bật hai flag; adapter VNPay giữ để tích hợp thật sau. Frontend không tự ghi SUCCESS.
 
 Kiểm tra trên DB thử nghiệm: PLAYER đăng nhập, mở sân/giữ 90 phút, xem hạn giữ; PLAYER mở URL Admin phải bị chặn. ADMIN mở lịch, lọc giai đoạn, mở booking đã kết thúc và đối chiếu balance; nhập tổng receipts sai phải bị chặn, thu đủ một/multiple khoản phải về PAID, gọi lại cùng key không thêm Payment. Hai tab số dư cũ phải báo conflict. Không thử thu/hoàn tiền thật hoặc chạy migration trên DB nhóm.
 
@@ -158,3 +158,73 @@ Hướng dẫn từng bước và ví dụ request/response: [Quân số theo bu
 Bộ chọn giờ đá áp dụng cho tạo và sửa bài tìm đối thủ, tuyển thành viên và ghép nhóm: chọn ngày rồi chọn giờ trong danh sách hợp lệ, tự tính kết thúc sau 90 phút. Khi sửa bài cá nhân tìm đội, lịch vẫn có thể bỏ trống; nếu bổ sung lịch thì chọn từ cùng danh sách. Hạn nhận yêu cầu là thời hạn riêng, vẫn cho chọn phút tùy ý trước hoặc bằng giờ đá.
 
 Thông báo Đã giữ sân có nút Thanh toán tiền cọc, mở Booking của tôi và chọn đúng booking theo booking_id trên hash URL. Đây là chuyển trang; người dùng vẫn phải bấm Thanh toán cọc VNPay trong chi tiết. Xem [thiết lập và demo VNPay](../docs/setup/VNPAY_SANDBOX.md).
+
+## Google Login và thông báo email
+
+Trong `frontend/.env.local`, đặt `VITE_USE_MOCKS=false`, API base thật và `VITE_GOOGLE_CLIENT_ID=<Client ID trùng backend GOOGLE_CLIENT_ID>`, sau đó khởi động lại Vite. Dùng `http://localhost:5173` đã đăng ký trên Google Console; nếu cần chạy `npm run dev -- --host localhost`.
+Form đăng nhập hiển thị nút Google. Email mới tạo PLAYER; email đã có tài khoản cần mật khẩu web để liên kết lần đầu. Giữ session trong bộ nhớ 60 phút, không refresh token. Xem [hướng dẫn Google](../docs/setup/GOOGLE_LOGIN.md).
+
+Email được backend/worker gửi, frontend không giữ mật khẩu SMTP và không gọi Gmail trực tiếp. Mỗi thành viên chỉ cấu hình Gmail ở backend nếu cần thử gửi thật; mặc định EMAIL_ENABLED=false vẫn dùng được thông báo trên web. Không thấy email thì kiểm tra worker, email thật của user và Spam; không coi email là điều kiện để booking thành công. Xem [Gmail SMTP và worker](../docs/setup/EMAIL_NOTIFICATIONS.md).
+Thông báo trong app vẫn là chính cho hạn cọc 5 phút; mở link email không gia hạn hold.
+
+
+## Thông báo đăng ký tuyển thành viên — 10/11/2026
+
+Khi B đăng ký bài RECRUIT_MEMBERS của A, backend ghi cho A thông báo **Có người đăng ký tham gia**,
+kèm tên B và tên bài. Nếu EMAIL_ENABLED=true, A có EMAIL/PENDING trong cùng transaction.
+B nhận IN_APP **Đã gửi đăng ký tham gia**, không gửi thêm email yêu cầu B xác nhận lại.
+B bấm đăng ký là đã ghi consent ACCEPTED; A duyệt là thêm B vào đội và cập nhật quân số ngay.
+Khi duyệt thành công, B nhận IN_APP và EMAIL/PENDING **Bạn đã được thêm vào đội**; email worker gửi sau commit.
+Luồng này chỉ áp dụng đăng ký trực tiếp vào bài RECRUIT_MEMBERS. Đề xuất AI và ghép đối thủ vẫn cần cả hai bên tự xác nhận.
+Email mới có link `/#/notifications?proposal_id=<id>`; sau đăng nhập mở đúng chi tiết đề xuất.
+Backend vẫn kiểm tra người xem thuộc đề xuất, không mở dữ liệu cho tài khoản khác.
+
+Trang Ghép đội/Thông báo tự cập nhật thông báo và danh sách đề xuất mỗi 10 giây khi tab trình duyệt đang hiện,
+và khi quay lại cửa sổ; có nút Làm mới. Không tải lại toàn trang hoặc xóa form đang nhập.
+Chọn mục Thông báo ở sidebar cũng đổi đúng tab khi đang ở trang Ghép đội.
+
+Sau cập nhật cần khởi động lại backend và email worker. Thay đổi áp dụng cho đăng ký mới;
+không sửa hoặc gửi lại email đã SENT. SENT là SMTP chấp nhận, chưa đảm bảo inbox: kiểm tra email trong hồ sơ
+của A và mục Spam. Mock/unit test không gửi thư thật; việc kiểm tra TiDB thực tế chỉ đọc trạng thái.
+
+
+## Đổi mật khẩu — 10/11/2026
+
+Trong app: **Hồ sơ cá nhân → Đổi mật khẩu**. Nhập mật khẩu hiện tại, mật khẩu mới và nhập lại;
+mật khẩu mới dài 8–72 byte UTF-8, khác mật khẩu cũ. Thành công sẽ đăng xuất phiên trên trình duyệt hiện tại
+và yêu cầu đăng nhập lại. Sai mật khẩu cũ/nhập lại không khớp không làm đổi dữ liệu.
+Tài khoản chỉ dùng Google và chưa có mật khẩu web thì hiện hướng dẫn đổi ở Google; chưa hỗ trợ đặt mật khẩu web đầu tiên.
+
+API: `POST /api/v1/users/me/password`, cần Bearer JWT của chính người dùng.
+JSON: `{current_password,new_password,confirm_password}`; trả `{data:{changed:true},meta}`.
+Không nhận user_id/role/password_hash; sai dữ liệu trả 422, Google-only trả 409 PASSWORD_NOT_SET,
+không có phiên/hết hạn trả 401, tài khoản khóa trả 403. Endpoint có rate limit auth dùng chung.
+UserSelf bổ sung boolean `has_password`, không trả hash hay Google ID.
+Không có refresh token/revocation: JWT ở thiết bị khác vẫn có thể còn hiệu lực tới exp (tối đa 60 phút từ lúc cấp).
+Đây là đổi mật khẩu khi đã biết mật khẩu cũ; chưa phải chức năng Quên mật khẩu/Reset email.
+Không cần migration hoặc thay mật khẩu thật khi cài code.
+
+
+### Sửa đồng bộ duyệt tại trang Đội bóng — 10/11/2026
+
+Trang Đội bóng không còn thông báo ứng viên phải xác nhận lần hai. Chỉ báo thêm thành viên thành công
+khi backend trả participant ACCEPTED, đồng thời tải lại roster và số thành viên trong danh sách.
+Nếu backend cũ còn trả PENDING, giao diện chỉ rõ chưa thêm được và cần khởi động lại backend.
+Yêu cầu trực tiếp cũ có A ACCEPTED/B PENDING được A duyệt lại để hoàn tất, chỉ khi còn hạn và hợp lệ;
+không hồi sinh yêu cầu hết hạn, không thêm trùng thành viên/email khi gọi lặp.
+Kiểm thử tách biệt: backend 172 test (158 đạt, 14 skip), frontend 42 test và build thành công.
+Không chỉnh trực tiếp hàng dữ liệu trên TiDB; người dùng cần khởi động lại backend để nạp code.
+
+
+## Cọc QR và nút xác nhận demo lưu TiDB — 10/11/2026
+
+Đã có **Booking của tôi → Đóng cọc bằng chuyển khoản → Xác nhận thanh toán cọc (demo)**.
+QR hiển thị đúng người nhận, số tiền còn thiếu của người đang đăng nhập và nội dung riêng theo booking/người trả.
+Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi trạng thái booking/trận khi đủ cọc.
+Đặt trực tiếp cọc 20%; hai đội mỗi đội 10%, chỉ đủ cả hai mới xác nhận trận. Không cần Admin duyệt cọc mới.
+Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
+Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
+
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
+Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../docs/setup/DEMO_DEPOSIT.md).

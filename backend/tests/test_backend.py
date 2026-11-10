@@ -241,14 +241,44 @@ class BackendTests(unittest.TestCase):
             match_service.confirm_after_deposit(ctx, booking_id=1)
             self.assertEqual(ctx.session.get(MatchPost, a).status, 'MATCHED')
 
-    def test_recruitment_accepts_only_after_both_and_no_booking(self):
+    def test_recruitment_application_is_consent_and_captain_approval_adds_member(self):
+        self.app.config['EMAIL_ENABLED'] = True
         tid = self.team(self.a)
         post_id = self.post(self.a, kind='RECRUIT_MEMBERS', tid=tid, required_players=1)
         r = self.client.post(f'/api/v1/match-posts/{post_id}/participants', headers=self.b, json={})
         self.assertEqual(r.status_code, 201, r.json)
         pid = r.json['data']['proposal_id']
-        self.respond(pid, self.a)
+        with UnitOfWork() as ctx:
+            rows = list(ctx.session.scalars(select(Notification).where(Notification.proposal_id == pid)))
+            for uid in self.users[:2]:
+                owned = [n for n in rows if n.user_id == uid]
+                self.assertEqual({n.delivery_channel for n in owned}, {'IN_APP', 'EMAIL'} if uid == self.users[0] else {'IN_APP'})
+                self.assertIn('Test match', owned[0].content)
+                if uid == self.users[0]:
+                    email = next(n for n in owned if n.delivery_channel == 'EMAIL')
+                    self.assertEqual(email.delivery_status, 'PENDING')
+                    self.assertIsNone(email.sent_at)
+            self.assertEqual(next(n for n in rows if n.user_id == self.users[0]).title, 'Có người đăng ký tham gia')
+            self.assertEqual(next(n for n in rows if n.user_id == self.users[1]).title, 'Đã gửi đăng ký tham gia')
+        owner_notices = self.client.get('/api/v1/notifications', headers=self.a).json['data']
+        self.assertTrue(any(n['proposal_id'] == pid and n['title'] == 'Có người đăng ký tham gia' for n in owner_notices))
+        outsider_notices = self.client.get('/api/v1/notifications', headers=self.c).json['data']
+        self.assertFalse(any(n['proposal_id'] == pid for n in outsider_notices))
+        from app.services.email_service import claim_email
+        owner_email = next(n for n in rows if n.user_id == self.users[0] and n.delivery_channel == 'EMAIL')
+        with UnitOfWork() as ctx:
+            ctx.session.get(User, self.users[0]).email = 'captain-notification@gmail.com'
+        self.assertTrue(claim_email(owner_email.notification_id)[-1].endswith(f'/#/notifications?proposal_id={pid}'))
         self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data']['active_member_count'], 1)
+        self.assertEqual(self.respond(pid, self.a).json['data']['status'], 'ACCEPTED')
+        self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data']['active_member_count'], 2)
+        with UnitOfWork() as ctx:
+            joined_emails = list(ctx.session.scalars(select(Notification).where(Notification.proposal_id == pid,
+                Notification.user_id == self.users[1], Notification.notification_type == 'TEAM_JOINED', Notification.delivery_channel == 'EMAIL')))
+            self.assertEqual(len(joined_emails), 1)
+            self.assertEqual(joined_emails[0].title, 'Bạn đã được thêm vào đội')
+            self.assertEqual(joined_emails[0].delivery_status, 'PENDING')
+        self.assertEqual(self.respond(pid, self.a).status_code, 200)
         self.assertEqual(self.respond(pid, self.b).status_code, 200)
         self.assertEqual(self.respond(pid, self.b).status_code, 200)
         self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data']['active_member_count'], 2)
@@ -305,9 +335,6 @@ class BackendTests(unittest.TestCase):
         post_id = self.post(self.a, kind='RECRUIT_MEMBERS', tid=tid, required_players=2)
         r = self.client.post(f'/api/v1/teams/{tid}/join-requests', headers=self.b, json={})
         self.assertEqual(r.status_code, 201)
-        r = self.client.patch(f'/api/v1/teams/{tid}/join-requests/{post_id}/respond', headers=self.a, json={'decision':'ACCEPTED'})
-        self.assertEqual(r.status_code, 200, r.json)
-        self.assertEqual(r.json['data']['status'], 'PENDING')
         self.assertIn('participant_id', r.json['data'])
         r = self.client.delete(f'/api/v1/match-posts/{post_id}/participants/me', headers=self.b)
         self.assertEqual(r.status_code, 200, r.json)

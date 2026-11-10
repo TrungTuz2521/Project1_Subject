@@ -62,10 +62,51 @@ def register_commands(app):
         """Run one matchmaking scan; schedule externally every 15 seconds."""
         click.echo(scan_open_posts())
 
+    @app.cli.command('matchmaking-worker')
+    @click.option('--interval', default=15, show_default=True, type=click.IntRange(1, 300))
+    def matchmaking_worker_command(interval):
+        """Continuously scan open posts; default interval 15 seconds. Stop with Ctrl+C."""
+        from app.jobs.matchmaking_worker import run_matchmaking_worker
+        run_matchmaking_worker(interval)
+
     @app.cli.command('expire-proposals')
     def expire_command():
         """Expire proposals/posts; booking expiry is owned by Tú."""
         click.echo({'expired_proposals': expire_proposals()})
+
+    @app.cli.command('check-email')
+    def check_email_command():
+        """Verify SMTP authentication only; never sends an email."""
+        from app.services.email_service import check_connection
+        try:
+            check_connection()
+        except Exception as error:
+            raise click.ClickException('SMTP connection/authentication failed (' + type(error).__name__ + ').')
+        click.echo('SMTP authentication successful. No email sent.')
+
+    @app.cli.command('send-pending-emails')
+    @click.option('--limit', default=50, type=click.IntRange(1, 500))
+    def send_emails_command(limit):
+        """Process a single batch of PENDING email notifications."""
+        from app.services.email_service import process_emails
+        click.echo(process_emails(limit))
+
+    @app.cli.command('email-worker')
+    @click.option('--interval', default=10, type=click.IntRange(1, 300))
+    def email_worker_command(interval):
+        """Continuously deliver new notification emails; stop with Ctrl+C."""
+        from time import sleep
+        from app.services.email_service import process_emails, smtp_settings
+        smtp_settings()
+        click.echo('Email worker running; Ctrl+C to stop.')
+        while True:
+            try:
+                stats = process_emails()
+                if any(stats.values()):
+                    click.echo(stats)
+            except Exception as error:
+                app.logger.warning('Email worker batch failed (%s)', type(error).__name__)
+            sleep(interval)
 
     @app.cli.command('check-db')
     def check_db():

@@ -34,7 +34,7 @@ Nhận người không giữ sân, không thu cọc và không tạo booking. Đ
 - Nhóm AI_RANDOM: giữ cơ chế tự tạo bài FIND_OPPONENT khi đủ người và chưa có booking, sao chép cả tài khoản và số người ngoài ứng dụng.
 - Quét ghép trận vẫn theo worker/CLI đã có. Đăng bài không đồng nghĩa lập tức có đề xuất, booking hoặc trận CONFIRMED.
 
-Quân số có sẵn được chốt khi tạo bài. Muốn thay người có sẵn hoặc thay số khách, hủy bài còn mở rồi tạo bài mới; không sửa TeamMember mỗi buổi. Sau khi tuyển, backend cập nhật snapshot qua luồng hai xác nhận. Người ngoài ứng dụng đăng ký tài khoản sau này không tự động được chuyển thành một tài khoản trong snapshot cũ; tạo bài mới và bỏ phần khách tương ứng để tránh tính hai lần. Chức năng mời trực tiếp bằng email chưa có trong code hiện tại.
+Quân số có sẵn được chốt khi tạo bài. Muốn thay người có sẵn hoặc thay số khách, hủy bài còn mở rồi tạo bài mới; không sửa TeamMember mỗi buổi. Sau khi tuyển trực tiếp, B bấm đăng ký là đồng ý, A duyệt thì backend cập nhật snapshot ngay; B không xác nhận lần nữa. Với đề xuất ghép do AI sinh, hai bên vẫn cần phản hồi. Người ngoài ứng dụng đăng ký tài khoản sau này không tự động được chuyển thành một tài khoản trong snapshot cũ; tạo bài mới và bỏ phần khách tương ứng để tránh tính hai lần. Chức năng mời trực tiếp bằng email chưa có trong code hiện tại.
 
 ## API và Models
 
@@ -101,7 +101,7 @@ Mỗi bước cần người demo xác nhận kết quả trước khi chuyển 
 1. Đội trưởng đăng nhập, xem Đội bóng: đọc số **thành viên có tài khoản**.
 2. Mở Ghép đội & tìm trận → Tạo bài đăng → Tuyển thành viên → chọn đội và sân 7. Chọn người đại diện, khai báo 4 người ngoài ứng dụng. Xác nhận màn hình hiển thị **5/7, còn thiếu 2**; chưa gửi form ở bước này.
 3. Điền tiêu đề, giờ 18:00–19:30 ở ngày tương lai trong 10 ngày và hạn bài sau hiện tại, trước hoặc bằng giờ đá. Đăng bài, đọc lại chi tiết: 5 người, 1 tài khoản, 4 khách, thiếu 2.
-4. Dùng tài khoản ứng viên ở trình duyệt/phiên riêng, đăng ký bài. Đội trưởng và ứng viên đều xác nhận proposal. Đọc lại: 6 người, 2 tài khoản, 4 khách, thiếu 1.
+4. Dùng tài khoản ứng viên ở trình duyệt/phiên riêng, đăng ký bài. B không xác nhận thêm; đội trưởng duyệt proposal là thêm thành viên ngay. Đọc lại: 6 người, 2 tài khoản, 4 khách, thiếu 1.
 5. Lặp với ứng viên thứ hai. Xác nhận: 7 người, 3 tài khoản, 4 khách, thiếu 0, bài MATCHED; danh sách đội có 3 tài khoản nếu ban đầu chỉ có đội trưởng.
 6. Đội trưởng bấm **Tạo bài tìm đối thủ với quân số này**, kiểm tra form giữ đúng 3 tài khoản + 4 khách. Gửi bài FIND_OPPONENT; không phải thêm tài khoản giả để vượt điều kiện đủ đội.
 7. Thử ngày khác chỉ có 4 người: tạo bài mới với 1 tài khoản + 3 khách và chọn Tuyển thành viên sân 5; màn hình thiếu 1. Danh sách đội lâu dài không bị giảm vì người khác nghỉ.

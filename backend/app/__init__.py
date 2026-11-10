@@ -17,6 +17,9 @@ def create_app(config=None):
         raise RuntimeError('JWT_SECRET_KEY must have at least 32 bytes. Set it in backend/.env.')
     if app.config['TESTING']:
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+        # Tests explicitly opt in; local SMTP settings must not change legacy fixtures.
+        app.config['EMAIL_ENABLED'] = (config or {}).get('EMAIL_ENABLED', False)
+        app.config['DEMO_PAYMENT_ENABLED'] = (config or {}).get('DEMO_PAYMENT_ENABLED', False)
     db.init_app(app)
     from app import models
     from app.routes.api import api

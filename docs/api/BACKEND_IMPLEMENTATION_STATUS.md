@@ -1,4 +1,6 @@
-# Backend Đức — cập nhật ngày 29/10/2026
+# Backend — lịch sử triển khai và kiểm thử
+
+Trạng thái hiện tại ngày 10/11/2026: xem [Những phần cần hoàn thiện](REMAINING_WORK.md). Các mốc dưới đây là lịch sử, không thay thế phần cập nhật mới nhất cuối tài liệu.
 
 ## Đã triển khai
 
@@ -43,7 +45,7 @@ Không cần đổi endpoint hoặc response Auth.
 
 Email, audit/outbox và hạ tầng thanh toán sau V3 cần bộ migration chung được review trước khi dùng.
 Bản này chỉ gửi IN_APP, không giả trạng thái email SENT. Chưa triển khai Booking/Payment/balance/QR chung/xác nhận thu đủ của Tú,
-không sửa seed plaintext để lách bcrypt, không nhận Google Login hoặc refresh token ngoài phạm vi đã chốt.
+không sửa seed plaintext để lách bcrypt; không có refresh token. Google Login được bổ sung riêng ngày 10/11/2026 theo phần dưới.
 
 ## Thay đổi luồng sau trận ngày 29/10/2026
 
@@ -107,3 +109,75 @@ không sửa seed plaintext để lách bcrypt, không nhận Google Login hoặ
 - Database nhóm đã có migration 004; không chạy lại SQL khi pull code. Đổi quân số có sẵn bằng bài mới, không thêm tài khoản giả hoặc sửa danh sách đội mỗi buổi.
 - Chức năng mời trực tiếp bằng email chưa được triển khai. Thành viên có tài khoản chưa thuộc đội tham gia qua bài tuyển và hai xác nhận; người ngoài ứng dụng được khai báo bằng số lượng.
 - Các con số kiểm thử ở mục 06/11 là kết quả đã ghi nhận ngày đó. Lần cập nhật tài liệu 08/11 không chạy lại kiểm thử nghiệp vụ hoặc thay schema.
+
+## Bổ sung Google Login — 10/11/2026
+
+Đã thêm GIS popup frontend, challenge/nonce, backend google-auth xác minh ID token và JWT 60 phút.
+Không tự liên kết theo email: cần mật khẩu web hiện tại. Tạo mới luôn PLAYER, giữ role/status của tài khoản cũ.
+Đã cấu hình Client ID trong env local, không cần migration. Unit test dùng verifier giả và SQLite riêng;
+chưa xác minh end-to-end bằng tài khoản Google thật. Xem [hướng dẫn](../setup/GOOGLE_LOGIN.md).
+
+
+## Bổ sung email notification — 10/11/2026
+
+Đã bổ sung Gmail SMTP và worker riêng: notify tạo IN_APP/SENT + EMAIL/PENDING trong cùng transaction
+khi EMAIL_ENABLED=true. Worker gửi sau commit; không giữ khóa DB trong lúc gọi SMTP.
+Không cần migration: dùng notifications.delivery_channel=EMAIL và delivery_status=PENDING/SENT/FAILED hiện có.
+Worker claim bằng chuyển PENDING→FAILED trước SMTP, sau khi SMTP chấp nhận chuyển SENT.
+FAILED có thể là lỗi gửi hoặc chưa rõ kết quả sau crash; không tự gửi lại để hạn chế trùng thư.
+SENT chỉ nghĩa là SMTP đã chấp nhận, không đảm bảo email vào inbox. Không phát lại thông báo cũ.
+Thông báo trong app vẫn là chính cho thời hạn giữ sân. Xem [cấu hình](../setup/EMAIL_NOTIFICATIONS.md).
+
+
+## Rút gọn đăng ký tuyển thành viên trực tiếp — 10/11/2026
+
+Đã triển khai B đăng ký → A duyệt → thêm B vào đội và gửi thông báo/email thành công.
+Ghi consent của B ngay khi đăng ký; giữ participant PENDING tới khi A duyệt. Yêu cầu cũ còn chờ
+được xử lý dựa trên participant PENDING trong command duyệt, không backfill SQL.
+Ứng viên được rút đăng ký trước khi duyệt; từ chối/hết hạn/người ngoài không làm tăng quân số.
+Đề xuất AI và OPPONENT vẫn cần hai phản hồi chủ động. Không sửa schema, không gửi email thật trong unit test.
+Kiểm tra 10/11/2026: backend 165 test, 151 đạt/14 concurrency skip; frontend 38 test và build đạt.
+
+
+## Đổi mật khẩu — 10/11/2026
+
+Trong app: **Hồ sơ cá nhân → Đổi mật khẩu**. Nhập mật khẩu hiện tại, mật khẩu mới và nhập lại;
+mật khẩu mới dài 8–72 byte UTF-8, khác mật khẩu cũ. Thành công sẽ đăng xuất phiên trên trình duyệt hiện tại
+và yêu cầu đăng nhập lại. Sai mật khẩu cũ/nhập lại không khớp không làm đổi dữ liệu.
+Tài khoản chỉ dùng Google và chưa có mật khẩu web thì hiện hướng dẫn đổi ở Google; chưa hỗ trợ đặt mật khẩu web đầu tiên.
+
+API: `POST /api/v1/users/me/password`, cần Bearer JWT của chính người dùng.
+JSON: `{current_password,new_password,confirm_password}`; trả `{data:{changed:true},meta}`.
+Không nhận user_id/role/password_hash; sai dữ liệu trả 422, Google-only trả 409 PASSWORD_NOT_SET,
+không có phiên/hết hạn trả 401, tài khoản khóa trả 403. Endpoint có rate limit auth dùng chung.
+UserSelf bổ sung boolean `has_password`, không trả hash hay Google ID.
+Không có refresh token/revocation: JWT ở thiết bị khác vẫn có thể còn hiệu lực tới exp (tối đa 60 phút từ lúc cấp).
+Đây là đổi mật khẩu khi đã biết mật khẩu cũ; chưa phải chức năng Quên mật khẩu/Reset email.
+Không cần migration hoặc thay mật khẩu thật khi cài code.
+
+Kiểm tra sau đổi mật khẩu: backend 170 test, 156 đạt/14 concurrency skip; frontend 41 test và build đạt. Không ghi TiDB nhóm trong test.
+
+
+### Sửa đồng bộ duyệt tại trang Đội bóng — 10/11/2026
+
+Trang Đội bóng không còn thông báo ứng viên phải xác nhận lần hai. Chỉ báo thêm thành viên thành công
+khi backend trả participant ACCEPTED, đồng thời tải lại roster và số thành viên trong danh sách.
+Nếu backend cũ còn trả PENDING, giao diện chỉ rõ chưa thêm được và cần khởi động lại backend.
+Yêu cầu trực tiếp cũ có A ACCEPTED/B PENDING được A duyệt lại để hoàn tất, chỉ khi còn hạn và hợp lệ;
+không hồi sinh yêu cầu hết hạn, không thêm trùng thành viên/email khi gọi lặp.
+Kiểm thử tách biệt: backend 172 test (158 đạt, 14 skip), frontend 42 test và build thành công.
+Không chỉnh trực tiếp hàng dữ liệu trên TiDB; người dùng cần khởi động lại backend để nạp code.
+
+
+## Cọc QR và nút xác nhận demo lưu TiDB — 10/11/2026
+
+Đã có **Booking của tôi → Đóng cọc bằng chuyển khoản → Xác nhận thanh toán cọc (demo)**.
+QR hiển thị đúng người nhận, số tiền còn thiếu của người đang đăng nhập và nội dung riêng theo booking/người trả.
+Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi trạng thái booking/trận khi đủ cọc.
+Đặt trực tiếp cọc 20%; hai đội mỗi đội 10%, chỉ đủ cả hai mới xác nhận trận. Không cần Admin duyệt cọc mới.
+Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
+Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
+
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
+Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../setup/DEMO_DEPOSIT.md).

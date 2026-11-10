@@ -8,7 +8,7 @@ from app.use_cases.cancel_booking import cancel_match
 SETTINGS = {'VNPAY_TMN_CODE': '', 'VNPAY_HASH_SECRET': '', 'VNPAY_RETURN_URL': '',
             'VNPAY_PAY_URL': 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
             'VNPAY_API_URL': 'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction',
-            'BANK_BIN': '', 'BANK_ACCOUNT_NO': ''}
+            'BANK_BIN': '', 'BANK_ACCOUNT_NO': '', 'BANK_NAME': '', 'BANK_ACCOUNT_NAME': ''}
 
 def install(app):
     for key, default in SETTINGS.items():

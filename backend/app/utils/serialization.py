@@ -19,7 +19,7 @@ def columns(row, names):
     return {key: getattr(row, key) for key in names.split()}
 
 def user_self(user):
-    return columns(user, 'user_id full_name email phone role skill_level status')
+    return {**columns(user, 'user_id full_name email phone role skill_level status'), 'has_password': bool(user.password_hash)}
 
 def post_data(post, private=False):
     result = columns(post, 'post_id title post_type team_id pitch_id pitch_type match_time end_time '

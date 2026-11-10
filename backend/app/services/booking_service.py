@@ -135,6 +135,8 @@ def booking_data(ctx, booking, admin=False, payments=None):
                      'booking_type status payment_rule created_at')
     result['hold_expires_at'] = booking.hold_expires_at if booking.status == 'PENDING_HOLD' else None
     result['payer_progress'] = payer_progress(ctx, booking, payments)
+    from app.services.payment_service import is_demo_payment
+    result['is_demo'] = any(is_demo_payment(p) for p in (payments if payments is not None else payments_of(ctx, booking.booking_id)))
     if admin:
         result['note'] = booking.note
     return result

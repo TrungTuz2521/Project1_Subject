@@ -42,7 +42,15 @@ def respond_proposal(proposal_id, actor, decision):
         confirmation = next((c for c in confirmations if c.user_id == actor.user_id), None)
         if not confirmation:
             raise DomainError('NOT_FOUND', 'Không tìm thấy đề xuất.', 404)
-        if confirmation.decision != 'PENDING':
+        direct_application = (proposal.proposal_type == 'TEAM_MEMBER' and proposal.candidate_user_id is not None
+                              and proposal.target_post_id is None and posts[0].post_type == 'RECRUIT_MEMBERS')
+        withdrawing_application = (direct_application and actor.user_id == proposal.candidate_user_id
+            and confirmation.decision == 'ACCEPTED' and decision == 'DECLINED'
+            and proposal.status == 'PENDING_CONFIRMATION')
+        resuming_legacy_approval = (direct_application and actor.user_id == posts[0].creator_id
+            and confirmation.decision == 'ACCEPTED' and decision == 'ACCEPTED'
+            and proposal.status == 'PENDING_CONFIRMATION')
+        if confirmation.decision != 'PENDING' and not withdrawing_application and not resuming_legacy_approval:
             if confirmation.decision != decision:
                 raise DomainError('ALREADY_RESPONDED', 'Không thể đổi phản hồi đã chốt.')
             return CommandResult(data=mm.proposal_data(ctx, proposal))
@@ -57,6 +65,15 @@ def respond_proposal(proposal_id, actor, decision):
             return CommandResult('HOLD_EXPIRED', error={'code': 'HOLD_EXPIRED', 'message': 'Đề xuất đã hết hạn.', 'fields': {}}, http_status=409)
         if any(p.status != 'LOCKED' or p.expiry_time <= now for p in posts):
             raise DomainError('STATE_CONFLICT', 'Bài không còn hợp lệ.')
+        # Old direct applications also carry consent in their PENDING participant row.
+        # Upgrade in this command only, after expiry/state checks; never auto-consent AI suggestions.
+        if direct_application and actor.user_id == posts[0].creator_id and decision == 'ACCEPTED':
+            applicant = next((c for c in confirmations if c.user_id == proposal.candidate_user_id), None)
+            pending_request = ctx.session.scalar(select(MatchParticipant).where(
+                MatchParticipant.post_id == posts[0].post_id,
+                MatchParticipant.user_id == proposal.candidate_user_id, MatchParticipant.status == 'PENDING'))
+            if applicant and applicant.decision == 'PENDING' and pending_request:
+                applicant.decision, applicant.responded_at = 'ACCEPTED', pending_request.joined_at
         confirmation.decision, confirmation.responded_at = decision, now
         if decision == 'DECLINED':
             proposal.status = 'REJECTED'
@@ -167,9 +184,13 @@ def accept_member_proposal(ctx, proposal, posts):
     source.current_players = len(original_ids | candidate_ids) + original_guests + candidate_guests
     source.required_players -= joining_count
     source.status = 'OPEN' if source.required_players else 'MATCHED'
-    notification_service.notify(ctx, candidate_ids | {source.creator_id}, 'TEAM_JOINED', 'Đã ghép thành viên',
-                                'Thành viên đã được cập nhật vào đội.', proposal_id=proposal.proposal_id)
     team = ctx.session.get(Team, team_id)
+    notification_service.notify(ctx, candidate_ids, 'TEAM_JOINED', 'Bạn đã được thêm vào đội',
+        f'Bạn đã được duyệt tham gia đội “{team.team_name}” trong bài “{source.title}”. Xem đội bóng và lịch buổi đá trong ứng dụng.',
+        proposal_id=proposal.proposal_id)
+    notification_service.notify(ctx, [source.creator_id], 'TEAM_JOINED', 'Đã duyệt thành viên',
+        f'Thành viên đã được thêm vào đội “{team.team_name}” và quân số buổi đá đã cập nhật.',
+        proposal_id=proposal.proposal_id)
     if team.creation_type == 'AI_RANDOM' and not source.required_players and not source.booking_id:
         ctx.session.add(MatchPost(creator_id=source.creator_id, team_id=team_id, post_type='FIND_OPPONENT',
             title=source.title, pitch_id=source.pitch_id, pitch_type=source.pitch_type, match_time=source.match_time,

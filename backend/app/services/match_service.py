@@ -16,7 +16,7 @@ def get_booking_parties(ctx, *, booking_id):
         return dict(team_id=post.team_id, team_name=team.team_name, representative_user_id=post.creator_id)
     return MatchParties(match.match_id, booking_id, party(match.post_id), party(match.opponent_post_id))
 
-def confirm_after_deposit(ctx, *, booking_id):
+def confirm_after_deposit(ctx, *, booking_id, is_demo=False):
     match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
     if not match:
         return None
@@ -48,7 +48,8 @@ def confirm_after_deposit(ctx, *, booking_id):
     match.status, match.confirmed_at = 'CONFIRMED', ctx.now()
     for post in posts:
         post.status = 'MATCHED'
-    notify(ctx, parties, 'MATCH_CONFIRMED', 'Trận đã xác nhận', 'Đã nhận đủ cọc.', match_id=match.match_id)
+    notify(ctx, parties, 'MATCH_CONFIRMED', 'Trận DEMO đã xác nhận' if is_demo else 'Trận đã xác nhận',
+        'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if is_demo else 'Đã nhận đủ cọc.', match_id=match.match_id)
     return match
 
 def cancel_for_booking(ctx, *, booking_id, cause, actor_id):

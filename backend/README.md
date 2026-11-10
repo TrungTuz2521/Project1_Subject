@@ -1,4 +1,4 @@
-# Backend Flask — phần Đức
+# Backend Flask — bản tích hợp nhóm
 
 ## Chạy local
 
@@ -34,9 +34,17 @@ python -m flask --app app:create_app scan-matchmaking
 python -m flask --app app:create_app expire-proposals
 ```
 
-Đây là lệnh chạy một lượt; scheduler gọi mỗi 15 giây. Không tự chạy thread worker trong web server.
+Hai lệnh trên chạy một lượt. Để tự quét bài, mở terminal riêng tại `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app:create_app matchmaking-worker
+```
+
+Quét ngay lần đầu, mặc định mỗi 15 giây; chỉ chạy tuần tự, không chồng lượt nếu DB chậm. `--interval` nhận 1–300 giây. Lỗi một lượt không làm worker dừng; Ctrl+C để thoát. Web server không tự khởi động worker. Chỉ vận hành một worker quét, không đồng thời đặt scheduler quét trùng.
+Worker dùng `scan_open_posts` hiện có, tái kiểm tra bài/khóa trước tạo đề xuất. Hai bên phải tự chấp nhận; không tự tạo booking/cọc. Không thay schema/Google/SMTP; email mới được gửi bởi email-worker riêng nếu đã bật.
+Worker này chỉ quét bài, không chạy `expire-proposals`, job hết hold hoặc hoàn tiền. Các job hết hạn/đối soát vẫn do scheduler riêng gọi. Không tự chạy thread worker trong web server.
 Quét mỗi cặp trong transaction riêng, lọc điều kiện cứng rồi chấm 40/20/40, ngưỡng 80.
-Thông báo IN_APP ghi cùng transaction. Email chưa tích hợp, không đánh dấu đã gửi email.
+Thông báo IN_APP ghi cùng transaction; khi `EMAIL_ENABLED=true`, thêm EMAIL/PENDING trong cùng transaction. Chạy `email-worker` riêng để gửi SMTP sau commit; xem phần Google Login và email bên dưới.
 
 ## Ghép với Tú
 
@@ -68,8 +76,7 @@ STATE_CONFLICT để retry từ đầu. Các lệnh đổi thành viên phải d
 Phần Tú đăng ký booking_service, booking_reader, cancel_match qua `app/booking_module.py`, xem mục Booking và thanh toán bên dưới.
 Khi chưa gắn booking_service, xác nhận cuối OPPONENT trả 503, rollback phản hồi cuối để thử lại khi tích hợp.
 Không tạo hold giả. Route hủy trận cũng trả 503 khi chưa có orchestration tiền của Tú.
-Booking/Payment/balance/QR chung/xác nhận thu đủ/gateway cọc thuộc Tú; các migration sau V3, outbox/audit/email cần triển khai chung
-trước khi đưa thanh toán thật vào sử dụng. Không giả định các bảng sau V3 đã tồn tại.
+Booking/Payment/balance/QR chung/xác nhận thu đủ/gateway cọc thuộc Tú và đã nối qua booking_module. Email dùng bảng notifications hiện có, không thêm migration. Outbox có lease/retry và audit đầy đủ vẫn cần thiết kế riêng trước khi vận hành lớn; không giả định các bảng mở rộng đã tồn tại.
 
 ## Luồng thu tiền mới — 29/10/2026
 
@@ -125,3 +132,50 @@ Test **tạo và xóa toàn bộ bảng**, nên chỉ chạy khi host là local 
 Xem [hợp đồng và các tình huống demo](../docs/api/SESSION_ATTENDANCE_GUIDE.md). Kiểm thử riêng cho tính năng: `python -m unittest discover -s tests -p test_attendance.py -v` trên SQLite trong bộ nhớ. Không dùng TiDB nhóm để tạo dữ liệu kiểm thử tự động.
 
 Hướng dẫn điền env, đăng ký IPN và thử cọc: [VNPay sandbox](../docs/setup/VNPAY_SANDBOX.md).
+
+## Google Login và email
+
+Đặt `GOOGLE_CLIENT_ID` trong backend env; frontend dùng cùng Client ID và origin đã đăng ký. Xem [Google Login](../docs/setup/GOOGLE_LOGIN.md). Không cần Client Secret hoặc migration; email trùng cần mật khẩu web để liên kết, JWT vẫn 60 phút.
+
+Email cần `EMAIL_ENABLED=true`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USERNAME`, `SMTP_PASSWORD` (App Password), `PUBLIC_WEB_URL` trong `.env` riêng. Không commit credential. Máy không test email giữ `EMAIL_ENABLED=false`.
+
+Từ thư mục `backend`, dùng Python của venv:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app:create_app check-email
+.\.venv\Scripts\python.exe -m flask --app app:create_app email-worker
+```
+
+`check-email` chỉ kiểm tra kết nối/đăng nhập SMTP, không gửi thư. `email-worker` là lệnh chạy liên tục ở terminal riêng, kiểm tra mỗi 10 giây. Flask không tự chạy worker. Khởi động lại backend/worker sau khi thay env.
+Email mới được xếp hàng cùng giao dịch; worker gọi SMTP sau commit. Không phát lại thông báo cũ, không tự retry FAILED, không coi SMTP chấp nhận là chắc chắn đã vào inbox. Chi tiết claim/failure, giới hạn Gmail và demo: [Email notifications](../docs/setup/EMAIL_NOTIFICATIONS.md).
+
+
+## Đổi mật khẩu — 10/11/2026
+
+Trong app: **Hồ sơ cá nhân → Đổi mật khẩu**. Nhập mật khẩu hiện tại, mật khẩu mới và nhập lại;
+mật khẩu mới dài 8–72 byte UTF-8, khác mật khẩu cũ. Thành công sẽ đăng xuất phiên trên trình duyệt hiện tại
+và yêu cầu đăng nhập lại. Sai mật khẩu cũ/nhập lại không khớp không làm đổi dữ liệu.
+Tài khoản chỉ dùng Google và chưa có mật khẩu web thì hiện hướng dẫn đổi ở Google; chưa hỗ trợ đặt mật khẩu web đầu tiên.
+
+API: `POST /api/v1/users/me/password`, cần Bearer JWT của chính người dùng.
+JSON: `{current_password,new_password,confirm_password}`; trả `{data:{changed:true},meta}`.
+Không nhận user_id/role/password_hash; sai dữ liệu trả 422, Google-only trả 409 PASSWORD_NOT_SET,
+không có phiên/hết hạn trả 401, tài khoản khóa trả 403. Endpoint có rate limit auth dùng chung.
+UserSelf bổ sung boolean `has_password`, không trả hash hay Google ID.
+Không có refresh token/revocation: JWT ở thiết bị khác vẫn có thể còn hiệu lực tới exp (tối đa 60 phút từ lúc cấp).
+Đây là đổi mật khẩu khi đã biết mật khẩu cũ; chưa phải chức năng Quên mật khẩu/Reset email.
+Không cần migration hoặc thay mật khẩu thật khi cài code.
+
+
+## Cọc QR và nút xác nhận demo lưu TiDB — 10/11/2026
+
+Đã có **Booking của tôi → Đóng cọc bằng chuyển khoản → Xác nhận thanh toán cọc (demo)**.
+QR hiển thị đúng người nhận, số tiền còn thiếu của người đang đăng nhập và nội dung riêng theo booking/người trả.
+Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi trạng thái booking/trận khi đủ cọc.
+Đặt trực tiếp cọc 20%; hai đội mỗi đội 10%, chỉ đủ cả hai mới xác nhận trận. Không cần Admin duyệt cọc mới.
+Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
+Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
+
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
+Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../docs/setup/DEMO_DEPOSIT.md).

@@ -28,7 +28,7 @@ const localDate = (date: Date) => {
 };
 let serverClockOffset = 0;
 export const serverNow = () => Date.now() + serverClockOffset;
-function syncClock(serverTime: string) { const timestamp = Date.parse(serverTime); if (Number.isFinite(timestamp)) serverClockOffset = timestamp - Date.now(); }
+export function syncClock(serverTime: string) { const timestamp = Date.parse(serverTime); if (Number.isFinite(timestamp)) serverClockOffset = timestamp - Date.now(); }
 export const dateVN = (d: Date | string) => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(d));
 export const timeVN = (d: Date | string) => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' }).format(new Date(d));
 export const moneyVN = (value: string) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value)) + ' ₫';

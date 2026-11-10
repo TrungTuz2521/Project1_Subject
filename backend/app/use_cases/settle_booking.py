@@ -38,6 +38,8 @@ def confirm_booking_paid(actor, *, booking_id, expected_outstanding, idempotency
             if not _same_receipts(previous, receipts):
                 raise DomainError('STATE_CONFLICT', 'Mã xác nhận đã dùng cho một nội dung khác.')
             return booking_balance_service.compute(ctx, booking, payments)
+        if any(payment_service.is_demo_payment(p) for p in payments):
+            raise DomainError('DEMO_ONLY', 'Booking DEMO không nhận khoản thu thật.', 409)
         now = ctx.now()
         if booking.status != 'CONFIRMED':
             raise DomainError('STATE_CONFLICT', 'Chỉ xác nhận thu đủ cho booking đã xác nhận.')

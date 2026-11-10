@@ -20,6 +20,16 @@ describe('matchmaking mock API', () => {
     return { api, store, mock };
   }
 
+  it('changes only the current mock account password and requires the old password', async () => {
+    const { api } = await setup();
+    const body={current_password:'wrong',new_password:'NewPassword456!',confirm_password:'NewPassword456!'};
+    await expect(api.request('/users/me/password',{method:'POST',body})).rejects.toMatchObject({status:422});
+    await api.request('/users/me/password',{method:'POST',body:{...body,current_password:'mock-only'}});
+    await expect(api.request('/auth/login',{method:'POST',auth:false,body:{email:'demo@example.test',password:'mock-only'}})).rejects.toMatchObject({status:401});
+    const result=await api.request<ApiResponse<LoginData>>('/auth/login',{method:'POST',auth:false,body:{email:'demo@example.test',password:'NewPassword456!'}});
+    expect(result.data.user.email).toBe('demo@example.test');
+  });
+
   it('lists all four post types and supports create, edit and cancel', async () => {
     const { api } = await setup();
     const feed = await api.request<{ data: MatchPost[]; meta: { total: number } }>('/match-posts', { auth: false });
@@ -63,6 +73,16 @@ describe('matchmaking mock API', () => {
       method: 'POST', body: { reason: 'Test cancel' },
     });
     expect(cancelled.data.status).toBe('CANCELLED');
+  });
+
+  it('rejects direct applications to player-seeking-team, opponent and random-squad posts', async () => {
+    const { api } = await setup();
+    const feed = await api.request<{ data: MatchPost[] }>('/match-posts', { auth: false });
+    for (const type of ['LOOK_FOR_TEAM', 'FIND_OPPONENT', 'RANDOM_SQUAD']) {
+      const post = feed.data.find(p => p.post_type === type)!;
+      await expect(api.request(`/match-posts/${post.post_id}/participants`, { method: 'POST', body: {} }))
+        .rejects.toMatchObject({ code: 'RECRUITMENT_NOT_OPEN' });
+    }
   });
 
   it('allows LOOK_FOR_TEAM to start without an assigned team, pitch or time', async () => {
@@ -186,7 +206,7 @@ describe('matchmaking mock API', () => {
       .rejects.toMatchObject({ status: 409, code: 'MATCH_CANCELLATION_REQUIRED' });
   });
 
-  it('activates a team member only after captain and candidate both accept without creating a match', async () => {
+  it('adds the applicant immediately after captain approval without another candidate action or match', async () => {
     const { api, store } = await setup();
     const team = await api.request<ApiResponse<{ team_id: number }>>('/teams', {
       method: 'POST', body: { team_name: 'FC Membership Test' },
@@ -223,10 +243,10 @@ describe('matchmaking mock API', () => {
     });
 
     store.set(candidateLogin.data);
-    const accepted = await api.request<ApiResponse<ProposalDetail>>('/match-proposals/' + request.data.proposal_id + '/respond', {
-      method: 'POST', body: { decision: 'ACCEPTED' },
-    });
+    const accepted = await api.request<ApiResponse<ProposalDetail>>('/match-proposals/' + request.data.proposal_id);
     expect(accepted.data.status).toBe('ACCEPTED');
+    const inbox = await api.request<{ data: Notification[] }>('/notifications');
+    expect(inbox.data.some(n => n.notification_type === 'TEAM_JOINED' && n.proposal_id === request.data.proposal_id)).toBe(true);
     const detail = await api.request<ApiResponse<TeamDetail>>('/teams/' + team.data.team_id);
     expect(detail.data.members.some(member => member.user_id === candidateLogin.data.user.user_id && member.status === 'ACTIVE')).toBe(true);
     const matches = await api.request<{ data: Match[] }>('/matches');

@@ -22,7 +22,7 @@ Thứ tự áp dụng: yêu cầu trực tiếp của chủ dự án → quyết
 | Loại sân MVP | PITCH_5, PITCH_7; giữ PITCH_11 cho dữ liệu cũ | Báo cáo và schema |
 | Chi phí hai đội | SPLIT_EQUAL (50–50) hoặc LOSER_PAYS_REMAINDER (đội thua trả toàn bộ phần còn thiếu, không hoàn cọc); hòa chia 50–50 | Chủ dự án đã chốt |
 
-Chủ dự án đã chốt các thay đổi đến phiên bản 1.8: cọc 20%, hai thể thức 50–50 hoặc đội thua trả phần còn lại, hòa chia 50–50, đá 90 phút, mở 06:00–23:00, đặt trước tối đa 10 ngày, người dùng tự hủy sau khi cọc thì mất cọc; các đề xuất khác giữ theo lựa chọn đã đồng ý. Đăng nhập đã chốt: access token hết hạn sau 60 phút từ lúc cấp, hết hạn phải đăng nhập lại; không dùng refresh token. Hai thể thức chia tiền được chốt tại mục 15.1; không hoàn cọc chỉ vì một đội thắng. Google Login đang được trao đổi, chưa nằm trong phạm vi đã chốt. Không tự đổi endpoint hoặc tên trường khi điều chỉnh cấu hình.
+Chủ dự án đã chốt các thay đổi đến phiên bản 1.8: cọc 20%, hai thể thức 50–50 hoặc đội thua trả phần còn lại, hòa chia 50–50, đá 90 phút, mở 06:00–23:00, đặt trước tối đa 10 ngày, người dùng tự hủy sau khi cọc thì mất cọc; các đề xuất khác giữ theo lựa chọn đã đồng ý. Đăng nhập đã chốt: access token hết hạn sau 60 phút từ lúc cấp, hết hạn phải đăng nhập lại; không dùng refresh token. Hai thể thức chia tiền được chốt tại mục 15.1; không hoàn cọc chỉ vì một đội thắng. Google Login được bổ sung ngày 10/11/2026 theo mục 15.3, giữ JWT 60 phút và không refresh token. Không tự đổi endpoint hoặc tên trường khi điều chỉnh cấu hình.
 
 ## 2. Quy ước API
 
@@ -204,7 +204,7 @@ Các path dưới đây đều sau `/api/v1`. `Me` nghĩa là chỉ chính ngư�
 | GET /users/me | Me | — | UserSelf |
 | PATCH /users/me | Me | full_name?, phone?, skill_level? | UserSelf |
 
-UserSelf: user_id, full_name, email, phone, role, skill_level, status. Email chuẩn hóa trim/lowercase; mật khẩu 8–72 byte UTF-8 do bcrypt; đăng nhập sai trả lỗi chung, không tiết lộ tài khoản có tồn tại. Hash mật khẩu thật, không dùng chuỗi demo trong seed làm hash. Google OAuth và đổi mật khẩu nằm ngoài API v1 cơ bản.
+UserSelf: user_id, full_name, email, phone, role, skill_level, status. Email chuẩn hóa trim/lowercase; mật khẩu 8–72 byte UTF-8 do bcrypt; đăng nhập sai trả lỗi chung, không tiết lộ tài khoản có tồn tại. Hash mật khẩu thật, không dùng chuỗi demo trong seed làm hash. Google OAuth được bổ sung tại mục 15.3; đổi mật khẩu được bổ sung ngày 10/11/2026 tại phần Đổi mật khẩu cuối tài liệu.
 
 ### 6.2 Đội và bài đăng — Người 2
 
@@ -230,7 +230,7 @@ UserSelf: user_id, full_name, email, phone, role, skill_level, status. Email chu
 
 Team: team_id, team_name, created_by, creation_type, status, active_member_count (số tài khoản thành viên ACTIVE lâu dài, không phải quân số buổi đá). Member: user_id, full_name, role, status, joined_at. Participant: participant_id, post_id, user_id, status, joined_at. PostSummary: post_id, title, post_type, team_id, pitch_id, pitch_type, match_time, end_time, skill_level, payment_rule, required_players, current_players, registered_players, guest_players, attendance_mode, expiry_time, status. MatchPost thêm attendance_user_ids (nullable cho legacy), description và thông tin của chính chủ bài, không thêm email/phone của người khác.
 
-Đăng ký tham gia buổi đá qua bài tuyển không tạo bảng join_requests mới trong bản này: TeamJoinRequest ánh xạ một bài RECRUIT_MEMBERS của đội và MatchParticipant PENDING. `POST /teams/{id}/join-requests` chỉ hoạt động khi đội có đúng một bài tuyển OPEN phù hợp; không có trả 409 RECRUITMENT_NOT_OPEN, nhiều bài yêu cầu dùng endpoint post cụ thể. Response gồm post_id, participant_id, proposal_id, status. Captain ACCEPTED tương đương confirmation của chủ bài; người xin vào đã bày tỏ đồng ý bằng yêu cầu nhưng vẫn phải xác nhận proposal qua mục 6.3 trước khi ACTIVE. Không thêm thành viên chỉ nhờ Captain đồng ý. Người đã là thành viên lâu dài nhưng chưa được chọn trong snapshot của buổi đá vẫn có thể đăng ký; khi đủ hai xác nhận chỉ thêm vào snapshot, không tạo trùng TeamMember. Người đã có trong snapshot bị từ chối đăng ký lại. Captain muốn rời đội phải chuyển vai trò trước; v1 chưa có endpoint chuyển quyền nên trả 409 CAPTAIN_TRANSFER_REQUIRED.
+Đăng ký tham gia buổi đá qua bài tuyển không tạo bảng join_requests mới trong bản này: TeamJoinRequest ánh xạ một bài RECRUIT_MEMBERS của đội và MatchParticipant PENDING. `POST /teams/{id}/join-requests` chỉ hoạt động khi đội có đúng một bài tuyển OPEN phù hợp; không có trả 409 RECRUITMENT_NOT_OPEN, nhiều bài yêu cầu dùng endpoint post cụ thể. Response gồm post_id, participant_id, proposal_id, status. Cập nhật 10/11/2026: với đăng ký trực tiếp vào RECRUIT_MEMBERS, thao tác đăng ký của B ghi confirmation ACCEPTED/responded_at ngay, participant vẫn PENDING và chưa vào đội. Khi A/Captain duyệt, backend thêm B vào đội, cập nhật snapshot và participant ACCEPTED trong cùng transaction; B không xác nhận lần hai. A nhận email có người đăng ký, B nhận email được thêm vào đội sau duyệt. Yêu cầu cũ còn chờ có MatchParticipant PENDING được ghi nhận consent khi A duyệt; không chạy migration. Đề xuất AI ghép hai bài và OPPONENT vẫn cần hai phản hồi chủ động. Người đã là thành viên lâu dài nhưng chưa được chọn trong snapshot của buổi đá vẫn có thể đăng ký; khi đủ hai xác nhận chỉ thêm vào snapshot, không tạo trùng TeamMember. Người đã có trong snapshot bị từ chối đăng ký lại. Captain muốn rời đội phải chuyển vai trò trước; v1 chưa có endpoint chuyển quyền nên trả 409 CAPTAIN_TRANSFER_REQUIRED.
 
 PATCH lịch/tiêu chí chỉ khi OPEN và chưa có đề xuất hoạt động; không sửa số tiền hoặc status trực tiếp. Hủy bài liên quan Match đang thu cọc phải đi qua luồng hủy Match, không cập nhật một bảng riêng lẻ. Quyền DELETE thành viên chỉ áp dụng trước khi người đó bị ràng buộc vào trận sắp diễn ra; nếu có ràng buộc trả 409 ACTIVE_MATCH_MEMBERSHIP.
 
@@ -418,7 +418,7 @@ Mục tiêu 5.000 kết nối, phản hồi dưới 2 giây và uptime 99,9% tro
 | 6 | Admin lịch/bảo trì/doanh thu/giao dịch/Excel; kiểm thử luồng kết hợp |
 | 7 | Sửa lỗi tích hợp, chạy kịch bản demo, đối chiếu sơ đồ và tài liệu triển khai |
 
-Nếu phải cắt phạm vi, ghi rõ với nhóm: Google OAuth, chat WebSocket, đánh giá/tố cáo, radar/Fair-play và bản đồ GPS không nằm trong hợp đồng endpoint cơ bản này. Báo cáo vẫn có các đoạn nhắc chúng nên cần chỉnh phạm vi hoặc bổ sung hợp đồng sau; không tự xóa bảng ratings/reports hoặc các trường lịch sử.
+Nếu phải cắt phạm vi, ghi rõ với nhóm: chat WebSocket, đánh giá/tố cáo, radar/Fair-play và bản đồ GPS không nằm trong hợp đồng endpoint cơ bản này. Báo cáo vẫn có các đoạn nhắc chúng nên cần chỉnh phạm vi hoặc bổ sung hợp đồng sau; không tự xóa bảng ratings/reports hoặc các trường lịch sử.
 
 ## 12. Mermaid thay SD04
 
@@ -761,7 +761,14 @@ Access token hết hạn sau 60 phút từ lúc cấp; người dùng đăng nh�
 
 ### 15.3 Google Login
 
-Chủ dự án đang hỏi độ khó, chưa yêu cầu đưa vào phạm vi triển khai. Hướng triển khai: Google Identity Services trên React; backend nhận ID token, kiểm tra chữ ký/aud/iss/exp qua thư viện google-auth, ánh xạ sub sang users.google_id rồi cấp phiên của ứng dụng. Không tin email hoặc user_id do frontend tự khai, không tự cấp ADMIN; liên kết tài khoản đã có phải xác minh quyền sở hữu. users.google_id đã có trong schema, vì vậy thường không cần cột mới chỉ để nhận dạng Google, nhưng vẫn cần Client ID, cấu hình origin, dependency và kiểm thử. Tài liệu chính thức: https://developers.google.com/identity/gsi/web/guides/verify-google-id-token
+- `POST /auth/google/challenge`: JSON `{}`, trả `{nonce, challenge}` trong data; challenge hết hạn 10 phút.
+- `POST /auth/google`: JSON `{credential, challenge, password?}`, trả LoginData như đăng nhập mật khẩu.
+- Hai endpoint cần Origin thuộc CORS_ORIGINS. Backend kiểm tra nonce, chữ ký, aud/iss/exp và email_verified.
+- Email mới tạo PLAYER; Google `sub` là định danh. Email trùng chưa liên kết cần mật khẩu web đúng để liên kết.
+- Giữ quyền/trạng thái tài khoản hiện có; khóa đăng nhập nếu user không ACTIVE. JWT app hạn 60 phút.
+- Cấu hình và kịch bản test: [GOOGLE_LOGIN.md](../setup/GOOGLE_LOGIN.md). Không cần migration mới.
+
+Bổ sung ngày 10/11/2026, đã triển khai mã và kiểm thử tách biệt; cần xác minh OAuth end-to-end bằng tài khoản Google thật. Luồng: Google Identity Services trên React; backend nhận ID token, kiểm tra chữ ký/aud/iss/exp qua thư viện google-auth, ánh xạ sub sang users.google_id rồi cấp phiên của ứng dụng. Không tin email hoặc user_id do frontend tự khai, không tự cấp ADMIN; liên kết tài khoản đã có phải xác minh quyền sở hữu. users.google_id đã có trong schema, vì vậy thường không cần cột mới chỉ để nhận dạng Google, nhưng vẫn cần Client ID, cấu hình origin, dependency và kiểm thử. Tài liệu chính thức: https://developers.google.com/identity/gsi/web/guides/verify-google-id-token
 
 
 ## Bổ sung ngày 06/11/2026: quân số theo buổi đá
@@ -775,3 +782,45 @@ PostSummary thêm registered_players, guest_players, attendance_mode SESSION/LEG
 DDL và chi tiết triển khai: [Migration 004](../../database/schema/004_session_attendance_README.md). **TiDB test dùng chung đã áp dụng 004 ngày 06/11/2026; thành viên chỉ pull code và cấu hình kết nối, không chạy lại V1/V2/V3/004.** Môi trường khác chưa có cột phải được cập nhật trước khi khởi động code mới. Mock frontend chưa hỗ trợ quân số buổi đá: trả 501 thay vì báo thành công với số người sai; dùng backend thật khi demo tính năng này.
 
 Chi tiết điều kiện đầu vào, các DTO, xử lý legacy và checklist demo: [Quân số theo buổi đá](SESSION_ATTENDANCE_GUIDE.md). Nếu API client bỏ cả attendance_user_ids và guest_players, backend giữ cách xử lý legacy để tương thích; frontend hiện tại luôn gửi snapshot quân số. Không nhầm việc tạo bài với việc giữ sân hoặc đặt cọc.
+
+
+## Bổ sung email notification — 10/11/2026
+
+Đã bổ sung Gmail SMTP và worker riêng: notify tạo IN_APP/SENT + EMAIL/PENDING trong cùng transaction
+khi EMAIL_ENABLED=true. Worker gửi sau commit; không giữ khóa DB trong lúc gọi SMTP.
+Không cần migration: dùng notifications.delivery_channel=EMAIL và delivery_status=PENDING/SENT/FAILED hiện có.
+Worker claim bằng chuyển PENDING→FAILED trước SMTP, sau khi SMTP chấp nhận chuyển SENT.
+FAILED có thể là lỗi gửi hoặc chưa rõ kết quả sau crash; không tự gửi lại để hạn chế trùng thư.
+SENT chỉ nghĩa là SMTP đã chấp nhận, không đảm bảo email vào inbox. Không phát lại thông báo cũ.
+Thông báo trong app vẫn là chính cho thời hạn giữ sân. Xem [cấu hình](../setup/EMAIL_NOTIFICATIONS.md).
+
+
+## Đổi mật khẩu — 10/11/2026
+
+Trong app: **Hồ sơ cá nhân → Đổi mật khẩu**. Nhập mật khẩu hiện tại, mật khẩu mới và nhập lại;
+mật khẩu mới dài 8–72 byte UTF-8, khác mật khẩu cũ. Thành công sẽ đăng xuất phiên trên trình duyệt hiện tại
+và yêu cầu đăng nhập lại. Sai mật khẩu cũ/nhập lại không khớp không làm đổi dữ liệu.
+Tài khoản chỉ dùng Google và chưa có mật khẩu web thì hiện hướng dẫn đổi ở Google; chưa hỗ trợ đặt mật khẩu web đầu tiên.
+
+API: `POST /api/v1/users/me/password`, cần Bearer JWT của chính người dùng.
+JSON: `{current_password,new_password,confirm_password}`; trả `{data:{changed:true},meta}`.
+Không nhận user_id/role/password_hash; sai dữ liệu trả 422, Google-only trả 409 PASSWORD_NOT_SET,
+không có phiên/hết hạn trả 401, tài khoản khóa trả 403. Endpoint có rate limit auth dùng chung.
+UserSelf bổ sung boolean `has_password`, không trả hash hay Google ID.
+Không có refresh token/revocation: JWT ở thiết bị khác vẫn có thể còn hiệu lực tới exp (tối đa 60 phút từ lúc cấp).
+Đây là đổi mật khẩu khi đã biết mật khẩu cũ; chưa phải chức năng Quên mật khẩu/Reset email.
+Không cần migration hoặc thay mật khẩu thật khi cài code.
+
+
+## Cọc QR và nút xác nhận demo lưu TiDB — 10/11/2026
+
+Đã có **Booking của tôi → Đóng cọc bằng chuyển khoản → Xác nhận thanh toán cọc (demo)**.
+QR hiển thị đúng người nhận, số tiền còn thiếu của người đang đăng nhập và nội dung riêng theo booking/người trả.
+Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi trạng thái booking/trận khi đủ cọc.
+Đặt trực tiếp cọc 20%; hai đội mỗi đội 10%, chỉ đủ cả hai mới xác nhận trận. Không cần Admin duyệt cọc mới.
+Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
+Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
+
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
+Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../setup/DEMO_DEPOSIT.md).

@@ -31,6 +31,8 @@ def _open_deposit(actor, booking_id, method):
     with UnitOfWork() as ctx:
         auth_service.require_active_actor(ctx, actor)
         booking, payments = booking_service.lock_booking_graph(ctx, booking_id)
+        if any(payment_service.is_demo_payment(p) for p in payments):
+            raise DomainError('DEMO_ONLY', 'Booking DEMO không mở phiên thanh toán thật.', 409)
         required = _required_for(booking, actor.user_id)
         if required is None:
             raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
@@ -68,11 +70,16 @@ def create_deposit_session(actor, *, booking_id, payment_method, client_ip=None)
     return session, opened.created
 
 def _after_deposit_recorded(ctx, booking, payment):
-    notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS', 'Đã nhận cọc', 'Đã ghi nhận khoản cọc của bạn.')
+    demo = payment_service.is_demo_payment(payment)
+    notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS',
+        'Đã xác nhận cọc DEMO' if demo else 'Đã nhận cọc',
+        'Cọc mô phỏng đã được lưu; chưa xác minh tiền ngân hàng.' if demo else 'Đã ghi nhận khoản cọc của bạn.')
     if booking_service.confirm_if_deposit_complete(ctx, booking_id=booking.booking_id):
-        match = match_service.confirm_after_deposit(ctx, booking_id=booking.booking_id)
+        match = match_service.confirm_after_deposit(ctx, booking_id=booking.booking_id, **({'is_demo': True} if demo else {}))
         if match is None:
-            notification_service.notify(ctx, [booking.user_id], 'BOOKING_CONFIRMED', 'Đặt sân thành công', 'Đã nhận đủ cọc.')
+            notification_service.notify(ctx, [booking.user_id], 'BOOKING_CONFIRMED',
+                'Đặt sân DEMO thành công' if demo else 'Đặt sân thành công',
+                'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if demo else 'Đã nhận đủ cọc.')
 
 def _handle_late(ctx, booking, payment):
     """Money is real but never revives the hold: refund it and keep the slot released."""
@@ -116,6 +123,8 @@ def record_manual_payment(actor, *, booking_id, user_id, payment_type, amount, m
             if not same:
                 raise DomainError('STATE_CONFLICT', 'Mã chứng từ đã dùng cho một khoản khác.')
             return payment_service.payment_data(existing, admin=True), False
+        if any(payment_service.is_demo_payment(p) for p in payments):
+            raise DomainError('DEMO_ONLY', 'Booking DEMO không nhận khoản thu thật.', 409)
         now = ctx.now()
         if payment_type == 'BOOKING_DEPOSIT':
             required = _required_for(booking, user_id)

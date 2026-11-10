@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { watchMatchmakingInbox } from '../../services/matchmakingInbox';
+import { PostParticipationAction, acceptsParticipant } from './PostParticipationAction';
 import { PostTimePicker } from './PostTimePicker';
 import { SessionAttendancePicker } from './SessionAttendancePicker';
 import { advanceDate, postStartOptions, vietnamDate } from './postSchedule';
@@ -21,7 +23,7 @@ const statusNames:Record<string,string>={PENDING_CONFIRMATION:'Chờ xác nhận
 const notificationLabels:Record<NotificationType,string>={
  MATCH_PROPOSAL:'Có đề xuất ghép trận mới',PROPOSAL_ACCEPTED:'Đề xuất đã được hai bên đồng ý',PROPOSAL_REJECTED:'Đề xuất bị từ chối',
  BOOKING_HOLD:'Sân đang được giữ chỗ',BOOKING_CONFIRMED:'Đặt sân đã xác nhận',PAYMENT_SUCCESS:'Thanh toán thành công',
- TEAM_JOINED:'Có yêu cầu tham gia đội',POST_EXPIRED:'Bài đăng đã hết hạn',PROPOSAL_EXPIRED:'Đề xuất đã hết hạn',
+ TEAM_JOINED:'Thành viên đã được cập nhật',POST_EXPIRED:'Bài đăng đã hết hạn',PROPOSAL_EXPIRED:'Đề xuất đã hết hạn',
  MATCH_CONFIRMED:'Trận đấu đã xác nhận',MATCH_CANCELLED:'Trận đấu đã bị hủy',BOOKING_EXPIRED:'Thời gian giữ sân đã hết',
  REFUND_PROCESSING:'Đang xử lý hoàn tiền',REFUND_SUCCESS:'Hoàn tiền thành công',REFUND_FAILED:'Hoàn tiền thất bại'
 };
@@ -43,7 +45,7 @@ function localInput(date:Date){
 }
 function asOffset(value:string){return value?value+':00+07:00':undefined;}
 function initialForm(){const start=new Date(advanceDate(vietnamDate(),1)+'T18:00:00+07:00');const end=new Date(start.getTime()+90*60000);return {type:'FIND_OPPONENT' as PostType,title:'',description:'',teamId:'',pitchType:'PITCH_7' as PitchType,skill:'INTERMEDIATE' as SkillLevel,matchTime:localInput(start),endTime:localInput(end),expiryTime:localInput(new Date(start.getTime()-2*3600000)),paymentRule:'SPLIT_EQUAL' as TeamPaymentRule,requiredPlayers:'1',attendanceUserIds:session.getSnapshot()?[session.getSnapshot()!.user.user_id]:[],guestPlayers:'0'};}
-export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
+export function MatchmakingPage({initialTab='posts',initialProposalId=null}:{initialTab?:Tab;initialProposalId?:number|null}){
  const current=session.getSnapshot();const isPlayer=current?.user.role==='PLAYER';const [tab,setTab]=useState<Tab>(initialTab);
  const [posts,setPosts]=useState<PostSummary[]>([]);const [myPosts,setMyPosts]=useState<MatchPost[]>([]);const [teams,setTeams]=useState<Team[]>([]);
  const [proposals,setProposals]=useState<Proposal[]>([]);const [matches,setMatches]=useState<Match[]>([]);const [notifications,setNotifications]=useState<Notification[]>([]);
@@ -68,7 +70,23 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
   if(notificationResult.status==='fulfilled')setNotifications(notificationResult.value.data);else failures.push('Thông báo: '+errorMessage(notificationResult.reason));
   setErrors(failures);setLoading(false);
  },[]);
+ useEffect(()=>{setTab(initialTab);},[initialTab]);
  useEffect(()=>{void load();},[load]);
+ useEffect(()=>{
+  const inbox=watchMatchmakingInbox(data=>{
+   if(data.notifications)setNotifications(data.notifications);
+   if(data.proposals)setProposals(data.proposals);
+  });
+  return ()=>inbox.stop();
+ },[]);
+ useEffect(()=>{
+  if(!initialProposalId)return;
+  const controller=new AbortController();let active=true;
+  setTab('proposals');setProposalDetail(null);setDetailError('');
+  proposalsService.get(initialProposalId,controller.signal).then(result=>{if(active)setProposalDetail(result.data);})
+   .catch(error=>{if(active)setDetailError(errorMessage(error));});
+  return ()=>{active=false;controller.abort();};
+ },[initialProposalId]);
  const sourcePosts=mineOnly?myPosts:posts;
  const visiblePosts=useMemo(()=>sourcePosts.filter(p=>(postFilter==='ALL'||p.post_type===postFilter)&&(pitchFilter==='ALL'||p.pitch_type===pitchFilter)&&(skillFilter==='ALL'||p.skill_level===skillFilter)&&p.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())&&(!fromDate||(p.match_time!==null&&vietnamDay(p.match_time)>=fromDate))&&(!toDate||(p.match_time!==null&&vietnamDay(p.match_time)<=toDate))),[sourcePosts,postFilter,pitchFilter,skillFilter,search,fromDate,toDate]);
  const setField = <K extends keyof ReturnType<typeof initialForm>,>(key: K, value: ReturnType<typeof initialForm>[K]) => setForm(old => ({ ...old, [key]: value }));
@@ -134,11 +152,12 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
   catch(e){setDetailError(errorMessage(e));}finally{setBusy(null);}
  }
  async function applyToPost(post:PostSummary){
-  if(busy!==null)return;setBusy(post.post_id);setDetailError('');
+  if(busy!==null)return;
+  if(!isPlayer||myPosts.some(p=>p.post_id===post.post_id)||!acceptsParticipant(post)){setDetailError('Chỉ có thể đăng ký bài Tuyển thành viên còn mở và còn thiếu người.');return;}
+  setBusy(post.post_id);setDetailError('');
   try{
-   if(post.post_type==='RECRUIT_MEMBERS'&&post.team_id!==null){await teamsService.requestJoin(post.team_id);}
-   else{await matchPostsService.requestParticipant(post.post_id);}
-   setNotice('Đã gửi yêu cầu. Việc gia nhập đội/chốt ghép vẫn cần các bước xác nhận theo Backend.');
+   await matchPostsService.requestParticipant(post.post_id);
+   setNotice('Đã gửi đăng ký. Chờ đội trưởng duyệt; bạn không cần xác nhận lại.');
   }catch(e){setDetailError(errorMessage(e));}finally{setBusy(null);}
  }
  async function cancelPost(post:MatchPost){
@@ -149,7 +168,7 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
  async function respond(id:number,decision:'ACCEPTED'|'DECLINED'){
   if(!window.confirm(decision==='ACCEPTED'?'Bạn xác nhận đồng ý đề xuất?':'Bạn chắc chắn muốn từ chối đề xuất?'))return;
   setBusy(id);setDetailError('');
-  try{const result=await proposalsService.respond(id,decision);setProposalDetail(result.data);setNotice('Đã ghi nhận phản hồi. Proposal được chấp thuận không đồng nghĩa trận đã CONFIRMED.');await load();}
+  try{const result=await proposalsService.respond(id,decision);setProposalDetail(result.data);setNotice(result.data.proposal_type==='TEAM_MEMBER'&&result.data.status==='ACCEPTED'?'Đã duyệt và thêm thành viên vào đội.':'Đã ghi nhận phản hồi đề xuất.');await load();}
   catch(e){setDetailError(errorMessage(e));}finally{setBusy(null);}
  }
  async function openProposal(id:number){setProposalDetail(null);setDetailError('');try{const result=await proposalsService.get(id);setProposalDetail(result.data);}catch(e){setDetailError(errorMessage(e));}}
@@ -167,12 +186,14 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
  const proposalTargetPost = proposalDetail?.target_post_id ? posts.find(post => post.post_id === proposalDetail.target_post_id) : undefined;
  const proposalSourceTeam = proposalSourcePost?.team_id ? teams.find(team => team.team_id === proposalSourcePost.team_id) : undefined;
  const proposalTargetTeam = proposalTargetPost?.team_id ? teams.find(team => team.team_id === proposalTargetPost.team_id) : undefined;
- const canRespondToProposal = Boolean(proposalDetail?.confirmations.some(
+ const directRecruitment = proposalDetail?.proposal_type==='TEAM_MEMBER'&&proposalDetail.candidate_user_id!==null&&proposalDetail.target_post_id===null;
+ const isWaitingApplicant = directRecruitment&&proposalDetail?.candidate_user_id===current?.user.user_id&&proposalDetail.status==='PENDING_CONFIRMATION';
+ const canRespondToProposal = !isWaitingApplicant&&Boolean(proposalDetail?.confirmations.some(
   confirmation => confirmation.user_id === current?.user.user_id && confirmation.decision === 'PENDING',
  ));
  const teamLabelForPost=(postId:number|null)=>{if(postId===null)return 'Cá nhân';const post=posts.find(item=>item.post_id===postId);if(!post)return 'Bài #'+postId;if(post.team_id===null)return post.title;return teams.find(team=>team.team_id===post.team_id)?.team_name??('Đội #'+post.team_id);};
  return <section className="mm-page">
-  <div className="account-eyebrow">KẾT NỐI TỪ SÂN CỎ</div><div className="account-page-heading"><div><h1>Ghép đội & tìm trận<span>.</span></h1><p>Tìm đối thủ, tuyển đồng đội và theo dõi quá trình xác nhận trận đấu.</p></div><div className="mm-heading-actions"><a className="account-secondary-button" href="#/schedule">Lịch thi đấu</a>{isPlayer&&<button className="account-primary-button" onClick={()=>{setShowCreate(v=>!v);setDetailError('');}}>＋ Tạo bài đăng</button>}</div></div>
+  <div className="account-eyebrow">KẾT NỐI TỪ SÂN CỎ</div><div className="account-page-heading"><div><h1>Ghép đội & tìm trận<span>.</span></h1><p>Tìm đối thủ, tuyển đồng đội và theo dõi quá trình xác nhận trận đấu.</p></div><div className="mm-heading-actions"><button className="account-secondary-button" disabled={loading} onClick={()=>void load()}>Làm mới</button><a className="account-secondary-button" href="#/schedule">Lịch thi đấu</a>{isPlayer&&<button className="account-primary-button" onClick={()=>{setShowCreate(v=>!v);setDetailError('');}}>＋ Tạo bài đăng</button>}</div></div>
   {notice&&<div className="notice-success" role="status">{notice}</div>}{detailError&&<div className="notice-error" role="alert">{detailError}<button type="button" onClick={()=>setDetailError('')}>Đóng</button></div>}
   {showCreate&&isPlayer&&<section className="profile-form-card mm-create-form"><div className="profile-form-heading"><div><h2>Tạo bài đăng tìm trận</h2><p>Khai báo quân số cho buổi đá này; không cần thay đổi danh sách thành viên đội.</p></div><button className="account-secondary-button" type="button" onClick={()=>setShowCreate(false)}>Đóng</button></div>
    <form className="profile-form" onSubmit={createPost}>
@@ -191,11 +212,11 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
     <div className="profile-actions"><button type="button" className="account-secondary-button" onClick={()=>setForm(initialForm())}>Đặt lại</button><button className="account-primary-button" type="submit" disabled={busy!==null}>{busy===-1?'Đang đăng…':'Đăng bài'}</button></div>
    </form>
   </section>}
-  <div className="mm-tabs" role="tablist">{tabs.map(t=><button key={t.id} role="tab" aria-selected={tab===t.id} className={tab===t.id?'active':''} onClick={()=>setTab(t.id)}>{t.label}{t.id==='notifications'&&notifications.some(n=>!n.is_read)?' ('+notifications.filter(n=>!n.is_read).length+')':''}</button>)}</div>
+  <div className="mm-tabs" role="tablist">{tabs.map(t=><button key={t.id} role="tab" aria-selected={tab===t.id} className={tab===t.id?'active':''} onClick={()=>{setTab(t.id);if(t.id==='notifications'||t.id==='proposals')void load();}}>{t.label}{t.id==='notifications'&&notifications.some(n=>!n.is_read)?' ('+notifications.filter(n=>!n.is_read).length+')':''}</button>)}</div>
   {errors.length>0&&<div className="notice-error"><strong>Một số nguồn dữ liệu chưa tải được:</strong><ul>{errors.map((e,i)=><li key={i}>{e}</li>)}</ul><button onClick={()=>void load()}>Thử lại</button></div>}
   {loading?<div className="account-panel account-loading">Đang tải dữ liệu…</div>:<>
    {tab==='posts'&&<><div className="mm-toolbar"><input aria-label="Tìm bài đăng" placeholder="Tìm theo tiêu đề…" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Lọc loại bài" value={postFilter} onChange={e=>setPostFilter(e.target.value)}><option value="ALL">Tất cả loại bài</option>{Object.entries(postNames).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><select aria-label="Lọc loại sân" value={pitchFilter} onChange={e=>setPitchFilter(e.target.value)}><option value="ALL">Tất cả loại sân</option><option value="PITCH_5">Sân 5</option><option value="PITCH_7">Sân 7</option></select><select aria-label="Lọc trình độ" value={skillFilter} onChange={e=>setSkillFilter(e.target.value)}><option value="ALL">Mọi trình độ</option>{Object.entries(skillNames).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select><label className="mm-checkbox"><input type="checkbox" checked={mineOnly} onChange={e=>setMineOnly(e.target.checked)}/> Bài của tôi</label><label className="mm-date-filter">Từ ngày <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></label><label className="mm-date-filter">Đến ngày <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}/></label></div>
-    {visiblePosts.length===0?<Empty text="Chưa có bài đăng phù hợp."/>:<div className="mm-grid">{visiblePosts.map(p=><article className="mm-card" key={p.post_id}><div className="mm-card-top"><span className="mm-type">{postNames[p.post_type]}</span><span className="mm-status">{postStatuses[p.status]??p.status}</span></div><h3>{p.title}</h3><p>{skillNames[p.skill_level]} · {p.pitch_type?pitchNames[p.pitch_type]:'Chưa chọn sân'}</p><p>Thời gian: {dateLabel(p.match_time)}</p><p>Quân số buổi đá: {p.current_players}/{p.pitch_type==='PITCH_5'?5:7} người{p.required_players?` · Còn thiếu ${p.required_players}`:''}</p><small>{p.registered_players??p.current_players} người có tài khoản + {p.guest_players??0} người ngoài ứng dụng</small><small>Hết hạn: {dateLabel(p.expiry_time)}</small><div className="mm-actions"><button onClick={()=>void openPost(p.post_id)}>Chi tiết</button>{isPlayer&&p.status==='OPEN'&&p.post_type!=='FIND_OPPONENT'&&<button className="secondary" disabled={busy!==null} onClick={()=>void applyToPost(p)}>{busy===p.post_id?'Đang gửi…':'Đăng ký tham gia'}</button>}</div></article>)}</div>}</>}
+    {visiblePosts.length===0?<Empty text="Chưa có bài đăng phù hợp."/>:<div className="mm-grid">{visiblePosts.map(p=><article className="mm-card" key={p.post_id}><div className="mm-card-top"><span className="mm-type">{postNames[p.post_type]}</span><span className="mm-status">{postStatuses[p.status]??p.status}</span></div><h3>{p.title}</h3><p>{skillNames[p.skill_level]} · {p.pitch_type?pitchNames[p.pitch_type]:'Chưa chọn sân'}</p><p>Thời gian: {dateLabel(p.match_time)}</p><p>Quân số buổi đá: {p.current_players}/{p.pitch_type==='PITCH_5'?5:7} người{p.required_players?` · Còn thiếu ${p.required_players}`:''}</p><small>{p.registered_players??p.current_players} người có tài khoản + {p.guest_players??0} người ngoài ứng dụng</small><small>Hết hạn: {dateLabel(p.expiry_time)}</small><div className="mm-actions"><button onClick={()=>void openPost(p.post_id)}>Chi tiết</button><PostParticipationAction post={p} isPlayer={isPlayer} isOwner={myPosts.some(mine=>mine.post_id===p.post_id)} busy={busy} onApply={post=>void applyToPost(post)}/></div></article>)}</div>}</>}
    {tab==='teams'&&(teams.length?<div className="mm-grid">{teams.map(t=><article className="mm-card" key={t.team_id}><span className="mm-type">{t.creation_type==='AI_RANDOM'?'Đội ghép tự động':'Đội của bạn'}</span><h3>{t.team_name}</h3><p>{t.active_member_count} thành viên</p><span className="mm-status">{t.status==='ACTIVE'?'Đang hoạt động':'Ngừng hoạt động'}</span><div className="mm-actions"><a className="mm-link-button" href="#/teams">Quản lý đội</a></div></article>)}</div>:<Empty text="Bạn chưa có đội bóng nào."/>)}
    {tab==='proposals'&&(proposals.length?<div className="mm-grid">{proposals.map(p=><article className="mm-card" key={p.proposal_id}><div className="mm-card-top"><span className="mm-type">{p.proposal_type==='OPPONENT'?'Ghép đối thủ':'Tuyển thành viên'}</span><span className="mm-status">{statusNames[p.status]??p.status}</span></div><h3>Đề xuất #{p.proposal_id}</h3><p>Mức độ phù hợp: {p.compatibility_score}%</p><p>Hai bên: <strong>{teamLabelForPost(p.source_post_id)}</strong>{p.proposal_type==='OPPONENT'?' vs ': ' · '}<strong>{p.target_post_id!==null?teamLabelForPost(p.target_post_id):'Người chơi #'+p.candidate_user_id}</strong></p><p>Hết hạn: {dateLabel(p.expires_at)}</p><div className="mm-actions"><button onClick={()=>void openProposal(p.proposal_id)}>Chi tiết & xác nhận</button></div></article>)}</div>:<Empty text="Chưa có đề xuất ghép trận." />)}
    {tab==='matches'&&(matches.length?<div className="mm-grid">{matches.map(m=><article className="mm-card" key={m.match_id}><span className="mm-type">Trận #{m.match_id}</span><h3>{m.status==='CONFIRMED'?'Trận đã xác nhận':m.status==='SUGGESTED'?'Đang chờ xác nhận':'Trạng thái trận đấu'}</h3><p>Hai đội: <strong>{teamLabelForPost(m.post_id)}</strong>{m.opponent_post_id!==null?' vs '+teamLabelForPost(m.opponent_post_id):''}</p><p>Thời gian: {dateLabel(m.match_time)}</p><span className="mm-status">{statusNames[m.status]??m.status}</span><div className="mm-actions"><button onClick={()=>void openMatch(m.match_id)}>Chi tiết trận</button></div></article>)}</div>:<Empty text="Chưa có trận đấu nào." />)}
@@ -217,7 +238,7 @@ export function MatchmakingPage({initialTab='posts'}:{initialTab?:Tab}){
       expiryTime:localInput(new Date(postDetail.expiry_time)),paymentRule:postDetail.payment_rule??'SPLIT_EQUAL',attendanceUserIds:postDetail.attendance_user_ids??[current!.user.user_id],guestPlayers:String(postDetail.guest_players??0)});
     setShowCreate(true);setDetailError('');window.scrollTo({top:0,behavior:'smooth'});
   }}>Tạo bài tìm đối thủ với quân số này</button>}{myPosts.some(p=>p.post_id===postDetail.post_id)&&<button className="account-secondary-button" disabled={busy!==null||postDetail.status!=='OPEN'} onClick={()=>void cancelPost(postDetail)}>Hủy bài đăng</button>}</section>}
-  {proposalDetail&&<section className="account-panel mm-detail"><div className="account-section-heading"><div><span className="mm-type">CHI TIẾT ĐỀ XUẤT</span><h2>Proposal #{proposalDetail.proposal_id}</h2></div><button className="account-secondary-button" onClick={()=>setProposalDetail(null)}>Đóng</button></div><p>Điểm phù hợp: {proposalDetail.compatibility_score}% · Trạng thái: {statusNames[proposalDetail.status]??proposalDetail.status}</p><p>Hạn phản hồi: {dateLabel(proposalDetail.expires_at)}</p><p>Hai bên: <strong>{proposalSourceTeam?.team_name??('Bài #'+proposalDetail.source_post_id)}</strong>{proposalDetail.proposal_type==='OPPONENT'?' vs ': ' · '}<strong>{proposalTargetTeam?.team_name??(proposalDetail.candidate_user_id!==null?'Người chơi #'+proposalDetail.candidate_user_id:proposalDetail.target_post_id?'Bài #'+proposalDetail.target_post_id:'Ứng viên')}</strong></p><h3>Xác nhận của các bên</h3>{proposalDetail.confirmations.map(c=><div className="team-member-row" key={c.user_id}><strong>Người dùng #{c.user_id}</strong><span>{c.decision==='PENDING'?'Chưa phản hồi':c.decision==='ACCEPTED'?'Đồng ý':'Từ chối'} · {dateLabel(c.responded_at)}</span></div>)}{canRespondToProposal&&proposalDetail.status==='PENDING_CONFIRMATION'&&<div className="mm-actions"><button disabled={busy!==null} onClick={()=>void respond(proposalDetail.proposal_id,'ACCEPTED')}>Đồng ý đề xuất</button><button className="secondary" disabled={busy!==null} onClick={()=>void respond(proposalDetail.proposal_id,'DECLINED')}>Từ chối</button></div>}{proposalDetail.status==='ACCEPTED'&&<div className="account-notice"><span>i</span><div><strong>Đã có đồng thuận</strong><p>Proposal ACCEPTED chưa chứng minh Booking đã hoàn tất. Chỉ Match CONFIRMED mới là trận chính thức.</p></div></div>}</section>}
+  {proposalDetail&&<section className="account-panel mm-detail"><div className="account-section-heading"><div><span className="mm-type">CHI TIẾT ĐỀ XUẤT</span><h2>Proposal #{proposalDetail.proposal_id}</h2></div><button className="account-secondary-button" onClick={()=>setProposalDetail(null)}>Đóng</button></div><p>Điểm phù hợp: {proposalDetail.compatibility_score}% · Trạng thái: {statusNames[proposalDetail.status]??proposalDetail.status}</p><p>Hạn phản hồi: {dateLabel(proposalDetail.expires_at)}</p><p>Hai bên: <strong>{proposalSourceTeam?.team_name??('Bài #'+proposalDetail.source_post_id)}</strong>{proposalDetail.proposal_type==='OPPONENT'?' vs ': ' · '}<strong>{proposalTargetTeam?.team_name??(proposalDetail.candidate_user_id!==null?'Người chơi #'+proposalDetail.candidate_user_id:proposalDetail.target_post_id?'Bài #'+proposalDetail.target_post_id:'Ứng viên')}</strong></p><h3>Xác nhận của các bên</h3>{proposalDetail.confirmations.map(c=><div className="team-member-row" key={c.user_id}><strong>Người dùng #{c.user_id}</strong><span>{c.decision==='PENDING'?'Chưa phản hồi':c.decision==='ACCEPTED'?'Đồng ý':'Từ chối'} · {dateLabel(c.responded_at)}</span></div>)}{isWaitingApplicant&&<p role="status">Bạn đã đăng ký tham gia. Đang chờ đội trưởng duyệt, không cần xác nhận lại.</p>}{canRespondToProposal&&proposalDetail.status==='PENDING_CONFIRMATION'&&<div className="mm-actions"><button disabled={busy!==null} onClick={()=>void respond(proposalDetail.proposal_id,'ACCEPTED')}>{directRecruitment?'Chấp nhận thành viên':'Đồng ý đề xuất'}</button><button className="secondary" disabled={busy!==null} onClick={()=>void respond(proposalDetail.proposal_id,'DECLINED')}>Từ chối</button></div>}{proposalDetail.status==='ACCEPTED'&&<div className="account-notice"><span>i</span><div><strong>{proposalDetail.proposal_type==='TEAM_MEMBER'?'Đã thêm thành viên':'Đã có đồng thuận'}</strong><p>{proposalDetail.proposal_type==='TEAM_MEMBER'?'Thành viên và quân số buổi đá đã được cập nhật.':'Proposal ACCEPTED chưa chứng minh Booking đã hoàn tất. Chỉ Match CONFIRMED mới là trận chính thức.'}</p></div></div>}</section>}
   {matchDetail&&<section className="account-panel mm-detail"><div className="account-section-heading"><div><span className="mm-type">CHI TIẾT TRẬN ĐẤU</span><h2>Trận #{matchDetail.match_id}</h2></div><button className="account-secondary-button" onClick={()=>setMatchDetail(null)}>Đóng</button></div><p>{dateLabel(matchDetail.match_time)} – {dateLabel(matchDetail.end_time)}</p><p>Trạng thái: {statusNames[matchDetail.status]??matchDetail.status}</p><p>Đội tham gia: {matchDetail.teams.map(t=>t.team_name).join(' vs ')||'Backend chưa trả danh sách đội'}</p><p>Sân: {matchDetail.booking?'Sân #'+matchDetail.booking.pitch_id:'Chưa có booking được xác nhận'}</p><p>Booking: {matchDetail.booking?.status??'Chưa có'}</p></section>}
   <div className="mm-footnote">Không tự tính điểm AI, không tự tạo Booking hoặc giả lập thanh toán. Trận SUGGESTED được hiển thị riêng; lịch chính thức chỉ gồm CONFIRMED.</div>
  </section>;

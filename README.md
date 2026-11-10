@@ -4,16 +4,15 @@ Hệ thống quản lý sân bóng đá, đặt sân trực tuyến, tìm đối
 
 **Dự án:** Project1_Subject  
 **Nhóm phát triển:** 5 thành viên  
-**Trạng thái:** Đang thiết lập môi trường và phát triển hệ thống.
+**Trạng thái:** Đã tích hợp backend và frontend trên nhánh `integration/team`; đang kiểm thử luồng thực tế.
+**Cập nhật:** 10/11/2026 — bổ sung Google Login và thông báo email Gmail.
 
 ## 1. Công nghệ sử dụng
 
 ### Frontend
 - React + Vite + TypeScript
-- Tailwind CSS, shadcn/ui
-- Lucide React
-- TanStack Query, Zustand
-- Recharts
+- CSS của các phân hệ, React hooks và session trong bộ nhớ
+- Thư viện `qrcode` hiển thị QR từ payload backend
 
 ### Backend
 - Python + Flask
@@ -22,22 +21,17 @@ Hệ thống quản lý sân bóng đá, đặt sân trực tuyến, tìm đối
 - PyMySQL
 - JWT, bcrypt
 - Flask-CORS
+- Google Identity Services + `google-auth` xác minh ID token
+- Gmail SMTP qua STARTTLS, hàng đợi email và worker riêng
+- OpenPyXL cho xuất dữ liệu
+- Adapter VNPay sandbox cho cọc; cần cấu hình merchant để thử gateway thật
 
 ### Database
 - TiDB Cloud (tương thích giao thức MySQL)
 - Database `test` trên TiDB Serverless v8.5.3
 - 15 bảng nghiệp vụ và 3 view đã được kiểm tra
-- Database dùng chung đã cập nhật migration V3 ngày 27/10/2026
-
-### Công nghệ dự kiến tích hợp
-- Google OAuth
-- Flask-SocketIO
-- VNPay / MoMo
-- Celery + Redis
-- Firebase Admin SDK
-- Pandas / OpenPyXL
-
-Các công nghệ dự kiến tích hợp chưa được cài đặt đầy đủ trong `requirements.txt`.
+- Database dùng chung đã cập nhật V3 ngày 27/10/2026 và 004 ngày 06/11/2026
+- Google Login và email dùng cột/kênh sẵn có; không cần migration mới
 
 ## 2. Cấu trúc dự án
 
@@ -95,7 +89,7 @@ Các thành viên cần cài đặt:
 Mở Terminal:
 
 ```bash
-git clone https://github.com/ntrung-duc/Project1_Subject.git
+git clone --branch integration/team https://github.com/TrungTuz2521/Project1_Subject.git
 cd Project1_Subject
 ```
 
@@ -120,17 +114,17 @@ Kiểm tra:
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-Khi backend đã được lập trình và cấu hình hoàn chỉnh, chạy:
+Tạo `backend/.env` từ `backend/.env.example` **nếu chưa có**, rồi điền TiDB và `JWT_SECRET_KEY` riêng theo mục 7. Không ghi đè `.env` đã cấu hình. Chạy backend bằng môi trường ảo:
 
 ```powershell
 .\.venv\Scripts\python.exe run.py
 ```
 
-**Lưu ý:** Hiện tại backend mới ở giai đoạn khởi tạo. Lệnh chạy server có thể chưa hiển thị gì nếu `run.py` chưa có nội dung.
+Kiểm tra server tại [health API](http://127.0.0.1:5000/api/v1/health), trả `data.status = "ok"`. Địa chỉ gốc `/` không có route, có thể trả 404 dù backend vẫn hoạt động. Health chỉ kiểm tra server; dùng `check-db` trong [hướng dẫn backend](backend/README.md) để kiểm tra kết nối và cột database.
 
 ## 6. Cài đặt Frontend
 
-Đã có bộ React + Vite + TypeScript và màn hình mẫu **Đội bóng của tôi**. Dùng Node 24 LTS; trong thư mục dự án chạy:
+Frontend đã nối tài khoản, đội bóng/ghép trận, sân/booking và trang Admin với backend. Dùng Node 24 LTS; mở terminal thứ hai từ thư mục dự án:
 
 ```powershell
 cd frontend
@@ -138,7 +132,17 @@ npm ci
 npm run dev
 ```
 
-Mở URL terminal hiển thị, thường là http://localhost:5173. Dev mặc định dùng dữ liệu mẫu, bấm **Đăng nhập bằng tài khoản mẫu** để xem danh sách và tạo đội. Không cần backend hoặc TiDB cho phần demo này.
+Để test tích hợp, tạo `frontend/.env.local` (file `.env.example` chỉ là mẫu, Vite không tự dùng giá trị trong file đó):
+
+```dotenv
+VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1
+VITE_USE_MOCKS=false
+VITE_GOOGLE_CLIENT_ID=<Google OAuth Web Client ID dùng chung với backend>
+```
+
+Khởi động lại Vite sau khi sửa env. Mở [http://localhost:5173](http://localhost:5173) khi dùng Google Login, khớp Authorized JavaScript origins đã đăng ký. Nếu cần, chạy `npm run dev -- --host localhost`.
+
+Chỉ dùng mock để dựng giao diện: đặt `VITE_USE_MOCKS=true`, đăng nhập bằng tài khoản mẫu. Mock không gửi email, không đăng nhập Google và không chứng minh luồng giữ sân/thanh toán thật.
 
 ```powershell
 npm test
@@ -152,6 +156,59 @@ Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, tim
 Build production luôn tắt mock. Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
 
 Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để thêm service, DTO, mock và xử lý lỗi theo mẫu.
+
+### Google Login
+
+Tạo OAuth Client loại **Web application** trên Google Auth Platform. Authorized JavaScript origins local:
+
+```text
+http://localhost
+http://localhost:5173
+```
+
+Đặt `GOOGLE_CLIENT_ID` trong `backend/.env` và cùng giá trị ở `VITE_GOOGLE_CLIENT_ID` trong `frontend/.env.local`. Đây là Client ID công khai; luồng popup này không cần Client Secret. Không sao chép backend env sang frontend.
+
+- Tài khoản Google mới tạo PLAYER; Google ID đã liên kết đăng nhập đúng tài khoản cũ.
+- Nếu email đã có tài khoản web, nhập mật khẩu web hiện tại rồi bấm Google lại để liên kết lần đầu.
+- Tài khoản không ACTIVE không được đăng nhập. JWT ứng dụng vẫn hạn 60 phút, không refresh token; reload cần đăng nhập lại.
+- Đã kiểm thử bằng Google verifier giả; cần chọn tài khoản Google thật trong trình duyệt để xác minh end-to-end.
+
+Xem [cấu hình và kịch bản thử Google Login](docs/setup/GOOGLE_LOGIN.md).
+
+### Email thông báo qua Gmail
+
+Gmail gửi thông báo là tài khoản cấu hình ở backend; đăng nhập Google của người chơi không tự cấp quyền gửi thư. Bật xác minh 2 bước cho Gmail gửi, tạo **mật khẩu ứng dụng**, rồi cấu hình riêng trong `backend/.env`:
+
+```dotenv
+EMAIL_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=<gmail-gui-thong-bao>
+SMTP_PASSWORD=<mat-khau-ung-dung>
+PUBLIC_WEB_URL=http://localhost:5173
+```
+
+Không dùng mật khẩu Gmail thông thường. Không lưu mật khẩu SMTP trong README, `.env.example` hoặc `VITE_*`. Thành viên chưa cần test email có thể giữ `EMAIL_ENABLED=false` và vẫn dùng thông báo trên web. Khi deploy, đổi `PUBLIC_WEB_URL` thành origin HTTPS công khai; link localhost chỉ phù hợp demo trên máy đang chạy app.
+
+Sau khi sửa env, khởi động lại backend. Từ thư mục `backend`, kiểm tra SMTP **không gửi thư**:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app:create_app check-email
+```
+
+Mở **terminal thứ ba**, tại `backend`, giữ worker chạy để gửi email cho sự kiện mới:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app:create_app email-worker
+```
+
+Worker kiểm tra mỗi 10 giây; Ctrl+C để dừng. Chỉ chạy Flask không tự chạy email worker. Khi deploy, cần service/scheduler duy trì worker.
+
+Email gồm đề xuất/phản hồi ghép, ghép thành viên, giữ sân, nhận cọc, xác nhận/hủy/hết hạn và hoàn tiền khi luồng phát sinh thông báo tương ứng. Người nhận cần email thật; bỏ qua tài khoản mẫu `.test`/`.invalid`. Không gửi lại toàn bộ thông báo lịch sử.
+
+Hàng đợi EMAIL được ghi cùng transaction với IN_APP; SMTP chạy sau commit, không giữ khóa đặt sân. `SENT` chỉ nghĩa là SMTP đã chấp nhận, không bảo đảm vào inbox. Với schema hiện có, worker reserve bằng chuyển `PENDING` sang `FAILED` trước khi gửi, rồi sang `SENT` khi được chấp nhận; `FAILED` có thể là lỗi/đang xử lý/kết quả chưa rõ sau crash và không tự retry. Xem [giới hạn và cách kiểm thử email](docs/setup/EMAIL_NOTIFICATIONS.md).
+
+Thông báo trên web vẫn là kênh chính cho hạn đóng cọc **5 phút từ lúc server tạo hold**; mở email hoặc bấm chuyển trang thanh toán không gia hạn. Email không tự xác nhận thanh toán.
 
 ## 7. Database TiDB và cấu hình kết nối
 
@@ -259,25 +316,78 @@ git checkout -b feature/ten-chuc-nang
 Sau khi hoàn thành:
 
 ```bash
-git add .
+git add README.md
 git commit -m "Add feature"
 git push -u origin feature/ten-chuc-nang
 ```
 
-Tạo Pull Request trên GitHub để nhóm kiểm tra trước khi gộp vào nhánh chính.
+Kiểm tra `git status` và `git diff --cached` trước khi commit; không stage file chứa credential hoặc thư mục kết quả riêng. Tạo Pull Request vào `integration/team` để kiểm thử chung, rồi mới đề nghị gộp vào `main`.
 
-## 9. Trạng thái triển khai
+## 9. Trạng thái triển khai và kiểm thử
 
-- [x] Tạo cấu trúc thư mục
-- [x] Tạo `requirements.txt` cho backend
-- [x] Cài đặt thư viện backend trên máy khởi tạo
-- [x] Tạo cơ sở dữ liệu TiDB Cloud
-- [x] Cập nhật database dùng chung đến V3 và kiểm tra cấu trúc
-- [x] Thống nhất tài liệu API/Models và quy tắc nghiệp vụ
-- [ ] Khởi tạo Flask API
-- [ ] Kết nối Flask với TiDB Cloud
-- [x] Khởi tạo React + Vite + TypeScript và bộ frontend mẫu dùng chung
-- [x] Frontend đăng nhập/đăng ký/hồ sơ, khung điều hướng và xử lý token hết hạn (mock API)
-- [ ] Tích hợp frontend tài khoản với Flask API thật sau khi backend hoàn thành
-- [ ] Phát triển các chức năng nghiệp vụ
-- [ ] Kiểm thử và triển khai
+- [x] Flask API và kết nối TiDB/TLS; schema nhóm đến V3 + 004.
+- [x] Frontend/backend tài khoản, hồ sơ và phiên JWT 60 phút.
+- [x] Đội bóng, quân số theo buổi, bài đăng, đề xuất/xác nhận, thông báo và lịch.
+- [x] Tích hợp booking/cọc và giao diện sân/Admin; balance/QR chung/xác nhận thu đủ sau trận.
+- [x] Google Login: đã viết code, cấu hình local và kiểm thử tách biệt.
+- [x] Email Gmail: hàng đợi, SMTP và worker; kết nối/xác thực SMTP local đã thành công.
+- [ ] Hoàn tất demo đăng nhập Google bằng tài khoản thật và kiểm tra email vào hộp thư người nhận.
+- [ ] Kiểm thử gateway VNPay merchant thật ở sandbox và cạnh tranh DB trên môi trường thử riêng.
+- [ ] Triển khai hosting, scheduler/worker và cấu hình production.
+
+Kết quả ngày **10/11/2026**: backend chạy 182 test, **168 đạt và 14 bỏ qua** (kiểm thử đồng thời cần MySQL/TiDB thử nghiệm riêng); frontend **45 test đạt**, build thành công. Auth Google dùng verifier giả, email dùng SMTP giả trong unit test; `check-email` thực tế chỉ xác minh kết nối/đăng nhập Gmail và không gửi thư. Các kết quả này chưa thay thế demo end-to-end hoặc kiểm thử khóa TiDB.
+
+### Quét bài tự động mỗi 15 giây
+
+Mở một terminal riêng tại thư mục `backend`, bên cạnh terminal web server và email worker:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app:create_app matchmaking-worker
+```
+
+Worker quét ngay khi chạy, sau đó bắt đầu lượt kế tiếp cách 15 giây nếu lượt trước đã xong; lượt chậm không chạy chồng nhau. Giữ terminal mở, Ctrl+C để dừng. Chỉ chạy backend hoặc email worker không tự bật quét bài.
+
+Worker dùng lại logic ghép hiện có, chỉ tạo đề xuất cho bài phù hợp; các lượt sau không tạo lại đề xuất đang tồn tại. Hai bên vẫn phải chấp nhận, rồi server mới giữ sân 5 phút để cọc. Không tự chấp nhận, giữ sân hoặc thu tiền chỉ vì tìm thấy bài. Không đổi Google/SMTP hoặc schema TiDB. Nếu đã bật email, đề xuất mới tạo thêm hàng đợi để email worker gửi riêng.
+
+Lỗi một lượt được ghi log và worker tiếp tục ở lượt sau. Có thể điều chỉnh bằng `--interval 15` (1–300 giây). Khi deploy cần service duy trì worker; không chạy thêm scheduler gọi scan liên tục song song với worker này. Bản hiện tại nên chỉ vận hành một matchmaking worker.
+
+`scan-matchmaking` vẫn chạy một lượt để kiểm tra thủ công. Các job `expire-proposals`, `expire-booking-holds`, xử lý hoàn tiền/đối soát vẫn cần scheduler riêng; matchmaking worker không thay thế các job này. Xem [hướng dẫn backend](backend/README.md). Đối chiếu [hợp đồng API/Models](docs/api/API_MODELS_CONTRACT_PROJECT1.md) và [hướng dẫn test tích hợp](docs/setup/FRONTEND_BACKEND_TESTING.md).
+
+Thông báo tuyển người: A nhận tên người đăng ký/tên bài; web tự cập nhật mỗi 10 giây khi đang mở trang. Email mới mở đúng đề xuất sau đăng nhập. Xem [hướng dẫn email](docs/setup/EMAIL_NOTIFICATIONS.md).
+
+Tuyển người trực tiếp (10/11/2026): B bấm Đăng ký tham gia là đã đồng ý; A nhận thông báo/email và duyệt một lần.
+Sau duyệt, B được thêm vào đội, quân số được cập nhật và B nhận email thành công; không có bước B xác nhận lại.
+Đề xuất AI ghép hai bài và ghép đối thủ vẫn cần hai bên tự chấp nhận. Không chạy migration hoặc gửi lại thông báo cũ.
+
+Danh sách việc còn lại, ưu tiên demo và giới hạn thực tế: [Những phần cần hoàn thiện](docs/api/REMAINING_WORK.md).
+
+
+## Đổi mật khẩu — 10/11/2026
+
+Trong app: **Hồ sơ cá nhân → Đổi mật khẩu**. Nhập mật khẩu hiện tại, mật khẩu mới và nhập lại;
+mật khẩu mới dài 8–72 byte UTF-8, khác mật khẩu cũ. Thành công sẽ đăng xuất phiên trên trình duyệt hiện tại
+và yêu cầu đăng nhập lại. Sai mật khẩu cũ/nhập lại không khớp không làm đổi dữ liệu.
+Tài khoản chỉ dùng Google và chưa có mật khẩu web thì hiện hướng dẫn đổi ở Google; chưa hỗ trợ đặt mật khẩu web đầu tiên.
+
+API: `POST /api/v1/users/me/password`, cần Bearer JWT của chính người dùng.
+JSON: `{current_password,new_password,confirm_password}`; trả `{data:{changed:true},meta}`.
+Không nhận user_id/role/password_hash; sai dữ liệu trả 422, Google-only trả 409 PASSWORD_NOT_SET,
+không có phiên/hết hạn trả 401, tài khoản khóa trả 403. Endpoint có rate limit auth dùng chung.
+UserSelf bổ sung boolean `has_password`, không trả hash hay Google ID.
+Không có refresh token/revocation: JWT ở thiết bị khác vẫn có thể còn hiệu lực tới exp (tối đa 60 phút từ lúc cấp).
+Đây là đổi mật khẩu khi đã biết mật khẩu cũ; chưa phải chức năng Quên mật khẩu/Reset email.
+Không cần migration hoặc thay mật khẩu thật khi cài code.
+
+
+## Cọc QR và nút xác nhận demo lưu TiDB — 10/11/2026
+
+Đã có **Booking của tôi → Đóng cọc bằng chuyển khoản → Xác nhận thanh toán cọc (demo)**.
+QR hiển thị đúng người nhận, số tiền còn thiếu của người đang đăng nhập và nội dung riêng theo booking/người trả.
+Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi trạng thái booking/trận khi đủ cọc.
+Đặt trực tiếp cọc 20%; hai đội mỗi đội 10%, chỉ đủ cả hai mới xác nhận trận. Không cần Admin duyệt cọc mới.
+Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
+Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
+
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
+Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](docs/setup/DEMO_DEPOSIT.md).

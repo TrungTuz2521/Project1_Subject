@@ -41,6 +41,9 @@ def revenue_report(ctx, first, last, period):
         and_(Payment.payment_type == 'REFUND', Payment.status == 'SUCCESS'))))
     gross, refunds = defaultdict(lambda: Decimal('0')), defaultdict(lambda: Decimal('0'))
     for payment in rows:
+        from app.services.payment_service import is_demo_payment
+        if is_demo_payment(payment):
+            continue
         target = refunds if payment.payment_type == 'REFUND' else gross
         target[_bucket(payment.paid_at, period)] += Decimal(payment.amount)
     def amounts(g, r):

@@ -67,6 +67,6 @@ export function PitchesPage({ onBooked }: { onBooked: (bookingId: number) => voi
         <Button disabled={!selectedSlot || saving} onClick={book}>{saving ? 'Đang giữ sân…' : 'Giữ sân 5 phút →'}</Button>
       </div>
     </Card>}
-    <Banner>Thời hạn giữ sân được backend tạo và kiểm tra. Chọn giờ trên giao diện không đồng nghĩa đã đặt thành công.</Banner>
+
   </>;
 }

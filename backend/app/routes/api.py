@@ -58,12 +58,38 @@ def login():
         result = auth.login(ctx, **data)
     return response(result)
 
+@api.post('/auth/google/challenge')
+def google_challenge():
+    from app.services.google_auth_service import challenge, require_web_origin
+    require_web_origin()
+    return response(challenge())
+
+@api.post('/auth/google')
+def google_login():
+    from app.services.google_auth_service import require_web_origin, verify_credential, sign_in
+    require_web_origin()
+    data = body(('credential', 'challenge', 'password'), ('credential', 'challenge'))
+    # Fetch Google's signing certificates before opening a database transaction.
+    identity = verify_credential(data['credential'], data['challenge'])
+    with UnitOfWork() as ctx:
+        result = sign_in(ctx, identity, data.get('password'))
+    return response(result)
+
 @api.route('/users/me', methods=['GET', 'PATCH'])
 @authenticated
 def me():
     with UnitOfWork() as ctx:
         user = auth.require_active_actor(ctx, g.actor)
         result = user_self(user) if request.method == 'GET' else auth.update_profile(ctx, g.actor, body())
+    return response(result)
+
+@api.post('/users/me/password')
+@authenticated
+def change_password():
+    data = body(('current_password', 'new_password', 'confirm_password'),
+                ('current_password', 'new_password', 'confirm_password'))
+    with UnitOfWork() as ctx:
+        result = auth.change_password(ctx, g.actor, **data)
     return response(result)
 
 @api.route('/teams', methods=['GET', 'POST'])

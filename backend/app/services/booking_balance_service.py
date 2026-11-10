@@ -38,7 +38,11 @@ def compute(ctx, booking, payments=None, with_qr=True):
     status = 'PAID' if total > 0 and outstanding == 0 else 'PARTIAL' if collected > 0 else 'UNPAID'
     qr, reference, reason = None, None, None
     if with_qr:
-        qr, reference, reason = _qr(ctx, booking, outstanding, collected)
+        from app.services.payment_service import is_demo_payment
+        if any(is_demo_payment(p) for p in rows):
+            reason = 'Booking DEMO, không thu tiền thật.'
+        else:
+            qr, reference, reason = _qr(ctx, booking, outstanding, collected)
     return BookingBalance(booking.booking_id, booking.payment_rule, policy.money(total), policy.money(deposit),
                           policy.money(remaining), policy.money(collected), policy.money(outstanding), status,
                           qr, reference, reason)

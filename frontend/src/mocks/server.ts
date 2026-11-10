@@ -118,6 +118,8 @@ export function createMockServer(delayMs = 80) {
     }
     const participant = participants.find(item => item.post_id === proposal.source_post_id && item.user_id === proposal.candidate_user_id);
     if (participant) participant.status = 'ACCEPTED';
+    pushNotification(proposal.candidate_user_id,{notification_type:'TEAM_JOINED',title:'Bạn đã được thêm vào đội',
+      content:'Đội trưởng đã duyệt bạn tham gia đội '+(sourceTeam?.team_name??'')+'.',proposal_id:proposal.proposal_id,match_id:null});
   };
   const createTeamProposal = (post: MatchPost, participant: Participant, captainId: number) => {
     const expiresAt = Math.min(Date.now() + 15 * 60000, Date.parse(post.expiry_time), post.match_time ? Date.parse(post.match_time) : Infinity);
@@ -127,7 +129,7 @@ export function createMockServer(delayMs = 80) {
       status: 'PENDING_CONFIRMATION', expires_at: new Date(expiresAt).toISOString(), confirmed_at: null,
       confirmations: [
         { user_id: captainId, decision: 'PENDING', responded_at: null },
-        { user_id: participant.user_id, decision: 'PENDING', responded_at: null },
+        { user_id: participant.user_id, decision: 'ACCEPTED', responded_at: participant.joined_at },
       ],
     };
     post.status = 'LOCKED';
@@ -198,7 +200,18 @@ export function createMockServer(delayMs = 80) {
     if (scenario === 'network-error') throw new TypeError('Simulated offline');
     if (scenario === 'server-error') return fail(500, 'INTERNAL_ERROR', 'Không tải được dữ liệu mẫu. Hãy chọn chế độ bình thường rồi thử lại.');
 
-    if (path === '/users/me' && method === 'GET') return reply(currentUser);
+    if (path === '/users/me/password' && method === 'POST') {
+      const body = parseBody(init);
+      const account = accounts.get(currentUser.email);
+      if(!body||Object.keys(body).some(k=>!['current_password','new_password','confirm_password'].includes(k)))return fail(422,'VALIDATION_ERROR','Dữ liệu không hợp lệ.');
+      if(!account||body.current_password!==account.password)return fail(422,'VALIDATION_ERROR','Mật khẩu hiện tại không chính xác.',{current_password:'Mật khẩu hiện tại không chính xác.'});
+      const next=body.new_password;
+      if(typeof next!=='string'||new TextEncoder().encode(next).length<8||new TextEncoder().encode(next).length>72)return fail(422,'VALIDATION_ERROR','Mật khẩu mới phải dài 8–72 byte UTF-8.');
+      if(next!==body.confirm_password||next===body.current_password)return fail(422,'VALIDATION_ERROR','Mật khẩu nhập lại chưa khớp hoặc mật khẩu mới trùng mật khẩu hiện tại.');
+      account.password=next;
+      return reply({changed:true});
+    }
+    if (path === '/users/me' && method === 'GET') return reply({...currentUser,has_password:true});
     if (path === '/users/me' && method === 'PATCH') {
       const body = parseBody(init);
       if (!body) return fail(422, 'VALIDATION_ERROR', 'Dữ liệu hồ sơ không hợp lệ.');
@@ -354,6 +367,7 @@ export function createMockServer(delayMs = 80) {
     }
     if(parts[0]==='match-posts'&&parts[2]==='participants'&&parts.length===3&&method==='POST'){
       const post=posts.find(p=>p.post_id===Number(parts[1]));if(!post)return fail(404,'NOT_FOUND','Không tìm thấy bài đăng.');
+      if(post.post_type!=='RECRUIT_MEMBERS'||post.team_id===null||!post.required_players)return fail(409,'RECRUITMENT_NOT_OPEN','Bài không tuyển thành viên.');
       if(post.status!=='OPEN')return fail(409,'STATE_CONFLICT','Bài đăng không còn mở.');
       if(postOwners.get(post.post_id)===currentUser.user_id)return fail(409,'STATE_CONFLICT','Không thể tự đăng ký bài của mình.');
       const existing=participants.find(p=>p.post_id===post.post_id&&p.user_id===currentUser.user_id&&p.status==='PENDING');
@@ -416,10 +430,15 @@ export function createMockServer(delayMs = 80) {
     if(parts[0]==='match-proposals'&&parts[2]==='respond'&&parts.length===3&&method==='POST'){
       const proposal=proposals.find(p=>p.proposal_id===Number(parts[1]));if(!proposal)return fail(404,'NOT_FOUND','Không tìm thấy đề xuất.');
       if(Date.parse(proposal.expires_at)<=Date.now()){proposal.status='EXPIRED';reopenProposalPosts(proposal);return fail(409,'PROPOSAL_EXPIRED','Đề xuất đã hết hạn.');}
-      if(proposal.status!=='PENDING_CONFIRMATION')return fail(409,'ALREADY_RESPONDED','Đề xuất đã được xử lý.');
       const decision=parseBody(init)?.decision;if(decision!=='ACCEPTED'&&decision!=='DECLINED')return fail(422,'VALIDATION_ERROR','Quyết định không hợp lệ.');
       const confirmation=proposal.confirmations.find(item=>item.user_id===currentUser.user_id);if(!confirmation)return fail(403,'FORBIDDEN','Bạn không có quyền phản hồi đề xuất.');
-      if(confirmation.decision!=='PENDING')return fail(409,'ALREADY_RESPONDED','Bạn đã phản hồi đề xuất này.');
+      const withdraw=proposal.proposal_type==='TEAM_MEMBER'&&proposal.candidate_user_id===currentUser.user_id&&proposal.target_post_id===null
+        &&confirmation.decision==='ACCEPTED'&&decision==='DECLINED'&&proposal.status==='PENDING_CONFIRMATION';
+      if(confirmation.decision!=='PENDING'&&!withdraw){
+        if(confirmation.decision===decision)return reply(proposal);
+        return fail(409,'ALREADY_RESPONDED','Bạn đã phản hồi đề xuất này.');
+      }
+      if(proposal.status!=='PENDING_CONFIRMATION')return fail(409,'ALREADY_RESPONDED','Đề xuất đã được xử lý.');
       confirmation.decision=decision;confirmation.responded_at=new Date().toISOString();
       if(decision==='DECLINED'){
         proposal.status='REJECTED';

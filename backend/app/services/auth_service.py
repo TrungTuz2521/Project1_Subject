@@ -64,11 +64,38 @@ def login(ctx, email, password):
         raise DomainError('INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác.', 401)
     if user.status != 'ACTIVE':
         raise DomainError('ACCOUNT_DISABLED', 'Tài khoản không hoạt động.', 403)
+    return issue_session(ctx, user)
+
+def issue_session(ctx, user):
     now = ctx.now()
     token = jwt.encode({'sub': str(user.user_id), 'role': user.role, 'iat': now,
                         'exp': now + timedelta(seconds=3600), 'iss': current_app.config['JWT_ISSUER'],
                         'aud': current_app.config['JWT_AUDIENCE']}, current_app.config['JWT_SECRET_KEY'], algorithm='HS256')
     return {'access_token': token, 'expires_in': 3600, 'user': user_self(user)}
+
+def change_password(ctx, actor, current_password, new_password, confirm_password):
+    ctx.locks.users([actor.user_id])
+    user = require_active_actor(ctx, actor)
+    if not user.password_hash:
+        raise DomainError('PASSWORD_NOT_SET', 'Tài khoản này chỉ dùng Google và chưa có mật khẩu web.', 409)
+    correct = False
+    if isinstance(current_password, str) and 1 <= len(current_password.encode('utf-8')) <= 72:
+        try:
+            correct = bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8'))
+        except ValueError:
+            pass
+    if not correct:
+        invalid('current_password', 'Mật khẩu hiện tại không chính xác.')
+    if not isinstance(new_password, str) or not 8 <= len(new_password.encode('utf-8')) <= 72:
+        invalid('new_password', 'Mật khẩu mới phải dài 8–72 byte UTF-8.')
+    if new_password != confirm_password:
+        invalid('confirm_password', 'Mật khẩu nhập lại chưa khớp.')
+    if new_password == current_password:
+        invalid('new_password', 'Mật khẩu mới phải khác mật khẩu hiện tại.')
+    user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    ctx.session.flush()
+    return {'changed': True}
+
 
 def update_profile(ctx, actor, data):
     user = require_active_actor(ctx, actor)

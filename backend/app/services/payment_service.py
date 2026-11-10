@@ -12,9 +12,14 @@ CONSOLIDATED_NOTE = 'THU_GOP theo booking'
 FORFEITED_NOTE = 'MAT_COC do tu huy'
 ACTIVE_REFUND = ('REFUND_PROCESSING', 'SUCCESS')
 
+def is_demo_payment(payment):
+    return (payment.transaction_code or '').startswith('DEMO-')
+
+
 def payment_data(payment, admin=False):
     result = columns(payment, 'payment_id booking_id post_id amount payment_type payment_method status '
                      'transaction_code refund_for_payment_id paid_at')
+    result['is_demo'] = is_demo_payment(payment)
     if admin:
         result.update(columns(payment, 'user_id recorded_by_admin_id note created_at'))
     return result
@@ -60,6 +65,8 @@ def plan_refunds(ctx, *, booking_id, cause, cancelling_user_id=None, payment_ids
     refunded = {p.refund_for_payment_id for p in payments if p.payment_type == 'REFUND' and p.status in ACTIVE_REFUND}
     items, forfeited = [], []
     for payment in payments:
+        if is_demo_payment(payment):
+            continue  # Simulated deposits never trigger a real refund.
         if payment.payment_type not in COLLECTED_TYPES or payment.status != 'SUCCESS':
             continue
         if payment.payment_id in refunded or (payment_ids is not None and payment.payment_id not in payment_ids):

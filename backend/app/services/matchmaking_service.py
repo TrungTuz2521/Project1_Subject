@@ -58,10 +58,25 @@ def create_proposal(ctx, source, target=None, candidate_user_id=None, points=100
     ctx.session.flush()
     for p in posts:
         p.status = 'LOCKED'
+    direct_application = (proposal.proposal_type == 'TEAM_MEMBER' and candidate_user_id is not None
+                          and target is None and source.post_type == 'RECRUIT_MEMBERS')
     for uid in (source.creator_id, other_id):
-        ctx.session.add(ProposalConfirmation(proposal_id=proposal.proposal_id, user_id=uid))
-    notification_service.notify(ctx, (source.creator_id, other_id), 'MATCH_PROPOSAL', 'Đề xuất ghép mới',
-                                'Có đề xuất mới. Vui lòng phản hồi trước thời hạn.', proposal_id=proposal.proposal_id)
+        applicant_consent = direct_application and uid == candidate_user_id
+        ctx.session.add(ProposalConfirmation(proposal_id=proposal.proposal_id, user_id=uid,
+            decision='ACCEPTED' if applicant_consent else 'PENDING',
+            responded_at=now if applicant_consent else None))
+    if proposal.proposal_type == 'TEAM_MEMBER' and candidate_user_id is not None:
+        candidate = ctx.session.get(User, candidate_user_id)
+        name = candidate.full_name if candidate else 'Một người chơi'
+        notification_service.notify(ctx, [source.creator_id], 'MATCH_PROPOSAL', 'Có người đăng ký tham gia',
+            f'{name} đã đăng ký tham gia bài “{source.title}”. Mở đề xuất để đồng ý hoặc từ chối trước thời hạn.',
+            proposal_id=proposal.proposal_id)
+        notification_service.notify(ctx, [other_id], 'MATCH_PROPOSAL', 'Đã gửi đăng ký tham gia',
+            f'Bạn đã đăng ký bài “{source.title}”. Chờ đội trưởng duyệt; bạn không cần xác nhận lại.',
+            proposal_id=proposal.proposal_id, allow_email=False)
+    else:
+        notification_service.notify(ctx, (source.creator_id, other_id), 'MATCH_PROPOSAL', 'Đề xuất ghép mới',
+                                    'Có đề xuất mới. Vui lòng phản hồi trước thời hạn.', proposal_id=proposal.proposal_id)
     return proposal
 
 def scan_pair(ctx, source_id, target_id):

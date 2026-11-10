@@ -160,6 +160,21 @@ def cancel_booking(booking_id):
 
 # ---- Payments ----
 
+@booking_api.get('/bookings/<int:booking_id>/deposit-instructions')
+@authenticated
+def deposit_instructions(booking_id):
+    from app.services.bank_deposit_service import instructions
+    return response(instructions(g.actor, booking_id))
+
+@booking_api.post('/payments/deposit/demo-confirm')
+@authenticated
+def demo_confirm_deposit():
+    if request.remote_addr not in ('127.0.0.1', '::1'):
+        raise DomainError('DEMO_DISABLED', 'Chỉ dùng xác nhận demo trên máy phát triển local.', 403)
+    from app.services.demo_deposit_service import confirm_demo_deposit
+    data = body(('booking_id',), ('booking_id',))
+    return response(confirm_demo_deposit(g.actor, v.integer(data['booking_id'], 'booking_id')))
+
 @booking_api.post('/payments/deposit')
 @authenticated
 def deposit():

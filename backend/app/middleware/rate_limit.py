@@ -9,7 +9,7 @@ def install_auth_limit(app):
     buckets, lock = defaultdict(deque), Lock()
     @app.before_request
     def limit_auth():
-        if request.path not in ('/api/v1/auth/login', '/api/v1/auth/register') or request.method != 'POST':
+        if request.path not in ('/api/v1/auth/login', '/api/v1/auth/register', '/api/v1/auth/google', '/api/v1/auth/google/challenge', '/api/v1/users/me/password') or request.method != 'POST':
             return
         limit = app.config.get('AUTH_RATE_LIMIT', 20)
         if not limit:
