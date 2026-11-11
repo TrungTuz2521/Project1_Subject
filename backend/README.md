@@ -98,7 +98,15 @@ python -m flask --app app:create_app process-refunds
 python -m flask --app app:create_app reconcile-payments
 ```
 
-Đây là lệnh chạy một lượt; scheduler gọi mỗi 15 giây. `process-refunds` chỉ chạy một tiến trình, vì chưa có outbox/lease.
+Đây là lệnh chạy một lượt. Để các job tự chạy, mở **một** terminal riêng:
+
+```powershell
+python -m flask --app app:create_app scheduler --with-matchmaking --with-email
+```
+
+`scheduler` chạy mỗi 15 giây: hết hạn đề xuất/bài, hết hạn giữ sân, đối soát thanh toán + dọn mã QR SePay, hoàn tiền qua cổng, chuyển trận đã đá xong sang `COMPLETED`. `--with-matchmaking` thay `matchmaking-worker`, `--with-email` thay `email-worker` (không chạy song song các worker cũ). `--once` chạy một lượt rồi thoát. Chỉ chạy **một** scheduler, vì `process-refunds` chưa có outbox/lease.
+
+Hoàn tiền mặt/chuyển khoản (kể cả QR SePay) không tự chạy: Admin xem mục **Khoản cần hoàn** ở trang Quản lý lịch đặt, trả tiền cho khách rồi bấm "Đã trả tiền" (`GET /admin/refunds/pending`, `POST /admin/payments/{id gốc}/refund`).
 
 IPN VNPay là `GET /api/v1/payments/vnpay/ipn`, phải khai báo URL HTTPS công khai trong tài khoản merchant.
 

@@ -151,3 +151,12 @@ def read_for_actor(ctx, *, booking_id, actor):
         # Team members see progress only, not the amounts other people paid.
         result['payer_progress'] = [{'user_id': p['user_id'], 'status': p['status']} for p in result['payer_progress']]
     return result
+
+def payments_by_booking(ctx, bookings):
+    """One query for a whole page of bookings, grouped by booking_id."""
+    ids = [b.booking_id for b in bookings]
+    grouped = {booking_id: [] for booking_id in ids}
+    if ids:
+        for payment in ctx.session.scalars(select(Payment).where(Payment.booking_id.in_(ids)).order_by(Payment.payment_id)):
+            grouped[payment.booking_id].append(payment)
+    return grouped

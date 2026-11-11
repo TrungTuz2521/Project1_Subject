@@ -89,3 +89,21 @@ def can_view(ctx, match, actor, admin=True):
 
 def match_data(match):
     return {k: getattr(match, k) for k in ('match_id', 'post_id', 'opponent_post_id', 'proposal_id', 'booking_id', 'match_time', 'status', 'confirmed_at')}
+
+def complete_finished_matches():
+    """Worker: a CONFIRMED match whose confirmed booking has ended becomes COMPLETED, which also frees
+    its players for membership changes and keeps availability checks small."""
+    from app.infrastructure.unit_of_work import UnitOfWork
+    from app.models import Booking
+    with UnitOfWork() as ctx:
+        ids = list(ctx.session.scalars(select(Match.match_id).join(Booking, Booking.booking_id == Match.booking_id).where(
+            Match.status == 'CONFIRMED', Booking.status == 'CONFIRMED', Booking.end_time <= ctx.now())))
+    completed = 0
+    for match_id in ids:
+        with UnitOfWork() as ctx:
+            match = ctx.locks.lock(Match, [match_id])[0]
+            booking = ctx.session.get(Booking, match.booking_id)
+            if match.status == 'CONFIRMED' and booking.status == 'CONFIRMED' and booking.end_time <= ctx.now():
+                match.status = 'COMPLETED'
+                completed += 1
+    return completed

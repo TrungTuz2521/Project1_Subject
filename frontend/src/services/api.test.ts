@@ -95,3 +95,17 @@ it('mock supports login → load → create → reload and rejects expired sessi
   await expect(api.request('/teams')).rejects.toMatchObject({ status: 401 });
   expect(store.getSnapshot()).toBeNull();
 });
+
+it('optional auth sends the token when signed in, works signed out, and never signs out on a 401', async () => {
+  const ok = () => new Response(JSON.stringify({ data: {}, meta: { server_time: new Date().toISOString() } }));
+  const transport = vi.fn(async () => ok());
+  const anonymous = makeStore();
+  await createApiClient({ baseUrl: '/api/v1', store: anonymous, transport }).request('/match-posts/1', { auth: 'optional' });
+  expect(new Headers((transport.mock.calls[0] as unknown as [string, RequestInit])[1].headers).get('Authorization')).toBeNull();
+  const store = makeStore(); loginStore(store);
+  await createApiClient({ baseUrl: '/api/v1', store, transport }).request('/match-posts/1', { auth: 'optional' });
+  expect(new Headers((transport.mock.calls[1] as unknown as [string, RequestInit])[1].headers).get('Authorization')).toBe('Bearer test-token');
+  const denied = vi.fn(async () => new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'x' } }), { status: 401 }));
+  await expect(createApiClient({ baseUrl: '/api/v1', store, transport: denied }).request('/match-posts/1', { auth: 'optional' })).rejects.toMatchObject({ status: 401 });
+  expect(store.getSnapshot()).not.toBeNull();
+});

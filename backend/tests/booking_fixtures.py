@@ -85,10 +85,12 @@ class BookingCase(unittest.TestCase):
             return user.user_id
 
     def header(self, uid):
+        from app.services.auth_service import session_key
         with UnitOfWork() as ctx:
-            role = ctx.session.get(User, uid).role
+            user = ctx.session.get(User, uid)
+            role, skey = user.role, session_key(user)
         real = utcnow()
-        token = jwt.encode(dict(sub=str(uid), role=role, iat=real, exp=real + timedelta(hours=1), iss='football-field-api', aud='football-field-web'),
+        token = jwt.encode(dict(sub=str(uid), role=role, skey=skey, iat=real, exp=real + timedelta(hours=1), iss='football-field-api', aud='football-field-web'),
                            SECRET, algorithm='HS256')
         return {'Authorization': 'Bearer ' + token}
 

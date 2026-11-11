@@ -68,7 +68,8 @@ class BackendTests(unittest.TestCase):
         with UnitOfWork() as ctx:
             user = ctx.session.get(User, uid)
             now = utcnow()
-            token = jwt.encode(dict(sub=str(uid), role=user.role, iat=now-timedelta(hours=2) if expired else now,
+            from app.services.auth_service import session_key
+            token = jwt.encode(dict(sub=str(uid), role=user.role, skey=session_key(user), iat=now-timedelta(hours=2) if expired else now,
                                     exp=now-timedelta(hours=1) if expired else now+timedelta(hours=1),
                                     iss='football-field-api', aud='football-field-web'), SECRET, algorithm='HS256')
         return {'Authorization': 'Bearer ' + token}

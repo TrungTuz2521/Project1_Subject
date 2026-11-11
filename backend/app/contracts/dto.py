@@ -7,6 +7,8 @@ from typing import Any, Protocol
 class Actor:
     user_id: int
     role: str
+    # Fingerprint of the credentials the JWT was issued for; None only for internal (non-HTTP) actors.
+    session_key: str | None = None
 
 @dataclass
 class CommandResult:

@@ -12,7 +12,8 @@ export type Query = Record<string, string | number | boolean | null | undefined>
 export type Transport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; query?: Query;
-  auth?: boolean; signal?: AbortSignal; timeoutMs?: number;
+  /** true: token required; false: never sent; 'optional': sent when signed in (public pages that show owners more). */
+  auth?: boolean | 'optional'; signal?: AbortSignal; timeoutMs?: number;
 }
 export function createApiClient(config: { baseUrl: string; transport?: Transport; store?: SessionStore }) {
   const store = config.store ?? session;
@@ -32,8 +33,9 @@ export function createApiClient(config: { baseUrl: string; transport?: Transport
       });
       const query = params.toString();
       const url = `${base}${path}${query ? `?${query}` : ''}`;
-      const auth = options.auth ?? true;
-      const token = auth ? store.token() : null;
+      const mode = options.auth ?? true;
+      const auth = mode === true;
+      const token = mode === false ? null : store.token();
       if (auth && !token) throw new ApiError(401, 'UNAUTHORIZED', 'Phiên đã hết hạn hoặc bạn chưa đăng nhập. Vui lòng đăng nhập lại.');
       const headers = new Headers({ Accept: 'application/json' });
       if (token) headers.set('Authorization', `Bearer ${token}`);

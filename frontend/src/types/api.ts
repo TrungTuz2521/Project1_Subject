@@ -116,10 +116,18 @@ export interface Payment {
 export interface BankDepositPayer extends PayerProgress {
   due_amount: Money; transfer_reference: string; qr_payload: string | null;
   unavailable_reason: string | null; can_confirm: boolean; full_name?: string;
+  /** SePay: this payer may ask for a 60-second QR code that confirms itself when the bank reports the money. */
+  can_open_qr?: boolean; qr_session?: QrPaymentSession | null;
+}
+/** One short-lived QR code; amount and transfer content are pre-filled and owned by the server. */
+export interface QrPaymentSession {
+  payment_id: number; booking_id: number; status: PaymentStatus; amount: Money; transfer_reference: string;
+  qr_payload: string; qr_expires_at: ISODateTime; hold_expires_at: ISODateTime;
+  bank_name: string; account_no: string; account_name: string;
 }
 export interface DemoDepositResult { demo: true; payment: Payment; booking: Booking }
 export interface BankDepositInstructions {
-  demo_payment_enabled?: boolean;
+  demo_payment_enabled?: boolean; qr_auto_confirm?: boolean; qr_ttl_seconds?: number;
   booking_id: number; status: BookingStatus; expires_at: ISODateTime | null; payment_method: 'BANK_TRANSFER';
   bank_bin: string | null; bank_name: string; account_no: string | null; account_name: string | null;
   payers: BankDepositPayer[];
@@ -157,4 +165,16 @@ export interface AdminBooking extends Booking {
   pitch_name?: string;
   teams?: { source: { team_name?: string }; opponent: { team_name?: string } } | null;
   balance?: BookingBalance | null;
+}
+
+/** Admin: a refund still owed. manual = CASH/BANK_TRANSFER (incl. SePay); the Admin pays it back by hand. */
+export interface PendingRefund extends Payment {
+  manual: boolean; note?: string | null;
+  payer: { user_id: number; full_name: string | null; email: string | null; phone: string | null };
+  original: { payment_id: number; transaction_code: string | null; payment_type: PaymentType; paid_at: ISODateTime | null; note: string | null } | null;
+}
+/** Admin: a deposit received at the counter (cash) or seen on the bank statement. */
+export interface ManualDepositInput {
+  booking_id: number; user_id: number; amount: Money; payment_type: 'BOOKING_DEPOSIT';
+  payment_method: 'CASH' | 'BANK_TRANSFER'; reference: string; note?: string;
 }

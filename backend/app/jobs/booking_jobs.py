@@ -90,7 +90,9 @@ def _recover_expired_refunds():
     return created
 
 def reconcile_payments():
-    return {'resolved_payments': _reconcile_pending(), 'recovered_refunds': _recover_expired_refunds()}
+    from app.services.sepay_service import expire_stale_sessions
+    return {'resolved_payments': _reconcile_pending(), 'expired_qr_sessions': expire_stale_sessions(),
+            'recovered_refunds': _recover_expired_refunds()}
 
 def register_booking_commands(app):
     import click

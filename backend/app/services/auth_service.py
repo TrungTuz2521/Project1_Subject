@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import bcrypt
 import jwt
 from datetime import timedelta
@@ -9,10 +11,19 @@ from app.models import User
 from app.utils import validation as v
 from app.utils.serialization import user_self
 
+def session_key(user):
+    """Changes whenever the password hash changes, so a new password revokes every JWT issued before it,
+    on every device, without a new column or a token denylist."""
+    secret = current_app.config['JWT_SECRET_KEY'].encode()
+    material = f'{user.user_id}:{user.password_hash or ""}'.encode()
+    return hmac.new(secret, material, hashlib.sha256).hexdigest()[:32]
+
 def require_active_actor(ctx, actor):
     user = ctx.session.get(User, actor.user_id, populate_existing=True)
     if not user:
         raise DomainError('UNAUTHORIZED', 'Phiên đăng nhập không hợp lệ.', 401)
+    if actor.session_key is not None and not hmac.compare_digest(actor.session_key, session_key(user)):
+        raise DomainError('SESSION_REVOKED', 'Mật khẩu đã thay đổi. Vui lòng đăng nhập lại.', 401)
     if user.status != 'ACTIVE':
         raise DomainError('ACCOUNT_DISABLED', 'Tài khoản không hoạt động.', 403)
     if user.role != actor.role:
@@ -68,7 +79,7 @@ def login(ctx, email, password):
 
 def issue_session(ctx, user):
     now = ctx.now()
-    token = jwt.encode({'sub': str(user.user_id), 'role': user.role, 'iat': now,
+    token = jwt.encode({'sub': str(user.user_id), 'role': user.role, 'skey': session_key(user), 'iat': now,
                         'exp': now + timedelta(seconds=3600), 'iss': current_app.config['JWT_ISSUER'],
                         'aud': current_app.config['JWT_AUDIENCE']}, current_app.config['JWT_SECRET_KEY'], algorithm='HS256')
     return {'access_token': token, 'expires_in': 3600, 'user': user_self(user)}

@@ -140,7 +140,10 @@ def my_bookings():
         query = select(Booking).where(or_(Booking.user_id == g.actor.user_id, Booking.booking_id.in_(payer_ids), Booking.booking_id.in_(rep_bookings)))
         if status:
             query = query.where(Booking.status == status)
-        return paginated(ctx, query.order_by(Booking.booking_id.desc()), lambda b: booking_service.booking_data(ctx, b))
+        def preload(rows):
+            payments = booking_service.payments_by_booking(ctx, rows)
+            return lambda b: booking_service.booking_data(ctx, b, payments=payments[b.booking_id])
+        return paginated(ctx, query.order_by(Booking.booking_id.desc()), None, preload)
 
 @booking_api.get('/bookings/<int:booking_id>')
 @authenticated
@@ -221,6 +224,30 @@ def vnpay_ipn():
     return {'OK': ack('00', 'Confirm Success'), 'DUPLICATE': ack('02', 'Order already confirmed'),
             'NOT_FOUND': ack('01', 'Order not found'), 'AMOUNT_MISMATCH': ack('04', 'Invalid amount')}[outcome]
 
+@booking_api.post('/payments/deposit/qr')
+@authenticated
+def deposit_qr():
+    """60-second VietQR with amount and transfer content pre-filled; only the SePay webhook confirms it."""
+    from app.services.sepay_service import open_qr_session
+    data = body(('booking_id',), ('booking_id',))
+    session, created = open_qr_session(g.actor, v.integer(data['booking_id'], 'booking_id'))
+    return response(session, 201 if created else 200)
+
+@booking_api.post('/payments/sepay/webhook')
+def sepay_webhook():
+    """SePay retries anything that is not 2xx: answer 200 once the notification is authentic and handled."""
+    from app.services.sepay_service import handle_webhook
+    try:
+        outcome = handle_webhook(request.headers.get('Authorization', ''), request.get_json(silent=True))
+    except InvalidCallback:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    except DomainError:
+        raise
+    except Exception as error:
+        current_app.logger.error('SePay webhook failed (%s)', type(error).__name__)
+        return jsonify({'success': False, 'message': 'Retry later'}), 500
+    return jsonify({'success': True, 'outcome': outcome}), 200
+
 @booking_api.post('/payments/momo/ipn')
 def momo_ipn():
     raise DomainError('UNSUPPORTED_PAYMENT_METHOD', 'Cổng MoMo chưa được tích hợp.', 422)
@@ -262,13 +289,22 @@ def _phase_filter(query, phase, now):
         return query.where(Booking.end_time <= now, net < Booking.total_amount)
     return query.where(net >= Booking.total_amount)
 
-def _admin_booking_row(ctx, booking):
-    result = booking_service.booking_data(ctx, booking, admin=True)
-    result['pitch_name'] = ctx.session.get(Pitch, booking.pitch_id).pitch_name
-    parties = match_service.get_booking_parties(ctx, booking_id=booking.booking_id)
-    result['teams'] = {'source': parties.source, 'opponent': parties.opponent} if parties else None
-    result['balance'] = None if booking.booking_type == 'MAINTENANCE_LOCK' else booking_balance_service.compute(ctx, booking, with_qr=False)
-    return result
+def _admin_booking_rows(ctx, rows):
+    """Payments and pitches for the whole page in two queries; parties only for match bookings."""
+    from app.models import Match
+    payments = booking_service.payments_by_booking(ctx, rows)
+    ids, pitch_ids = [b.booking_id for b in rows], {b.pitch_id for b in rows}
+    pitches = {p.pitch_id: p for p in ctx.session.scalars(select(Pitch).where(Pitch.pitch_id.in_(pitch_ids)))} if pitch_ids else {}
+    with_match = set(ctx.session.scalars(select(Match.booking_id).where(Match.booking_id.in_(ids)))) if ids else set()
+    def row(booking):
+        mine = payments[booking.booking_id]
+        result = booking_service.booking_data(ctx, booking, admin=True, payments=mine)
+        result['pitch_name'] = pitches[booking.pitch_id].pitch_name
+        parties = match_service.get_booking_parties(ctx, booking_id=booking.booking_id) if booking.booking_id in with_match else None
+        result['teams'] = {'source': parties.source, 'opponent': parties.opponent} if parties else None
+        result['balance'] = None if booking.booking_type == 'MAINTENANCE_LOCK' else booking_balance_service.compute(ctx, booking, mine, with_qr=False)
+        return result
+    return row
 
 @booking_api.route('/admin/bookings', methods=['GET', 'POST'])
 @authenticated
@@ -292,7 +328,8 @@ def admin_bookings():
             query = query.where(Booking.status == status)
         if phase:
             query = _phase_filter(query, phase, ctx.now())
-        return paginated(ctx, query.order_by(Booking.start_time.desc(), Booking.booking_id.desc()), lambda b: _admin_booking_row(ctx, b))
+        return paginated(ctx, query.order_by(Booking.start_time.desc(), Booking.booking_id.desc()), None,
+                         lambda rows: _admin_booking_rows(ctx, rows))
 
 @booking_api.patch('/admin/bookings/<int:booking_id>')
 @authenticated
@@ -354,6 +391,31 @@ def admin_record_payment():
         amount=policy.parse_whole_vnd(data['amount'], 'amount'), method=v.enum(data['payment_method'], 'payment_method', MANUAL_METHODS),
         reference=v.text(data['reference'], 'reference', 100), note=v.text(data.get('note'), 'note', 150, nullable=True))
     return response(result, 201 if created else 200)
+
+@booking_api.get('/admin/refunds/pending')
+@authenticated
+def admin_pending_refunds():
+    """Refunds still owed to someone, oldest first. CASH/BANK_TRANSFER ones (SePay included) need the Admin
+    to hand the money back and then confirm via POST /admin/payments/{refund_for_payment_id}/refund."""
+    from app.models import User
+    with UnitOfWork() as ctx:
+        auth.require_admin(ctx, g.actor)
+        query = select(Payment).where(Payment.payment_type == 'REFUND', Payment.status == 'REFUND_PROCESSING').order_by(Payment.payment_id)
+        def preload(rows):
+            users = {u.user_id: u for u in ctx.session.scalars(select(User).where(User.user_id.in_({r.user_id for r in rows})))} if rows else {}
+            originals = {p.payment_id: p for p in ctx.session.scalars(select(Payment).where(
+                Payment.payment_id.in_({r.refund_for_payment_id for r in rows})))} if rows else {}
+            def item(refund):
+                payer, original = users.get(refund.user_id), originals.get(refund.refund_for_payment_id)
+                return dict(payment_service.payment_data(refund, admin=True),
+                            manual=refund.payment_method in MANUAL_METHODS,
+                            payer=dict(user_id=refund.user_id, full_name=payer.full_name if payer else None,
+                                       email=payer.email if payer else None, phone=payer.phone if payer else None),
+                            original=dict(payment_id=original.payment_id, transaction_code=original.transaction_code,
+                                          payment_type=original.payment_type, paid_at=original.paid_at,
+                                          note=original.note) if original else None)
+            return item
+        return paginated(ctx, query, None, preload)
 
 @booking_api.post('/admin/payments/<int:payment_id>/refund')
 @authenticated

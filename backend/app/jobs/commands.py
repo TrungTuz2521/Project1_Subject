@@ -74,6 +74,25 @@ def register_commands(app):
         """Expire proposals/posts; booking expiry is owned by Tú."""
         click.echo({'expired_proposals': expire_proposals()})
 
+    @app.cli.command('scheduler')
+    @click.option('--interval', default=15, show_default=True, type=click.IntRange(5, 300))
+    @click.option('--with-matchmaking', is_flag=True, help='Also scan open posts (replaces matchmaking-worker).')
+    @click.option('--with-email', is_flag=True, help='Also send pending emails (replaces email-worker).')
+    @click.option('--once', is_flag=True, help='Run every job a single time and exit.')
+    def scheduler_command(interval, with_matchmaking, with_email, once):
+        """Run all periodic jobs: proposal/hold expiry, payment reconciliation, refunds, match completion."""
+        from app.jobs.scheduler import run_forever, run_once
+        if once:
+            click.echo(run_once(with_matchmaking, with_email))
+            return
+        run_forever(interval, with_matchmaking, with_email, echo=click.echo)
+
+    @app.cli.command('complete-matches')
+    def complete_matches_command():
+        """Mark confirmed matches whose booking has ended as COMPLETED, once."""
+        from app.services.match_service import complete_finished_matches
+        click.echo({'completed_matches': complete_finished_matches()})
+
     @app.cli.command('check-email')
     def check_email_command():
         """Verify SMTP authentication only; never sends an email."""

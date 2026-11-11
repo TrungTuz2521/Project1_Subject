@@ -7,6 +7,7 @@ import { api, useMocks } from './client';
 import type {
   ApiResponse, Availability, Booking, BookingCreate, Payment, PaymentSession,
   Pitch, RevenueReport, BookingStatistics, PaginatedResponse, BookingBalance, ConfirmBookingPaid, AdminBooking, BookingPhase,
+  PendingRefund, ManualDepositInput,
 } from '../types/api';
 
 export const huyDemo = useMocks;
@@ -332,4 +333,20 @@ export async function getBookingStatistics(from: string, to: string): Promise<Bo
   return { total_bookings: bookings.length, confirmed_bookings: bookings.filter(b => b.status === 'CONFIRMED').length,
     cancelled_bookings: bookings.filter(b => b.status === 'CANCELLED').length, expired_bookings: bookings.filter(b => b.status === 'EXPIRED').length,
     refunded_booking_count: 0, by_pitch: [], peak_hours: [] };
+}
+
+/** Admin refund queue. DEMO data has no real money, so there is nothing to hand back. */
+export async function getPendingRefunds(): Promise<PendingRefund[]> {
+  if (huyDemo) return [];
+  return (await api.request<PaginatedResponse<PendingRefund>>('/admin/refunds/pending', { query: { page: 1, page_size: 100 } })).data;
+}
+/** Confirms the Admin has handed the money back; takes the ORIGINAL payment id. */
+export async function completeManualRefund(originalPaymentId: number, reason: string): Promise<Payment> {
+  if (huyDemo) throw new Error('Chế độ demo không có khoản hoàn thật.');
+  return (await api.request<ApiResponse<Payment>>(`/admin/payments/${originalPaymentId}/refund`, { method: 'POST', body: { reason } })).data;
+}
+/** Records a real deposit the Admin has received; the server checks the due share and the hold. */
+export async function recordManualDeposit(input: ManualDepositInput): Promise<Payment> {
+  if (huyDemo) throw new Error('Chế độ demo không ghi nhận tiền thật.');
+  return (await api.request<ApiResponse<Payment>>('/admin/payments/record', { method: 'POST', body: input })).data;
 }

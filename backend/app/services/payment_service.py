@@ -1,5 +1,7 @@
+from datetime import timedelta
 from decimal import Decimal
 from secrets import token_hex
+from flask import current_app
 from sqlalchemy import select
 from app.contracts.dto import PaymentApplyResult, RefundPlan
 from app.contracts.errors import DomainError
@@ -11,6 +13,10 @@ COLLECTED_TYPES = ('BOOKING_DEPOSIT', 'BOOKING_REMAINING_PAYMENT')
 CONSOLIDATED_NOTE = 'THU_GOP theo booking'
 FORFEITED_NOTE = 'MAT_COC do tu huy'
 ACTIVE_REFUND = ('REFUND_PROCESSING', 'SUCCESS')
+# SePay QR deposits are stored as BANK_TRANSFER (no ENUM migration) and told apart by this fixed-length code.
+QR_PREFIX = 'SP'
+QR_CODE_LENGTH = 12
+QR_EXPIRED_NOTE = 'QR het han'
 
 def is_demo_payment(payment):
     return (payment.transaction_code or '').startswith('DEMO-')
@@ -27,13 +33,44 @@ def payment_data(payment, admin=False):
 def is_consolidated(payment):
     return bool(payment.note) and payment.note.startswith(CONSOLIDATED_NOTE)
 
+def is_qr_session(payment):
+    code = payment.transaction_code or ''
+    return payment.payment_method == 'BANK_TRANSFER' and code.startswith(QR_PREFIX) and len(code) == QR_CODE_LENGTH
+
+def new_qr_code():
+    return QR_PREFIX + token_hex((QR_CODE_LENGTH - len(QR_PREFIX)) // 2).upper()
+
+def qr_ttl():
+    return timedelta(seconds=int(current_app.config.get('SEPAY_QR_TTL_SECONDS', 60)))
+
+def qr_grace():
+    return timedelta(seconds=int(current_app.config.get('SEPAY_CONFIRM_GRACE_SECONDS', 120)))
+
+def qr_expires_at(payment):
+    return payment.created_at + qr_ttl()
+
+def expire_stale_qr_sessions(ctx, payments, *, ttl_only=False):
+    """PENDING QR rows stop blocking once their code is no longer shown (ttl_only, a new code was asked for)
+    or once a slow bank notification can no longer be expected. FAILED is not terminal: real money that
+    still arrives for the code is recorded by apply_verified_payment. Caller holds the booking locks."""
+    now, limit = ctx.now(), qr_ttl() + (timedelta(0) if ttl_only else qr_grace())
+    expired = []
+    for payment in payments:
+        if is_qr_session(payment) and payment.status == 'PENDING' and now >= payment.created_at + limit:
+            payment.status = 'FAILED'
+            payment.note = policy.add_note(payment.note, QR_EXPIRED_NOTE)
+            expired.append(payment)
+    if expired:
+        ctx.session.flush()
+    return expired
+
 def find_active_deposit(payments, user_id):
     return next((p for p in payments if p.user_id == user_id and p.payment_type == 'BOOKING_DEPOSIT'
                  and p.status == 'PENDING'), None)
 
-def create_pending_deposit(ctx, *, booking, user_id, method, amount):
+def create_pending_deposit(ctx, *, booking, user_id, method, amount, code=None):
     """The merchant reference is stored before any network call and never regenerated on timeout."""
-    code = f'B{booking.booking_id}U{user_id}{token_hex(6).upper()}'
+    code = code or f'B{booking.booking_id}U{user_id}{token_hex(6).upper()}'
     payment = Payment(user_id=user_id, booking_id=booking.booking_id, amount=amount, payment_type='BOOKING_DEPOSIT',
                       payment_method=method, transaction_code=code, status='PENDING',
                       created_at=ctx.now().replace(microsecond=0))

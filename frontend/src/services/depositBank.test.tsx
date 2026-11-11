@@ -33,3 +33,24 @@ it('posts only a booking ID for persisted demo confirmation; user and amount are
   expect(result.demo).toBe(true);
   expect(request).toHaveBeenCalledWith('/payments/deposit/demo-confirm',{method:'POST',body:{booking_id:17}});
 });
+
+it('with SePay on, shows a server-owned 60-second QR with pre-filled amount and content, never a static one',async()=>{
+  const now=Date.now();
+  const session={payment_id:9,booking_id:17,status:'PENDING' as const,amount:'60000.00',transfer_reference:'SPA1B2C3D4E5',
+    qr_payload:'000201010212',qr_expires_at:new Date(now+45_000).toISOString(),hold_expires_at:new Date(now+200_000).toISOString(),
+    bank_name:'Test Bank',account_no:'123456789',account_name:'TEST RECEIVER'};
+  const base:BankDepositInstructions={qr_auto_confirm:true,qr_ttl_seconds:60,booking_id:17,status:'PENDING_HOLD',expires_at:'2030-01-01T12:00:00Z',payment_method:'BANK_TRANSFER',
+    bank_bin:'970418',bank_name:'Test Bank',account_no:'123456789',account_name:'TEST RECEIVER',payers:[{
+      user_id:2,required_amount:'60000.00',paid_amount:'0.00',status:'UNPAID',due_amount:'60000.00',transfer_reference:'COC17U2',
+      qr_payload:null,unavailable_reason:null,can_confirm:true,can_open_qr:true,qr_session:null}]};
+  const idle=renderToStaticMarkup(<BankDepositBox instructions={base} validHold demo={false}/>);
+  expect(idle).toContain('Tạo mã QR thanh toán (60 giây)');expect(idle).not.toContain('Chưa tích hợp');
+  const live=renderToStaticMarkup(<BankDepositBox instructions={{...base,payers:[{...base.payers[0],qr_session:session}]}} validHold demo={false}/>);
+  expect(live).toContain('SPA1B2C3D4E5');expect(live).toContain('đã điền sẵn');expect(live).toContain('Mã QR hết hiệu lực sau');
+  const expired=renderToStaticMarkup(<BankDepositBox instructions={{...base,payers:[{...base.payers[0],qr_session:{...session,qr_expires_at:new Date(now-1000).toISOString()}}]}} validHold demo={false}/>);
+  expect(expired).toContain('Mã QR đã hết hiệu lực');expect(expired).toContain('Tạo mã QR mới');expect(expired).not.toContain('SPA1B2C3D4E5');
+  request.mockResolvedValueOnce({data:session,meta:{server_time:new Date().toISOString()}});
+  const { openQrPayment } = await import('./depositBank');
+  expect((await openQrPayment(17)).transfer_reference).toBe('SPA1B2C3D4E5');
+  expect(request).toHaveBeenCalledWith('/payments/deposit/qr',{method:'POST',body:{booking_id:17}});
+});

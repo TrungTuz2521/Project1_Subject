@@ -17,7 +17,7 @@ export const matchPostsService = {
   mine: (page = 1, status?: PostStatus, signal?: AbortSignal) =>
     api.request<PaginatedResponse<MatchPost>>('/match-posts/my', { query: { page, page_size: 100, status }, signal }),
   get: (postId: number, signal?: AbortSignal) =>
-    api.request<ApiResponse<MatchPost>>('/match-posts/' + postId, { auth: false, signal }),
+    api.request<ApiResponse<MatchPost>>('/match-posts/' + postId, { auth: 'optional', signal }),
   create: (body: PostCreate) => api.request<ApiResponse<MatchPost>>('/match-posts', { method: 'POST', body }),
   update: (postId: number, body: Partial<PostCreate>) =>
     api.request<ApiResponse<MatchPost>>('/match-posts/' + postId, { method: 'PATCH', body }),

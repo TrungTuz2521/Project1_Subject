@@ -7,7 +7,8 @@ from app.contracts.dto import CommandResult
 from app.contracts.errors import DomainError, invalid
 from app.infrastructure.retry import retry_conflicts
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Payment, User
+from app.models import Payment, Pitch, User
+from app.utils.time import VIETNAM
 from app.services import auth_service, booking_policy as policy, booking_service, match_service, notification_service, payment_service
 from app.services.gateway import get_gateway
 from app.use_cases.cancel_booking import close_booking
@@ -69,17 +70,29 @@ def create_deposit_session(actor, *, booking_id, payment_method, client_ip=None)
     session = dict(opened.data, payment_url=result.payment_url, qr_payload=result.qr_payload, expires_at=opened.expires_at)
     return session, opened.created
 
+def _booking_summary(ctx, booking):
+    pitch = ctx.session.get(Pitch, booking.pitch_id)
+    start, end = booking.start_time.astimezone(VIETNAM), booking.end_time.astimezone(VIETNAM)
+    return (f'Booking #{booking.booking_id} - {pitch.pitch_name if pitch else f"sân #{booking.pitch_id}"}, '
+            f'{start:%H:%M}-{end:%H:%M} ngày {start:%d/%m/%Y}.')
+
+def _vnd(amount):
+    return f'{int(Decimal(amount)):,}'.replace(',', '.') + ' VND'
+
 def _after_deposit_recorded(ctx, booking, payment):
     demo = payment_service.is_demo_payment(payment)
+    summary = _booking_summary(ctx, booking)
     notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS',
-        'Đã xác nhận cọc DEMO' if demo else 'Đã nhận cọc',
-        'Cọc mô phỏng đã được lưu; chưa xác minh tiền ngân hàng.' if demo else 'Đã ghi nhận khoản cọc của bạn.')
+        'Đã xác nhận cọc DEMO' if demo else 'Đã thanh toán tiền cọc đặt sân',
+        'Cọc mô phỏng đã được lưu; chưa xác minh tiền ngân hàng.' if demo else
+        f'Đã nhận {_vnd(payment.amount)} tiền cọc của bạn (mã giao dịch {payment.transaction_code}). {summary}')
     if booking_service.confirm_if_deposit_complete(ctx, booking_id=booking.booking_id):
         match = match_service.confirm_after_deposit(ctx, booking_id=booking.booking_id, **({'is_demo': True} if demo else {}))
         if match is None:
             notification_service.notify(ctx, [booking.user_id], 'BOOKING_CONFIRMED',
-                'Đặt sân DEMO thành công' if demo else 'Đặt sân thành công',
-                'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if demo else 'Đã nhận đủ cọc.')
+                'Đặt sân DEMO thành công' if demo else 'Đặt sân thành công - đã thanh toán đủ cọc',
+                'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if demo else
+                f'Đã nhận đủ {_vnd(booking.deposit_amount)} tiền cọc, sân đã được giữ cho bạn. {summary}')
 
 def _handle_late(ctx, booking, payment):
     """Money is real but never revives the hold: refund it and keep the slot released."""
@@ -134,6 +147,7 @@ def record_manual_payment(actor, *, booking_id, user_id, payment_type, amount, m
                 raise DomainError('STATE_CONFLICT', 'Booking không còn chờ cọc.')
             if now >= booking.hold_expires_at:
                 raise DomainError('HOLD_EXPIRED', 'Đã hết thời gian giữ sân.')
+            payment_service.expire_stale_qr_sessions(ctx, payments)
             if payment_service.find_active_deposit(payments, user_id):
                 raise DomainError('PAYMENT_RECONCILIATION_REQUIRED', 'Người này còn phiên cọc online chưa rõ trạng thái.')
             due = required - booking_service.paid_deposit_by_user(payments).get(user_id, Decimal('0'))

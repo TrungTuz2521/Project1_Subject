@@ -20,6 +20,8 @@ def create_app(config=None):
         # Tests explicitly opt in; local SMTP settings must not change legacy fixtures.
         app.config['EMAIL_ENABLED'] = (config or {}).get('EMAIL_ENABLED', False)
         app.config['DEMO_PAYMENT_ENABLED'] = (config or {}).get('DEMO_PAYMENT_ENABLED', False)
+        # A developer's real SePay key in backend/.env must not switch legacy tests to QR auto-confirmation.
+        app.config['SEPAY_WEBHOOK_KEY'] = (config or {}).get('SEPAY_WEBHOOK_KEY', '')
     db.init_app(app)
     from app import models
     from app.routes.api import api

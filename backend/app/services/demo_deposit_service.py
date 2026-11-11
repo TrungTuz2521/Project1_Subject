@@ -25,6 +25,7 @@ def confirm_demo_deposit(actor, booking_id):
             return dict(demo=True, payment=payment_service.payment_data(previous), booking=booking_service.booking_data(ctx, booking))
         if booking.status != 'PENDING_HOLD' or not booking.hold_expires_at or ctx.now() >= booking.hold_expires_at:
             raise DomainError('HOLD_EXPIRED', 'Booking không còn trong thời hạn xác nhận cọc.')
+        payment_service.expire_stale_qr_sessions(ctx, payments)
         if any(p.status == 'PENDING' and p.payment_type == 'BOOKING_DEPOSIT' for p in payments):
             raise DomainError('PAYMENT_RECONCILIATION_REQUIRED', 'Còn giao dịch online cần đối soát; không trộn với cọc demo.')
         if any(p.status in ('SUCCESS', 'REFUNDED') and not payment_service.is_demo_payment(p) for p in payments):
