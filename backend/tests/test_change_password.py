@@ -55,6 +55,7 @@ class ChangePasswordTests(unittest.TestCase):
     def test_google_only_account_has_no_password_change_action(self):
         with UnitOfWork() as ctx:
             user=ctx.session.get(User,self.users[0]);user.password_hash=None;user.google_id='google-only-test'
+        self.a=self.header(self.users[0])  # Credentials changed: the earlier token is revoked by design.
         self.assertFalse(self.client.get('/api/v1/users/me',headers=self.a).json['data']['has_password'])
         self.assertEqual(self.change().json['error']['code'],'PASSWORD_NOT_SET')
 

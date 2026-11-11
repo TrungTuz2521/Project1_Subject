@@ -672,9 +672,10 @@ class BalanceAndConfirmPaid(BookingCase):
         self.assertIsNone(data['qr_payload'])
         self.assertIn('ngân hàng', data['qr_unavailable_reason'])
 
-    def test_no_qr_before_game_ends(self):
+    def test_qr_for_the_rest_is_ready_as_soon_as_confirmed(self):
+        # The customer pays the rest at the counter on arrival, not only after the match.
         data = self.confirmed()
-        self.assertIsNone(self.balance(data['booking_id']).json['data']['qr_payload'])
+        self.assertIsNotNone(self.balance(data['booking_id']).json['data']['qr_payload'])
 
     def test_mixed_receipts_close_the_booking(self):
         booking_id = self.ended()
@@ -720,14 +721,13 @@ class BalanceAndConfirmPaid(BookingCase):
         self.assertEqual(self.confirm(booking_id, receipts=[]).status_code, 422)
         self.assertEqual(len(self.payments(booking_id)), 1)
 
-    def test_before_end_time_and_player_are_rejected(self):
-        data = self.confirmed()
-        self.assertEqual(self.confirm(data['booking_id']).status_code, 409)
-        booking_id = data['booking_id']
-        self.go_after(self.booking(booking_id).end_time)
+    def test_player_is_rejected_and_admin_collects_before_kick_off(self):
+        booking_id = self.confirmed()['booking_id']
         self.assertEqual(self.confirm(booking_id, header=self.a).status_code, 403)
         self.assertEqual(self.client.get(f'/api/v1/admin/bookings/{booking_id}/balance', headers=self.a).status_code, 403)
         self.assertEqual(len(self.payments(booking_id)), 1)
+        r = self.confirm(booking_id)
+        self.assertEqual((r.status_code, r.json['data']['payment_status']), (200, 'PAID'), r.json)
 
     def test_pending_online_remaining_blocks_confirmation(self):
         booking_id = self.ended()
@@ -771,16 +771,38 @@ class AdminOperations(BookingCase):
         self.assertEqual(self.booking(data['booking_id']).total_amount, Decimal('600000.00'))
 
     def manual(self, index=8):
+        """A player's online hold: the only booking that still waits for a deposit."""
         start, end = self.slot(index=index)
-        return self.client.post('/api/v1/admin/bookings', headers=self.admin, json=dict(user_id=self.ub, pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat(), note='Khách gọi điện'))
+        r = self.client.post('/api/v1/bookings', headers=self.b, json=dict(pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat()))
+        return r
+
+    def counter(self, index=8, **extra):
+        start, end = self.slot(index=index)
+        return self.client.post('/api/v1/admin/bookings', headers=self.admin, json=dict(user_id=self.ub, pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat(), note='Khách gọi điện', **extra))
 
     def record(self, booking_id, amount='120000', reference='PT-1', kind='BOOKING_DEPOSIT', user=None, method='CASH'):
         return self.client.post('/api/v1/admin/payments/record', headers=self.admin, json=dict(booking_id=booking_id, user_id=user or self.ub, amount=amount, payment_type=kind, payment_method=method, reference=reference))
 
+    def test_counter_booking_is_confirmed_at_once_and_records_money_taken(self):
+        r = self.counter()
+        self.assertEqual(r.status_code, 201, r.json)
+        self.assertEqual((r.json['data']['booking_type'], r.json['data']['status'], r.json['data']['hold_expires_at']), ('MANUAL_ADMIN', 'CONFIRMED', None))
+        self.assertEqual(self.payments(r.json['data']['booking_id']), [])
+        paid = self.counter(index=7, payment={'amount': '200000', 'payment_method': 'CASH', 'reference': 'PT-9'})
+        self.assertEqual(paid.status_code, 201, paid.json)
+        rows = sorted((p.payment_type, p.amount, p.status) for p in self.payments(paid.json['data']['booking_id']))
+        self.assertEqual(rows, [('BOOKING_DEPOSIT', Decimal('120000.00'), 'SUCCESS'), ('BOOKING_REMAINING_PAYMENT', Decimal('80000.00'), 'SUCCESS')])
+        self.assertEqual(paid.json['data']['payer_progress'][0]['status'], 'PAID')
+        self.assertEqual(self.counter(index=6, payment={'amount': '600001', 'payment_method': 'CASH'}).status_code, 422)
+        self.assertEqual(self.counter(index=6, payment={'amount': '100', 'payment_method': 'VNPAY'}).status_code, 422)
+        # The slot is taken immediately, with no expiry.
+        self.go_after(self.now, seconds=3600)
+        self.assertEqual(self.counter().json['error']['code'], 'SLOT_UNAVAILABLE')
+
     def test_manual_booking_needs_a_real_deposit(self):
         r = self.manual()
         self.assertEqual(r.status_code, 201, r.json)
-        self.assertEqual((r.json['data']['booking_type'], r.json['data']['status']), ('MANUAL_ADMIN', 'PENDING_HOLD'))
+        self.assertEqual(r.json['data']['status'], 'PENDING_HOLD')
         bid = r.json['data']['booking_id']
         self.assertEqual(self.record(bid, amount='50000').status_code, 201)
         self.assertEqual(self.booking(bid).status, 'PENDING_HOLD')

@@ -1,0 +1,346 @@
+/* Admin console ("Quầy điều hành"). Scoped under .adm so the player app keeps its own look.
+   Light and calm for long shifts at the counter: white surfaces, one teal for actions,
+   amber = waiting on someone, red = money owed back / cancelled, green = paid. */
+.adm{
+  --brand:#0f766e; --brand-strong:#0b5d57; --brand-soft:#e6f4f1; --brand-line:#b9e0d8;
+  --bg:#f4f7f8; --surface:#fff; --line:#e3e8ec; --line-soft:#eef2f4;
+  --text:#1f2a37; --muted:#64748b; --faint:#94a3b8;
+  --amber:#b45309; --amber-soft:#fef3c7; --amber-line:#fcd98a;
+  --red-strong:#b91c1c; --red-soft:#fee2e2; --red-line:#fbc4c4;
+  --green:#15803d; --green-soft:#dcfce7;
+  --blue-soft:#eef4ff; --blue-line:#cfdcf5; --blue-text:#29467a;
+  --score:'Barlow Condensed','Be Vietnam Pro',sans-serif;
+  --radius:10px;
+  display:flex; min-height:100vh; background:var(--bg); color:var(--text);
+  font-family:'Be Vietnam Pro',system-ui,sans-serif; font-size:14px; line-height:1.55;
+}
+.adm a:focus-visible,.adm button:focus-visible,.adm select:focus-visible,.adm input:focus-visible{outline:3px solid #7cc4b8;outline-offset:2px}
+
+/* ---- Sidebar ---- */
+.adm-side{width:236px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);padding:20px 14px 18px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.adm-brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--text);padding:2px 8px 18px}
+.adm-brand>span:last-child{font-weight:700;font-size:16px;line-height:1.25}
+.adm-brand small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+/* A pitch seen from above, drawn in CSS. */
+.adm-brand-mark{width:34px;height:42px;border-radius:7px;background:var(--brand);position:relative;flex-shrink:0;box-shadow:inset 0 0 0 3px var(--brand),inset 0 0 0 5px #fff}
+.adm-brand-mark::before{content:"";position:absolute;left:5px;right:5px;top:50%;border-top:2px solid #fff}
+.adm-brand-mark::after{content:"";position:absolute;width:10px;height:10px;border:2px solid #fff;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%)}
+.adm-group{margin-top:16px}
+.adm-group-title{margin:0 10px 6px;font-size:12px;color:var(--faint);font-weight:500}
+.adm-link{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 10px;border-radius:8px;text-decoration:none;color:#3b4a5c;font-size:14px}
+.adm-link svg{width:18px;height:18px;flex-shrink:0;color:var(--faint)}
+.adm-link>span:not(.adm-count){flex:1}
+.adm-link:hover{background:var(--line-soft);color:var(--text)}
+.adm-link.is-active{background:var(--brand-soft);color:var(--brand-strong);font-weight:600}
+.adm-link.is-active svg{color:var(--brand)}
+.adm-count{min-width:22px;height:22px;padding:0 7px;border-radius:11px;display:inline-grid;place-items:center;font-size:12px;font-weight:700;line-height:1}
+.adm-count.amber{background:var(--amber-soft);color:var(--amber)}
+.adm-count.red{background:var(--red-soft);color:var(--red-strong)}
+.adm-side-note{margin-top:auto;padding:14px 10px 0;font-size:12px;color:var(--faint);line-height:1.6;display:grid;gap:4px}
+.adm-side-note span{display:flex;align-items:center;gap:7px}
+.adm-side-note i{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+/* ---- Top bar ---- */
+.adm-work{flex:1;min-width:0;display:flex;flex-direction:column}
+.adm-top{height:62px;display:flex;align-items:center;gap:20px;padding:0 clamp(16px,3vw,36px);background:rgba(255,255,255,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.adm-crumb{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:14px;color:var(--muted)}
+.adm-crumb span::after{content:"/";margin-left:8px;color:var(--line)}
+.adm-crumb strong{color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-clock{margin-left:auto;display:flex;align-items:baseline;gap:8px;color:var(--muted)}
+.adm-score{font-family:var(--score);font-weight:600;font-size:24px;letter-spacing:.5px;color:var(--text);font-variant-numeric:tabular-nums}
+.adm-clock small{font-size:13px}
+.adm-user{display:flex;align-items:center;gap:10px}
+.adm-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-strong);font-weight:700;font-size:14px}
+.adm-user-name{font-size:14px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-user button{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:7px 12px;font-size:13px}
+.adm-user button:hover{background:var(--line-soft)}
+.adm-main{width:100%;max-width:1440px;margin:0 auto;padding:clamp(18px,2.6vw,30px) clamp(16px,3vw,36px) 40px}
+
+/* ---- Shared page pieces (huy-* components rendered inside the console) ---- */
+.adm .huy-module{color:var(--text);font-size:14px}
+.adm .huy-head{margin:0 0 20px;align-items:flex-end}
+.adm .huy-kicker,.adm .huy-head h1 span{display:none}
+.adm .huy-head h1{font-size:clamp(24px,2.4vw,28px);letter-spacing:-.3px;margin:0 0 4px;font-weight:700;color:var(--text)}
+.adm .huy-head p{font-size:14px;color:var(--muted);margin:0;max-width:72ch}
+.adm .huy-card{border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 1px 2px rgba(15,23,42,.04);padding:20px;margin-bottom:16px}
+.adm .huy-card h2{font-size:17px;letter-spacing:0;margin:0 0 14px;color:var(--text)}
+.adm .huy-card p{font-size:14px}
+.adm .huy-muted{font-size:13px;color:var(--muted)}
+.adm .huy-btn{font-size:14px;font-weight:600;border-radius:8px;min-height:40px;padding:8px 16px}
+.adm .huy-btn-primary{background:var(--brand);color:#fff}
+.adm .huy-btn-primary:hover:not(:disabled){background:var(--brand-strong)}
+.adm .huy-btn-primary:disabled{background:#b8c4cc;opacity:1}
+.adm .huy-btn-outline{background:var(--surface);border-color:var(--line);color:var(--text)}
+.adm .huy-btn-outline:hover:not(:disabled){background:var(--line-soft)}
+.adm .huy-btn-light{background:var(--brand-soft);color:var(--brand-strong);border-color:var(--brand-line)}
+.adm .huy-btn-light:hover:not(:disabled){background:#d5ede8}
+.adm .huy-btn-danger{background:var(--red-soft);border-color:var(--red-line);color:var(--red-strong)}
+.adm .huy-field{font-size:13px;color:var(--muted);font-weight:500;gap:6px}
+/* The player stylesheet tints `form label span`; labels here stay neutral. */
+.adm .huy-field>span,.adm form .huy-field>span{color:var(--muted)}
+.adm .huy-field input,.adm .huy-field select{border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:14px;min-height:40px;border-radius:8px;padding:8px 11px}
+.adm .huy-field input:focus,.adm .huy-field select:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);outline:none}
+.adm .huy-banner{font-size:14px;line-height:1.6;border-radius:var(--radius);background:var(--blue-soft);border-color:var(--blue-line);color:var(--blue-text);padding:12px 16px}
+.adm .huy-banner-success{background:var(--green-soft);border-color:#b7e4c5;color:#14532d}
+.adm .huy-banner-danger{background:var(--red-soft);border-color:var(--red-line);color:#7f1d1d}
+.adm .huy-banner .huy-block{color:inherit;font-size:13px;margin-top:4px}
+.adm .huy-empty{background:var(--bg);border:1px dashed var(--line);color:var(--muted);font-size:14px;padding:28px 16px;border-radius:var(--radius)}
+.adm .huy-table-wrap table{min-width:720px}
+.adm .huy-table-wrap th{font-size:12px;text-transform:none;letter-spacing:0;color:var(--muted);background:var(--bg);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line)}
+.adm .huy-table-wrap td{font-size:13px;padding:12px;border-bottom:1px solid var(--line-soft);line-height:1.6;vertical-align:top}
+.adm .huy-table-wrap td>strong{font-size:14px;white-space:nowrap}
+.adm .huy-table-wrap tbody tr:hover{background:#fafcfc}
+.adm .huy-block{font-size:12px;color:var(--muted)}
+.adm .huy-table-actions button{font-size:13px;color:var(--brand-strong);font-weight:600}
+.adm .huy-table-actions .huy-link-danger{color:var(--red-strong)}
+/* Status pills: amber waits, red cancelled or money out, green paid, blue confirmed. */
+.adm .huy-pill{font-size:12px;border-radius:999px;padding:3px 10px;font-weight:600}
+.adm .huy-pill-pending_hold,.adm .huy-pill-pending,.adm .huy-pill-partial,.adm .huy-pill-unpaid,.adm .huy-pill-held{background:var(--amber-soft);color:var(--amber)}
+.adm .huy-pill-refund_processing,.adm .huy-pill-failed,.adm .huy-pill-cancelled,.adm .huy-pill-expired,.adm .huy-pill-booked{background:var(--red-soft);color:var(--red-strong)}
+.adm .huy-pill-confirmed,.adm .huy-pill-active,.adm .huy-pill-available{background:var(--blue-soft);color:var(--blue-text)}
+.adm .huy-pill-paid,.adm .huy-pill-success{background:var(--green-soft);color:var(--green)}
+.adm .huy-pill-maintenance,.adm .huy-pill-refunded,.adm .huy-pill-inactive{background:var(--line-soft);color:#475569}
+.adm .huy-timer{font-family:var(--score);font-weight:600;font-size:22px;letter-spacing:.5px;color:var(--amber);font-variant-numeric:tabular-nums}
+.adm .huy-danger{color:var(--red-strong)}
+.adm .huy-payer-panel{background:var(--bg);border-color:var(--line);border-radius:var(--radius)}
+.adm .huy-booking-item{background:var(--surface);border-color:var(--line);border-radius:8px;padding:12px 14px}
+.adm .huy-booking-item.active,.adm button.huy-booking-item:hover:not(:disabled){border-color:var(--brand-line);background:var(--brand-soft)}
+.adm .huy-booking-item b{font-size:14px}
+.adm .huy-booking-item small{font-size:12px;color:var(--muted)}
+.adm .huy-info-grid small{font-size:12px;color:var(--muted)}
+.adm .huy-info-grid strong{font-size:15px;color:var(--text)}
+.adm .huy-metric-grid{gap:12px}
+.adm .huy-metric-grid .huy-card{min-height:0;padding:18px}
+.adm .huy-metric-grid small{font-size:13px;letter-spacing:0;color:var(--muted)}
+.adm .huy-metric-grid strong{font-family:var(--score);font-weight:600;font-size:34px;letter-spacing:.3px;margin:4px 0 2px;color:var(--text);font-variant-numeric:tabular-nums}
+.adm .huy-metric-grid p{font-size:13px;color:var(--muted)}
+.adm .huy-metric-highlight{background:var(--brand-soft);border-color:var(--brand-line)}
+.adm .huy-metric-highlight strong{color:var(--brand-strong)}
+.adm .huy-chart-row{grid-template-columns:110px minmax(0,1fr) 150px}
+.adm .huy-chart-row>span,.adm .huy-chart-row>strong{font-size:13px}
+.adm .huy-chart-track{background:var(--line-soft);height:16px;border-radius:999px}
+.adm .huy-chart-fill{background:var(--brand);border-radius:999px}
+.adm .huy-filter-form{margin:0;align-items:flex-end}
+.adm .huy-pager{margin-top:14px;flex-wrap:wrap}
+.adm .huy-pitch-card{border-color:var(--line);border-radius:var(--radius);padding:16px}
+.adm .huy-pitch-icon{background:var(--brand-soft)}
+.adm .huy-pitch-card small{font-size:13px;color:var(--muted)}
+.adm .huy-pitch-card strong{font-size:15px}
+.adm-nowrap{white-space:nowrap;font-size:13px}
+
+/* ---- Lịch sân: create card ---- */
+.adm .adm-create{padding:0;overflow:hidden}
+.adm-tabs{display:flex;gap:4px;padding:10px 12px 0;border-bottom:1px solid var(--line);background:var(--bg);overflow-x:auto}
+.adm-tabs button{border:0;background:transparent;color:var(--muted);font-size:14px;font-weight:600;padding:10px 14px;border-radius:8px 8px 0 0;white-space:nowrap}
+.adm-tabs button:hover{color:var(--text)}
+.adm-tabs button.is-on{background:var(--surface);color:var(--brand-strong);box-shadow:inset 0 -2px 0 var(--brand)}
+.adm-create-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr);gap:0}
+.adm-step{padding:18px 20px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.adm-step+.adm-step{border-left:1px solid var(--line-soft)}
+.adm-step h3{margin:0;font-size:15px;color:var(--text);display:flex;align-items:center;gap:9px}
+.adm-step h3 span{width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand-strong);display:inline-grid;place-items:center;font-size:13px;font-weight:700}
+.adm-step .huy-field{margin:0}
+.adm-step>.huy-btn{width:100%;min-height:46px;font-size:15px;margin-top:auto}
+.adm-segment{display:grid;grid-template-columns:1fr 1fr;background:var(--line-soft);border-radius:9px;padding:3px;gap:3px}
+.adm-segment button{border:0;background:transparent;border-radius:7px;padding:8px;font-size:14px;color:var(--muted);font-weight:600}
+.adm-segment button.is-on{background:var(--surface);color:var(--brand-strong);box-shadow:0 1px 3px rgba(15,23,42,.1)}
+.adm-pitch-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:10px}
+.adm-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.adm-slot{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--text);transition:border-color .12s,background .12s}
+.adm-slot strong{font-family:var(--score);font-size:20px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.adm-slot small{font-size:11px;color:var(--muted)}
+.adm-slot.is-available:hover{border-color:var(--brand);background:var(--brand-soft)}
+.adm-slot.is-picked,.adm-slot.is-picked:hover{border-color:var(--brand);background:var(--brand);color:#fff}
+.adm-slot.is-picked small{color:#d7f2ec}
+.adm-slot:disabled{cursor:not-allowed;opacity:1}
+.adm-slot.is-held{background:var(--amber-soft);border-color:var(--amber-line);color:#8a6d3b}
+.adm-slot.is-booked{background:var(--line-soft);border-color:var(--line);color:var(--faint);text-decoration:line-through}
+.adm-slot.is-booked small{text-decoration:none}
+.adm-slot.is-maintenance{background:repeating-linear-gradient(-45deg,#f1f5f9 0 6px,#e2e8f0 6px 12px);color:var(--muted)}
+.adm-pay{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.adm-pay button{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:9px 11px;text-align:left;display:flex;flex-direction:column;gap:1px;color:var(--text)}
+.adm-pay button span{font-size:13px;color:var(--muted)}
+.adm-pay button strong{font-size:15px}
+.adm-pay button:hover{border-color:var(--brand-line)}
+.adm-pay button.is-on{border-color:var(--brand);background:var(--brand-soft);box-shadow:inset 0 0 0 1px var(--brand)}
+.adm-pay button.is-on span{color:var(--brand-strong)}
+.adm-summary{background:var(--bg);border-radius:9px;padding:10px 12px;display:grid;gap:2px;font-size:14px}
+.adm-summary small{font-size:12px;color:var(--muted)}
+.adm-move-card{background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:9px;padding:10px 12px;display:grid;gap:2px}
+.adm-move-card small{color:#8a6d3b;font-size:13px}
+
+/* ---- Lịch sân: list ---- */
+.adm-list-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.adm-list-head h2{margin:0!important}
+.adm-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.adm-filters .huy-field{min-width:140px;margin:0}
+.adm-row-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
+.adm-row-actions .huy-btn{min-height:34px;padding:5px 12px;font-size:13px}
+.adm-link-danger{border:0;background:none;color:var(--red-strong);font-weight:600;font-size:13px;padding:6px 8px;border-radius:6px}
+.adm-link-danger:hover:not(:disabled){background:var(--red-soft)}
+
+/* ---- Deposit panel for online holds ---- */
+.adm-deposit{border-left:4px solid var(--amber-line)}
+@media(min-width:900px){
+  .adm-deposit .huy-form{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr);gap:12px 14px;align-items:end}
+  .adm-deposit .huy-form>p,.adm-deposit .huy-form>.huy-actions{grid-column:1/-1;margin:0}
+}
+
+/* ---- Today page ---- */
+.adm-board{display:grid;grid-template-columns:1.3fr repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.adm-board-cell{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit;position:relative;min-width:0}
+.adm-board-cell:first-child{background:var(--brand);border-color:var(--brand);color:#fff}
+.adm-board-cell:first-child .adm-board-label,.adm-board-cell:first-child .adm-board-sub{color:#cdeee7}
+a.adm-board-cell:hover{border-color:var(--brand-line);box-shadow:0 2px 8px rgba(15,23,42,.06)}
+.adm-board-label{font-size:13px;color:var(--muted)}
+.adm-board-value{font-family:var(--score);font-weight:600;font-size:42px;line-height:1.05;letter-spacing:.5px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-board-sub{font-size:13px;color:var(--muted)}
+.adm-board-cell.yellow{background:var(--amber-soft);border-color:var(--amber-line)}
+.adm-board-cell.yellow .adm-board-value{color:var(--amber)}
+.adm-board-cell.red{background:var(--red-soft);border-color:var(--red-line)}
+.adm-board-cell.red .adm-board-value{color:var(--red-strong)}
+.adm-queue-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.adm-queue-head h2{margin:0!important}
+
+/* ---- Profile page reused inside the console ---- */
+.adm .profile-summary,.adm .profile-form-card{border-color:var(--line);border-radius:var(--radius)}
+.adm .profile-avatar{background:var(--brand-soft);color:var(--brand-strong)}
+.adm .profile-role{background:var(--brand-soft);color:var(--brand-strong);font-size:12px}
+.adm .account-page-heading h1{color:var(--text);font-size:clamp(24px,2.4vw,28px)}
+.adm .account-page-heading h1 span,.adm .account-eyebrow,.adm .account-page-index{display:none}
+.adm .account-primary-button{background:var(--brand)}
+
+@media(max-width:1240px){
+  .adm-create-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .adm-create-grid .adm-step:nth-child(3){grid-column:1/-1;border-left:0;border-top:1px solid var(--line-soft)}
+  .adm-board{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .adm-board-cell:first-child{grid-column:1/-1}
+  .adm-clock small{display:none}
+}
+@media(max-width:860px){
+  .adm{flex-direction:column}
+  .adm-side{width:auto;height:auto;position:static;flex-direction:row;align-items:center;gap:10px;padding:8px 12px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}
+  .adm-brand{padding:0 6px 0 0}
+  .adm-brand>span:last-child,.adm-side-note,.adm-group-title{display:none}
+  .adm-side nav{display:flex;gap:4px}
+  .adm-group{margin:0;display:flex;gap:4px}
+  .adm-link{white-space:nowrap}
+  .adm-top{position:static;height:auto;min-height:56px;flex-wrap:wrap;padding:10px 16px}
+  .adm-user-name{display:none}
+  .adm-create-grid{grid-template-columns:1fr}
+  .adm-create-grid .adm-step+.adm-step{border-left:0;border-top:1px solid var(--line-soft)}
+}
+@media(max-width:520px){
+  .adm-board{grid-template-columns:1fr}
+  .adm-board-value{font-size:36px}
+  .adm .huy-chart-row{grid-template-columns:80px minmax(0,1fr) 96px}
+  .adm-pitch-row{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){.adm *{transition:none!important;animation:none!important}}
+
+/* ---- Dialogs (replace window.prompt) ---- */
+.adm-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.42);display:grid;place-items:center;padding:16px;z-index:50}
+.adm-dialog{background:var(--surface);border-radius:14px;box-shadow:0 20px 50px rgba(15,23,42,.25);width:min(520px,100%);max-height:calc(100vh - 32px);overflow:auto}
+.adm-dialog.is-wide{width:min(760px,100%)}
+.adm-dialog-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line-soft)}
+.adm-dialog-head h2{margin:0;font-size:17px}
+.adm-dialog-x{border:0;background:none;font-size:24px;line-height:1;color:var(--muted);width:34px;height:34px;border-radius:8px}
+.adm-dialog-x:hover{background:var(--line-soft)}
+.adm-dialog-body{padding:16px 20px 20px;display:flex;flex-direction:column;gap:12px}
+.adm-dialog-message{font-size:14px;color:var(--text);line-height:1.6}
+.adm-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:4px}
+.adm .huy-field textarea{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;font-size:14px;color:var(--text);resize:vertical;min-height:64px}
+.adm .huy-field textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);outline:none}
+.adm-choice-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.adm-choice-cards button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 12px;text-align:left;display:grid;gap:3px;color:var(--text)}
+.adm-choice-cards button strong{font-size:14px}
+.adm-choice-cards button small{font-size:13px;color:var(--muted);line-height:1.45}
+.adm-choice-cards button.is-on{border-color:var(--brand);background:var(--brand-soft);box-shadow:inset 0 0 0 1px var(--brand)}
+.adm-choice-cards button.is-danger.is-on{border-color:var(--amber);background:var(--amber-soft);box-shadow:inset 0 0 0 1px var(--amber)}
+
+/* ---- Day board: pitches x slots ---- */
+.adm-board-day .adm-list-head p{margin:2px 0 0}
+.adm-day-nav{display:flex;gap:4px;background:var(--line-soft);padding:3px;border-radius:9px;align-self:flex-end}
+.adm-day-nav button{border:0;background:transparent;border-radius:7px;padding:8px 12px;font-weight:600;font-size:13px;color:var(--muted)}
+.adm-day-nav button.is-on{background:var(--surface);color:var(--brand-strong);box-shadow:0 1px 3px rgba(15,23,42,.1)}
+.adm-grid-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius)}
+.adm-grid{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
+.adm-grid th{font-size:12px;color:var(--muted);font-weight:600;padding:8px;background:var(--bg);border-bottom:1px solid var(--line);text-align:center;white-space:nowrap}
+.adm-grid tbody th{text-align:left;position:sticky;left:0;background:var(--surface);z-index:1;border-right:1px solid var(--line);min-width:110px}
+.adm-grid tbody th strong{display:block;font-size:14px;color:var(--text)}
+.adm-grid tbody th small{font-size:12px;color:var(--muted);font-weight:400}
+.adm-grid td{padding:4px;border-bottom:1px solid var(--line-soft)}
+.adm-grid tr:last-child td,.adm-grid tr:last-child th{border-bottom:0}
+.adm-grid td.is-past{background:repeating-linear-gradient(-45deg,transparent 0 5px,#f1f5f9 5px 10px)}
+.adm-cell{width:100%;min-height:52px;border-radius:8px;padding:5px 6px;display:flex;flex-direction:column;justify-content:center;gap:1px;font-size:12px;text-align:left;border:1px solid transparent;overflow:hidden}
+.adm-cell span{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-cell small{font-size:11px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-cell.is-free{background:var(--surface);border:1px dashed var(--brand-line);color:var(--brand-strong);cursor:pointer}
+.adm-cell.is-free:hover{background:var(--brand-soft);border-style:solid}
+.adm-cell.is-free.is-peak{border-color:#f5b971}
+.adm-cell.is-booked{background:var(--blue-soft);border-color:var(--blue-line);color:var(--blue-text)}
+.adm-cell.is-held{background:var(--amber-soft);border-color:var(--amber-line);color:#8a6d3b}
+.adm-cell.is-maintenance{background:var(--line-soft);color:var(--muted)}
+.adm-cell.is-arrived{background:var(--green-soft);border-color:#b7e4c5;color:#14532d}
+.adm-anchor{scroll-margin-top:80px}
+
+/* ---- Slots: peak hours ---- */
+.adm-slot.is-peak.is-available{border-color:#f5b971;box-shadow:inset 0 -3px 0 #fbd38d}
+.adm-slot.is-peak.is-picked{box-shadow:inset 0 -3px 0 #fbd38d}
+.adm-peak-note{color:#b45309}
+
+/* ---- Regular customers ---- */
+.adm-regular{border:1px dashed var(--line);border-radius:9px;padding:10px 12px;display:grid;gap:8px}
+.adm-regular.is-on{border-style:solid;border-color:var(--brand-line);background:var(--brand-soft)}
+.adm-regular label{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer;margin:0}
+.adm-regular input[type=checkbox],.adm-check input{width:18px;height:18px;margin:0;accent-color:var(--brand)}
+.adm-regular small{font-size:12px;color:var(--muted)}
+.adm-tag{display:inline-block;margin-top:4px;border:1px solid var(--brand-line);background:var(--brand-soft);color:var(--brand-strong);font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px}
+.adm-tag:hover{background:#d5ede8}
+.adm-flag{display:inline-block;margin-top:3px;background:var(--red-soft);color:var(--red-strong);font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px}
+.adm-filter-chip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:14px}
+.adm-filter-chip button{border:0;background:none;color:var(--brand-strong);font-weight:700;margin-left:auto}
+.adm-textlink{border:0;background:none;color:var(--muted);font-weight:600;font-size:13px;padding:6px 8px;border-radius:6px;text-decoration:underline}
+
+/* ---- Check-in desk (Today page) ---- */
+.adm-desk-list{display:grid;gap:8px}
+.adm-desk-row{display:grid;grid-template-columns:64px minmax(0,1.6fr) minmax(110px,.7fr) minmax(140px,.8fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.adm-desk-row.is-arrived{border-left-color:#4ade80;background:#fbfefc}
+.adm-desk-row.is-late{border-left-color:var(--amber-line);background:#fffdf5}
+.adm-desk-row.is-noshow{border-left-color:var(--red-line);opacity:.8}
+.adm-desk-time strong{display:block;font-family:var(--score);font-size:24px;line-height:1;font-weight:600}
+.adm-desk-time small,.adm-desk-who small,.adm-desk-money small{display:block;font-size:12px;color:var(--muted)}
+.adm-desk-who strong{font-size:15px}
+.adm-desk-money strong{font-size:15px;color:var(--amber)}
+.adm-state{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--line-soft);color:#475569}
+.adm-state.ok{background:var(--green-soft);color:var(--green)}
+.adm-state.warn{background:var(--amber-soft);color:var(--amber)}
+.adm-state.bad{background:var(--red-soft);color:var(--red-strong)}
+
+/* ---- Collect page ---- */
+.adm-collect{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(0,1.4fr);gap:16px;align-items:start}
+.adm-collect-list .huy-booking-list{max-height:70vh;overflow:auto}
+.adm-collect-list .huy-booking-item{align-items:center}
+.adm-collect-amount{text-align:right}
+.adm-collect-amount b{color:var(--amber)}
+.adm-collect-panel{display:grid;gap:0}
+
+/* ---- Pitches page ---- */
+.adm-peak-form{display:grid;gap:12px}
+.adm-check{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text);cursor:pointer;margin:0}
+
+@media(max-width:1100px){
+  .adm-collect{grid-template-columns:1fr}
+  .adm-desk-row{grid-template-columns:56px minmax(0,1fr) auto;grid-template-areas:"time who money" "time state actions"}
+  .adm-desk-time{grid-area:time}
+  .adm-desk-who{grid-area:who}
+  .adm-desk-money{grid-area:money}
+  .adm-desk-state{grid-area:state}
+  .adm-desk-row .adm-row-actions{grid-area:actions}
+}
+@media(max-width:560px){
+  .adm-desk-row{grid-template-columns:1fr;grid-template-areas:none}
+  .adm-desk-row>*{grid-area:auto!important}
+  .adm-desk-row .adm-row-actions{justify-content:flex-start}
+  .adm-dialog-actions .huy-btn{flex:1}
+}

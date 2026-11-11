@@ -6,7 +6,9 @@ import { TeamsPage } from './features/matchmaking/TeamsPage';
 import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
 import { SchedulePage } from './features/matchmaking/SchedulePage';
 import { FieldApp } from './features/field-management/FieldApp';
-import { getCurrentUser, login, logout, register, updateCurrentUser } from './services/auth';
+import { AdminShell } from './features/admin/AdminShell';
+import type { AdminRoute } from './features/admin/AdminShell';
+import { getCurrentUser, keepSessionAlive, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
 import { session } from './stores/session';
@@ -14,7 +16,7 @@ import { selectedProposalFromHash } from './services/notificationNavigation';
 import { selectedBookingFromHash } from './services/bookingNavigation';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
-const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/matchmaking', '/notifications', '/schedule'] as const;
+const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/admin/statistics', '/matchmaking', '/notifications', '/schedule'] as const;
 type Route = typeof routes[number];
 const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
@@ -66,6 +68,16 @@ export default function App() {
     previousSession.current = Boolean(current);
   }, [current]);
 
+  // Renew the token while someone is signed in, so a shift is not interrupted every hour.
+  const signedIn = Boolean(current);
+  useEffect(() => (signedIn && !useMocks ? keepSessionAlive() : undefined), [signedIn]);
+
+  // Admin accounts cannot use player features (the API answers 403), so they never land on them.
+  const isAdmin = current?.user.role === 'ADMIN';
+  useEffect(() => {
+    if (isAdmin && !(route === '/dashboard' || route === '/profile' || route.startsWith('/admin/') || route === '/login' || route === '/register')) go('/dashboard');
+  }, [isAdmin, route]);
+
   const onLogout = () => {
     manualLogout.current = true;
     setNotice('Bạn đã đăng xuất khỏi hệ thống.');
@@ -80,6 +92,20 @@ export default function App() {
 
   // Public auth URLs should never display an authenticated user a login form.
   const activeRoute: Route = route === '/login' || route === '/register' ? '/dashboard' : route;
+  if (current.user.role === 'ADMIN') {
+    const adminTabs = {
+      '/dashboard': 'adminDashboard', '/admin/bookings': 'adminBookings', '/admin/pitches': 'adminPitches',
+      '/admin/balance': 'settlement', '/admin/revenue': 'revenue', '/admin/statistics': 'statistics',
+    } as const;
+    const adminRoute = (activeRoute in adminTabs || activeRoute === '/profile' ? activeRoute : '/dashboard') as AdminRoute;
+    return <AdminShell current={current.user} route={adminRoute} onLogout={onLogout}>
+      {adminRoute === '/profile'
+        ? <ProfilePage currentUser={current.user} onPasswordChanged={() => {
+            manualLogout.current = true; setNotice('Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.'); logout(); go('/login');
+          }} />
+        : <FieldApp key={current.user.user_id} tab={adminTabs[adminRoute as keyof typeof adminTabs]} selectedBookingId={bookingTarget} />}
+    </AdminShell>;
+  }
   if (activeRoute === '/teams') return <TeamsPage />;
   if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage /></AppShell>;
   if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage initialTab='notifications' initialProposalId={proposalTarget} /></AppShell>;
@@ -90,9 +116,10 @@ export default function App() {
   const fieldTabs = {
     '/bookings': 'pitches', '/my-bookings': 'bookings', '/admin/bookings': 'adminBookings',
     '/admin/pitches': 'adminPitches', '/admin/balance': 'settlement', '/admin/revenue': 'revenue',
+    '/admin/statistics': 'statistics',
   } as const;
   if (activeRoute in fieldTabs) {
-    const allowed = !activeRoute.startsWith('/admin/') || current.user.role === 'ADMIN';
+    const allowed = !activeRoute.startsWith('/admin/'); // Admins were routed to AdminShell above.
     return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}>
       {allowed ? <FieldApp key={current.user.user_id} tab={fieldTabs[activeRoute as keyof typeof fieldTabs]} selectedBookingId={bookingTarget} />
         : <section role="alert" className="notice-error">Bạn không có quyền truy cập chức năng quản trị.</section>}
@@ -113,6 +140,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -142,7 +170,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
         setFullName(''); setPhone(''); setPassword(''); setConfirmPassword('');
         onSuccess('Đăng ký thành công! Hãy đăng nhập bằng tài khoản bạn vừa tạo.');
       } else {
-        await login({ email: normalizedEmail, password });
+        await login({ email: normalizedEmail, password }, remember);
         onLogin();
       }
     } catch (reason) {
@@ -187,6 +215,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
           </div>}
           <div className="form-field"><label htmlFor="auth-password">Mật khẩu <span>*</span></label><div className="password-wrap"><input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={isRegister ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'Tối thiểu 8 ký tự' : 'Nhập mật khẩu'} aria-invalid={!!errors.password} /><button type="button" className="show-password" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Ẩn' : 'Hiện'}</button></div>{errors.password && <small className="field-error">{errors.password}</small>}</div>
           {isRegister && <div className="form-field"><label htmlFor="auth-confirm">Nhập lại mật khẩu <span>*</span></label><input id="auth-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Nhập lại mật khẩu" aria-invalid={!!errors.confirm_password} />{errors.confirm_password && <small className="field-error">{errors.confirm_password}</small>}</div>}
+          {!isRegister && <label className="remember-me"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Ghi nhớ đăng nhập trên máy này<small>Chỉ chọn trên máy riêng hoặc máy quầy của sân.</small></label>}
           {error && <div className="notice-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">↗</span></button>
         </form>
@@ -206,12 +235,6 @@ function AppShell({ current, route, onLogout, children }: { current: UserSelf; r
     { path: '/bookings', icon: '▦', label: 'Đặt sân' }, { path: '/my-bookings', icon: '▤', label: 'Booking của tôi' }, { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận' },
     { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/schedule', icon: '▦', label: 'Lịch thi đấu' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
   ];
-  if (current.role === 'ADMIN') navItems.push(
-    { path: '/admin/bookings', icon: '▦', label: 'Quản lý lịch sân' },
-    { path: '/admin/pitches', icon: '⚽', label: 'Quản lý sân' },
-    { path: '/admin/balance', icon: '◈', label: 'Thu tiền sau trận' },
-    { path: '/admin/revenue', icon: '▥', label: 'Doanh thu' },
-  );
   const title = navItems.find((item) => item.path === route)?.label ?? 'Tổng quan';
   return <div className="account-shell">
     <aside className="account-sidebar">

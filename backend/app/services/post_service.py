@@ -152,17 +152,18 @@ def party_users(ctx, post):
 def assert_available(ctx, user_ids, start, end, exclude_post_ids=()):
     if not start or not end:
         return
-    # A confirmed or pending-deposit match reserves participant availability.
-    for match in ctx.session.scalars(select(Match).where(Match.status.in_(['SUGGESTED', 'CONFIRMED']))):
-        for pid in (match.post_id, match.opponent_post_id):
-            post = ctx.session.get(MatchPost, pid) if pid else None
-            if post and post.post_id not in exclude_post_ids and post.match_time and post.end_time and post.match_time < end and post.end_time > start:
-                if party_users(ctx, post) & set(user_ids):
-                    raise DomainError('ACTIVE_MATCH_MEMBERSHIP', 'Người chơi đã có kèo trong khoảng giờ này.')
+    # A confirmed or pending-deposit match reserves participant availability. The time overlap is filtered
+    # in SQL so the cost depends on matches in this slot, not on every match ever played.
+    overlapping = select(MatchPost).join(Match, or_(Match.post_id == MatchPost.post_id, Match.opponent_post_id == MatchPost.post_id)).where(
+        Match.status.in_(['SUGGESTED', 'CONFIRMED']), MatchPost.match_time < end, MatchPost.end_time > start)
+    for post in {p.post_id: p for p in ctx.session.scalars(overlapping)}.values():
+        if post.post_id not in exclude_post_ids and party_users(ctx, post) & set(user_ids):
+            raise DomainError('ACTIVE_MATCH_MEMBERSHIP', 'Người chơi đã có kèo trong khoảng giờ này.')
     # A user cannot have simultaneous live RANDOM_SQUAD applications.
     for post in ctx.session.scalars(select(MatchPost).where(MatchPost.post_type == 'RANDOM_SQUAD',
-            MatchPost.status.in_(['OPEN', 'LOCKED']), MatchPost.expiry_time > ctx.now())):
-        if post.post_id not in exclude_post_ids and post.match_time and post.end_time and post.match_time < end and post.end_time > start:
+            MatchPost.status.in_(['OPEN', 'LOCKED']), MatchPost.expiry_time > ctx.now(),
+            MatchPost.match_time < end, MatchPost.end_time > start)):
+        if post.post_id not in exclude_post_ids:
             if party_users(ctx, post) & set(user_ids):
                 raise DomainError('ACTIVE_GROUP_REQUEST', 'Đã có yêu cầu gom nhóm cùng giờ.')
 

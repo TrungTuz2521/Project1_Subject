@@ -54,8 +54,6 @@ def _qr(ctx, booking, outstanding, collected):
         return None, None, None
     if booking.status != 'CONFIRMED':
         return None, None, 'Booking chưa xác nhận hoặc đã kết thúc.'
-    if ctx.now() < booking.end_time:
-        return None, None, 'Chưa hết giờ đá.'
     reference = transfer_reference(booking.booking_id)
     bin_code, account = current_app.config.get('BANK_BIN'), current_app.config.get('BANK_ACCOUNT_NO')
     if not bin_code or not account:

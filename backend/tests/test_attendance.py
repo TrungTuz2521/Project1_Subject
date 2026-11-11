@@ -37,7 +37,7 @@ class AttendanceTests(unittest.TestCase):
             self.assertEqual(self.respond(proposal, self.a).status_code, 200)
             self.assertEqual(self.respond(proposal, header).status_code, 200)
             self.assertEqual(self.respond(proposal, header).status_code, 200)
-            data = self.client.get(f'/api/v1/match-posts/{pid}').json['data']
+            data = self.client.get(f'/api/v1/match-posts/{pid}', headers=self.a).json['data']
             self.assertEqual(data['current_players'], expected)
         self.assertEqual((data['registered_players'], data['guest_players'], data['required_players'], data['status']), (3, 4, 0, 'MATCHED'))
         self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data']['active_member_count'], 3)

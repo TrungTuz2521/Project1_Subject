@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import re
 import bcrypt
 import jwt
 from datetime import timedelta
@@ -9,10 +12,62 @@ from app.models import User
 from app.utils import validation as v
 from app.utils.serialization import user_self
 
+def session_key(user):
+    """Changes whenever the password hash changes, so a new password revokes every JWT issued before it,
+    on every device, without a new column or a token denylist."""
+    secret = current_app.config['JWT_SECRET_KEY'].encode()
+    material = f'{user.user_id}:{user.password_hash or ""}'.encode()
+    return hmac.new(secret, material, hashlib.sha256).hexdigest()[:32]
+
+# Walk-in customers booked at the counter: a users row (bookings need one) that can never sign in.
+# The reserved .invalid domain is skipped by the email worker and is never a Google/registered address.
+WALK_IN_DOMAIN = 'walkin.invalid'
+
+def is_walk_in(user):
+    return bool(user and user.email and user.email.endswith('@' + WALK_IN_DOMAIN) and not user.password_hash and not user.google_id)
+
+def normalize_phone(value, key='phone'):
+    phone = v.text(value, key, 20).replace(' ', '').replace('.', '').replace('-', '')
+    if not re.fullmatch(r'\+?\d{9,15}', phone):
+        invalid(key, 'Số điện thoại gồm 9-15 chữ số.')
+    return phone
+
+def walk_in_customer(ctx, full_name, phone):
+    """Reuse the walk-in profile with this phone, or create one. A phone owned by a real account is
+    refused, so the Admin picks that account instead of creating a duplicate person."""
+    from secrets import token_hex
+    name, phone = v.text(full_name, 'guest.full_name', 100, 2), normalize_phone(phone, 'guest.phone')
+    owner = ctx.session.scalar(select(User).where(User.phone == phone))
+    if owner is not None and not is_walk_in(owner):
+        raise DomainError('PHONE_BELONGS_TO_ACCOUNT', 'Số điện thoại đã có tài khoản.', 409,
+                          {'guest.phone': f'Số này thuộc tài khoản {owner.full_name} ({owner.email}). Chọn "Khách có tài khoản" và tìm theo số điện thoại.'})
+    if owner is not None:
+        if owner.status != 'ACTIVE':
+            raise DomainError('ACCOUNT_DISABLED', 'Khách này đang bị khóa.', 403)
+        owner.full_name = name  # Latest name given at the counter wins.
+        return owner
+    guest = User(full_name=name, phone=phone, email=f'walkin-{token_hex(8)}@{WALK_IN_DOMAIN}', password_hash=None,
+                 role='PLAYER', status='ACTIVE')
+    ctx.session.add(guest)
+    ctx.session.flush()
+    return guest
+
+def _claim_phone(ctx, phone, user_id=None):
+    """A phone held only by a walk-in profile moves to the person registering it; a real owner still blocks."""
+    owner = ctx.session.scalar(select(User).where(User.phone == phone, *( [User.user_id != user_id] if user_id else [])))
+    if owner is None:
+        return
+    if not is_walk_in(owner):
+        raise DomainError('PHONE_EXISTS', 'Số điện thoại đã được sử dụng.', 409)
+    owner.phone = None  # Its bookings keep the phone in their note.
+    ctx.session.flush()
+
 def require_active_actor(ctx, actor):
     user = ctx.session.get(User, actor.user_id, populate_existing=True)
     if not user:
         raise DomainError('UNAUTHORIZED', 'Phiên đăng nhập không hợp lệ.', 401)
+    if actor.session_key is not None and not hmac.compare_digest(actor.session_key, session_key(user)):
+        raise DomainError('SESSION_REVOKED', 'Mật khẩu đã thay đổi. Vui lòng đăng nhập lại.', 401)
     if user.status != 'ACTIVE':
         raise DomainError('ACCOUNT_DISABLED', 'Tài khoản không hoạt động.', 403)
     if user.role != actor.role:
@@ -40,8 +95,8 @@ def register(ctx, full_name, email, password, phone=None, skill_level=None):
     skill = v.enum('AMATEUR' if skill_level is None else skill_level, 'skill_level', SKILLS)
     if ctx.session.scalar(select(User.user_id).where(User.email == address)):
         raise DomainError('EMAIL_EXISTS', 'Email đã được đăng ký.', 409)
-    if phone and ctx.session.scalar(select(User.user_id).where(User.phone == phone)):
-        raise DomainError('PHONE_EXISTS', 'Số điện thoại đã được sử dụng.', 409)
+    if phone:
+        _claim_phone(ctx, phone)
     user = User(full_name=name, email=address, phone=phone, skill_level=skill,
                 password_hash=bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(), role='PLAYER', status='ACTIVE')
     ctx.session.add(user)
@@ -68,7 +123,7 @@ def login(ctx, email, password):
 
 def issue_session(ctx, user):
     now = ctx.now()
-    token = jwt.encode({'sub': str(user.user_id), 'role': user.role, 'iat': now,
+    token = jwt.encode({'sub': str(user.user_id), 'role': user.role, 'skey': session_key(user), 'iat': now,
                         'exp': now + timedelta(seconds=3600), 'iss': current_app.config['JWT_ISSUER'],
                         'aud': current_app.config['JWT_AUDIENCE']}, current_app.config['JWT_SECRET_KEY'], algorithm='HS256')
     return {'access_token': token, 'expires_in': 3600, 'user': user_self(user)}
@@ -104,8 +159,8 @@ def update_profile(ctx, actor, data):
         user.full_name = v.text(data['full_name'], 'full_name', 100, 2)
     if 'phone' in data:
         phone = v.text(data['phone'], 'phone', 20, nullable=True)
-        if phone and ctx.session.scalar(select(User.user_id).where(User.phone == phone, User.user_id != user.user_id)):
-            raise DomainError('PHONE_EXISTS', 'Số điện thoại đã được sử dụng.')
+        if phone:
+            _claim_phone(ctx, phone, user.user_id)
         user.phone = phone
     if 'skill_level' in data:
         user.skill_level = v.enum(data['skill_level'], 'skill_level', SKILLS)

@@ -35,7 +35,8 @@ def _locked_active_pitch(ctx, pitch_id):
     return rows[0]
 
 def _insert_hold(ctx, *, pitch, user_id, start, end, payment_rule, payer_ids, booking_type='ONLINE', note=None):
-    total = policy.money(pitch.price_per_slot)
+    from app.services.pricing import slot_price
+    total, _ = slot_price(ctx, pitch, start)  # Peak or normal price, fixed onto the booking now.
     deposit = policy.deposit_total(total)
     amounts = policy.split_deposit(deposit) if len(payer_ids) == 2 else (deposit,)
     plan = [{'user_id': uid, 'amount': format(amount, '.2f')} for uid, amount in zip(payer_ids, amounts)]
@@ -52,9 +53,10 @@ def _hold(booking):
     return BookingHold(booking.booking_id, booking.status, booking.hold_expires_at, policy.money(booking.total_amount),
                        policy.money(booking.deposit_amount), booking.payer_plan)
 
-def create_direct_hold(ctx, *, pitch_id, user_id, start_time, end_time, booking_type='ONLINE', note=None):
+def create_direct_hold(ctx, *, pitch_id, user_id, start_time, end_time, booking_type='ONLINE', note=None,
+                       max_advance_days=policy.MAX_ADVANCE_DAYS):
     pitch = _locked_active_pitch(ctx, pitch_id)
-    policy.validate_slot(ctx.now(), start_time, end_time)
+    policy.validate_slot(ctx.now(), start_time, end_time, max_advance_days)
     if find_conflict(ctx, pitch_id, start_time, end_time):
         raise SlotUnavailable()
     return _insert_hold(ctx, pitch=pitch, user_id=user_id, start=start_time, end=end_time,
@@ -139,6 +141,7 @@ def booking_data(ctx, booking, admin=False, payments=None):
     result['is_demo'] = any(is_demo_payment(p) for p in (payments if payments is not None else payments_of(ctx, booking.booking_id)))
     if admin:
         result['note'] = booking.note
+        result.update(series_id=booking.series_id, arrival_status=booking.arrival_status, arrived_at=booking.arrived_at)
     return result
 
 def read_for_actor(ctx, *, booking_id, actor):
@@ -151,3 +154,12 @@ def read_for_actor(ctx, *, booking_id, actor):
         # Team members see progress only, not the amounts other people paid.
         result['payer_progress'] = [{'user_id': p['user_id'], 'status': p['status']} for p in result['payer_progress']]
     return result
+
+def payments_by_booking(ctx, bookings):
+    """One query for a whole page of bookings, grouped by booking_id."""
+    ids = [b.booking_id for b in bookings]
+    grouped = {booking_id: [] for booking_id in ids}
+    if ids:
+        for payment in ctx.session.scalars(select(Payment).where(Payment.booking_id.in_(ids)).order_by(Payment.payment_id)):
+            grouped[payment.booking_id].append(payment)
+    return grouped

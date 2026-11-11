@@ -79,6 +79,8 @@ export interface Notification {
 export interface Pitch {
   pitch_id: number; complex_id: number; pitch_name: string; pitch_type: PitchType;
   price_per_slot: Money; status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
+  /** Price inside the complex's peak hours; null = same price all day. */
+  peak_price_per_slot?: Money | null;
 }
 export interface FieldComplex {
   complex_id: number; name: string; phone: string; address: string;
@@ -87,11 +89,13 @@ export interface FieldComplex {
 }
 export interface Availability {
   pitch_id: number; date: string; slot_duration_minutes: number;
-  slots: { start_time: ISODateTime; end_time: ISODateTime; status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'MAINTENANCE' }[];
+  slots: { start_time: ISODateTime; end_time: ISODateTime; status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'MAINTENANCE'; price?: Money; is_peak?: boolean }[];
 }
 export type BookingStatus = 'PENDING_HOLD' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED' | 'MAINTENANCE';
 export interface PayerProgress {
   user_id: number; required_amount: Money; paid_amount: Money; status: 'UNPAID' | 'PARTIAL' | 'PAID';
+  /** Admin views only. */
+  full_name?: string | null; phone?: string | null;
 }
 export interface Booking {
   is_demo?: boolean;
@@ -116,10 +120,18 @@ export interface Payment {
 export interface BankDepositPayer extends PayerProgress {
   due_amount: Money; transfer_reference: string; qr_payload: string | null;
   unavailable_reason: string | null; can_confirm: boolean; full_name?: string;
+  /** SePay: this payer may ask for a 60-second QR code that confirms itself when the bank reports the money. */
+  can_open_qr?: boolean; qr_session?: QrPaymentSession | null;
+}
+/** One short-lived QR code; amount and transfer content are pre-filled and owned by the server. */
+export interface QrPaymentSession {
+  payment_id: number; booking_id: number; status: PaymentStatus; amount: Money; transfer_reference: string;
+  qr_payload: string; qr_expires_at: ISODateTime; hold_expires_at: ISODateTime;
+  bank_name: string; account_no: string; account_name: string;
 }
 export interface DemoDepositResult { demo: true; payment: Payment; booking: Booking }
 export interface BankDepositInstructions {
-  demo_payment_enabled?: boolean;
+  demo_payment_enabled?: boolean; qr_auto_confirm?: boolean; qr_ttl_seconds?: number;
   booking_id: number; status: BookingStatus; expires_at: ISODateTime | null; payment_method: 'BANK_TRANSFER';
   bank_bin: string | null; bank_name: string; account_no: string | null; account_name: string | null;
   payers: BankDepositPayer[];
@@ -153,8 +165,43 @@ export interface ConfirmBookingPaid {
   expected_outstanding: Money; idempotency_key: string; receipts: ManualReceipt[];
 }
 export type BookingPhase = 'UPCOMING' | 'IN_PROGRESS' | 'ENDED_UNPAID' | 'PAID';
+export type ArrivalStatus = 'ARRIVED' | 'NO_SHOW';
 export interface AdminBooking extends Booking {
-  pitch_name?: string;
+  pitch_name?: string; customer?: AdminContact;
+  /** Shared by a regular customer's weekly sessions. */
+  series_id?: string | null; arrival_status?: ArrivalStatus | null; arrived_at?: ISODateTime | null;
   teams?: { source: { team_name?: string }; opponent: { team_name?: string } } | null;
   balance?: BookingBalance | null;
+}
+
+/** Admin: a refund still owed. manual = CASH/BANK_TRANSFER (incl. SePay); the Admin pays it back by hand. */
+export interface PendingRefund extends Payment {
+  manual: boolean; note?: string | null;
+  payer: { user_id: number; full_name: string | null; email: string | null; phone: string | null };
+  original: { payment_id: number; transaction_code: string | null; payment_type: PaymentType; paid_at: ISODateTime | null; note: string | null } | null;
+}
+
+/** Admin: contact details of a customer. */
+export interface AdminContact { user_id: number; full_name: string | null; phone: string | null; email: string | null; walk_in?: boolean; no_show_count?: number }
+export interface AdminUser { user_id: number; full_name: string; email: string | null; phone: string | null; role: 'PLAYER' | 'ADMIN'; status: string; walk_in?: boolean; no_show_count?: number }
+/** Counter customer without an account: only a name and a phone number. */
+export interface WalkInGuest { full_name: string; phone: string }
+export interface AdminBookingQuery {
+  phase?: BookingPhase | 'DUE'; status?: BookingStatus; from?: string; to?: string; page?: number; page_size?: number; series_id?: string;
+}
+export interface PeakHours { peak_start_time: string | null; peak_end_time: string | null; weekend_is_peak: boolean }
+export interface SeriesResult {
+  series_id: string; requested_weeks: number;
+  created: { booking_id: number; start_time: ISODateTime; total_amount: Money }[];
+  skipped: { start_time: ISODateTime; reason: string }[];
+}
+/** VENUE: the pitch could not be used, refund everything. CUSTOMER: the customer cancelled, the deposit is kept. */
+export type CancelCause = 'VENUE' | 'CUSTOMER';
+export interface AdminDashboard {
+  today: string;
+  revenue_today: { gross_receipts: Money; refunds: Money; net_receipts: Money };
+  pending_holds: { count: number; items: AdminBooking[] };
+  pending_refunds: { count: number; amount: Money };
+  ended_unpaid: { count: number; outstanding_amount: Money; items: AdminBooking[] };
+  today_games: { count: number; items: AdminBooking[] };
 }

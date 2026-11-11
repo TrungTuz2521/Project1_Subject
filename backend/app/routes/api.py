@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from sqlalchemy import select, func, or_
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.middleware import authenticated
+from app.middleware import authenticated, optional_actor
 from app.contracts.errors import DomainError, invalid
 from app.models import User, Team, TeamMember, MatchPost, MatchParticipant, MatchProposal, ProposalConfirmation, Match, Notification
 from app.services import auth_service as auth, team_service as teams, post_service as posts, matchmaking_service as mm, match_service
@@ -28,11 +28,23 @@ def page_args():
     except ValueError:
         invalid('page', 'page >= 1, page_size từ 1 đến 100.')
 
-def paginated(ctx, query, mapper):
+def paginated(ctx, query, mapper, preload=None):
+    """preload(rows) -> mapper lets a page fetch related rows in one query instead of one per item."""
     page, size = page_args()
     total = ctx.session.scalar(select(func.count()).select_from(query.subquery()))
     rows = ctx.session.scalars(query.offset((page-1)*size).limit(size)).all()
+    if preload is not None:
+        mapper = preload(rows)
     return response([mapper(row) for row in rows], page=page, page_size=size, total=total)
+
+POST_STATUSES = ('PENDING_DEPOSIT', 'OPEN', 'LOCKED', 'MATCHED', 'EXPIRED', 'CANCELLED')
+PROPOSAL_STATUSES = ('PENDING_CONFIRMATION', 'ACCEPTED', 'REJECTED', 'EXPIRED')
+MATCH_STATUSES = ('SUGGESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED')
+
+def status_arg(values):
+    """A mistyped filter is a 422, not a silently empty list."""
+    value = request.args.get('status')
+    return v.enum(value, 'status', values) if value else None
 
 def found(ctx, model, pk):
     result = ctx.session.get(model, pk)
@@ -56,6 +68,16 @@ def login():
     data = body(('email', 'password'), ('email', 'password'))
     with UnitOfWork() as ctx:
         result = auth.login(ctx, **data)
+    return response(result)
+
+@api.post('/auth/refresh')
+@authenticated
+def refresh_session():
+    """Keeps an active user signed in. Needs a still-valid token whose password fingerprint matches, so a
+    password change or a locked account ends the session here too."""
+    with UnitOfWork() as ctx:
+        user = auth.require_active_actor(ctx, g.actor)
+        result = auth.issue_session(ctx, user)
     return response(result)
 
 @api.post('/auth/google/challenge')
@@ -163,17 +185,31 @@ def my_posts():
     with UnitOfWork() as ctx:
         auth.require_active_actor(ctx, g.actor)
         query = select(MatchPost).where(MatchPost.creator_id == g.actor.user_id)
-        if request.args.get('status'):
-            query = query.where(MatchPost.status == request.args['status'])
+        status = status_arg(POST_STATUSES)
+        if status:
+            query = query.where(MatchPost.status == status)
         return paginated(ctx, query.order_by(MatchPost.post_id.desc()), lambda p: post_data(p, True))
 
 @api.route('/match-posts/<int:post_id>', methods=['GET', 'PATCH'])
 def post_item(post_id):
     if request.method == 'PATCH':
         return edit_post(post_id)
+    actor = optional_actor()
     with UnitOfWork() as ctx:
         post = found(ctx, MatchPost, post_id)
-        return response(post_data(post, True))
+        if actor is not None:
+            try:
+                auth.require_active_actor(ctx, actor)
+            except DomainError:
+                actor = None
+        insider = actor is not None and (actor.role == 'ADMIN' or actor.user_id == post.creator_id
+                                         or actor.user_id in posts.party_users(ctx, post))
+        if insider:
+            return response(post_data(post, True))
+        # Outsiders see only posts that are still listed, and never who is attending.
+        if post.status != 'OPEN' or post.expiry_time <= ctx.now():
+            raise DomainError('NOT_FOUND', 'Không tìm thấy tài nguyên.', 404)
+        return response(dict(post_data(post), description=post.description))
 
 @authenticated
 def edit_post(post_id):
@@ -330,8 +366,9 @@ def proposal_collection():
     with UnitOfWork() as ctx:
         auth.require_active_actor(ctx, g.actor)
         query = select(MatchProposal).join(ProposalConfirmation).where(ProposalConfirmation.user_id == g.actor.user_id)
-        if request.args.get('status'):
-            query = query.where(MatchProposal.status == request.args['status'])
+        status = status_arg(PROPOSAL_STATUSES)
+        if status:
+            query = query.where(MatchProposal.status == status)
         return paginated(ctx, query.order_by(MatchProposal.proposal_id.desc()), lambda p: mm.proposal_data(ctx, p))
 
 @api.get('/match-proposals/<int:proposal_id>')
@@ -365,8 +402,9 @@ def matches():
         post_ids = select(MatchPost.post_id).where(or_(MatchPost.creator_id == g.actor.user_id,
             MatchPost.team_id.in_(select(TeamMember.team_id).where(TeamMember.user_id == g.actor.user_id, TeamMember.status == 'ACTIVE'))))
         query = select(Match).where(or_(Match.post_id.in_(post_ids), Match.opponent_post_id.in_(post_ids)))
-        if request.args.get('status'):
-            query = query.where(Match.status == request.args['status'])
+        status = status_arg(MATCH_STATUSES)
+        if status:
+            query = query.where(Match.status == status)
         return paginated(ctx, query.order_by(Match.match_id.desc()), match_service.match_data)
 
 @api.get('/matches/<int:match_id>')
@@ -380,8 +418,8 @@ def match_item(match_id):
             raise DomainError('NOT_FOUND', 'Không tìm thấy trận.', 404)
         match_posts = [ctx.session.get(MatchPost, pid) for pid in (match.post_id, match.opponent_post_id) if pid]
         if request.path.endswith('/contacts'):
-            if match.status != 'CONFIRMED' or g.actor.user_id not in {p.creator_id for p in match_posts}:
-                raise DomainError('FORBIDDEN', 'Chỉ đại diện được xem liên hệ khi trận CONFIRMED.', 403)
+            if match.status not in ('CONFIRMED', 'COMPLETED') or g.actor.user_id not in {p.creator_id for p in match_posts}:
+                raise DomainError('FORBIDDEN', 'Chỉ đại diện được xem liên hệ khi trận đã xác nhận.', 403)
             return response({'contacts': [columns(ctx.session.get(User, p.creator_id), 'user_id full_name phone email') for p in match_posts]})
         result = match_service.match_data(match)
         result['end_time'] = match_posts[0].end_time

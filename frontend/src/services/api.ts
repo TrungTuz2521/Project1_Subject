@@ -12,7 +12,8 @@ export type Query = Record<string, string | number | boolean | null | undefined>
 export type Transport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; query?: Query;
-  auth?: boolean; signal?: AbortSignal; timeoutMs?: number;
+  /** true: token required; false: never sent; 'optional': sent when signed in (public pages that show owners more). */
+  auth?: boolean | 'optional'; signal?: AbortSignal; timeoutMs?: number;
 }
 export function createApiClient(config: { baseUrl: string; transport?: Transport; store?: SessionStore }) {
   const store = config.store ?? session;
@@ -21,6 +22,29 @@ export function createApiClient(config: { baseUrl: string; transport?: Transport
   if (!/^https?:\/\//.test(base) && !/^\/(?!\/)/.test(base)) throw new Error('API base URL phải là HTTP(S) hoặc đường dẫn cùng origin.');
 
   return {
+    /** Authenticated file download (e.g. Excel export). Returns the body and the server's file name. */
+    async download(path: string, query: Query = {}): Promise<{ blob: Blob; filename: string }> {
+      if (!/^\/(?!\/)/.test(path) || path.includes('..') || /[?#\\]/.test(path)) {
+        throw new ApiError(0, 'INVALID_PATH', 'Endpoint phải là đường dẫn tương đối.');
+      }
+      const token = store.token();
+      if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'Phiên đã hết hạn hoặc bạn chưa đăng nhập. Vui lòng đăng nhập lại.');
+      const params = new URLSearchParams();
+      Object.entries(query).forEach(([key, value]) => { if (value !== null && value !== undefined) params.set(key, String(value)); });
+      const qs = params.toString();
+      const response = await transport(`${base}${path}${qs ? `?${qs}` : ''}`, {
+        method: 'GET', headers: { Authorization: `Bearer ${token}` }, credentials: 'omit', redirect: 'error',
+      });
+      if (!response.ok) {
+        let message = `Tải file thất bại (${response.status}).`, code = 'HTTP_ERROR';
+        try { const body = await response.json() as Partial<ApiErrorBody>; message = body.error?.message ?? message; code = body.error?.code ?? code; } catch { /* not JSON */ }
+        if (response.status === 401 && store.getSnapshot()?.access_token === token) store.clear();
+        throw new ApiError(response.status, code, message);
+      }
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+      return { blob: await response.blob(), filename: match ? decodeURIComponent(match[1]) : 'download' };
+    },
     async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
       // Keep tokens on the configured API origin; never accept absolute endpoint URLs.
       if (!/^\/(?!\/)/.test(path) || path.includes('..') || /[?#\\]/.test(path)) {
@@ -32,8 +56,9 @@ export function createApiClient(config: { baseUrl: string; transport?: Transport
       });
       const query = params.toString();
       const url = `${base}${path}${query ? `?${query}` : ''}`;
-      const auth = options.auth ?? true;
-      const token = auth ? store.token() : null;
+      const mode = options.auth ?? true;
+      const auth = mode === true;
+      const token = mode === false ? null : store.token();
       if (auth && !token) throw new ApiError(401, 'UNAUTHORIZED', 'Phiên đã hết hạn hoặc bạn chưa đăng nhập. Vui lòng đăng nhập lại.');
       const headers = new Headers({ Accept: 'application/json' });
       if (token) headers.set('Authorization', `Bearer ${token}`);

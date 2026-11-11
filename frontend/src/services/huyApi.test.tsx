@@ -55,7 +55,7 @@ describe('Huy frontend and Tu booking contract', () => {
     expect(html).not.toContain('ĐANG CHỜ TÍCH HỢP');
     signedIn('ADMIN'); window.location.hash = '#/admin/balance';
     const admin = renderToStaticMarkup(<App />);
-    expect(admin).toContain('Thu tiền sau trận');
+    expect(admin).toContain('Cần thu');
     expect(admin).toContain('href="#/admin/revenue"');
     expect(admin).not.toContain('Chọn kết quả');
   });

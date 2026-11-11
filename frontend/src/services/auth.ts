@@ -10,13 +10,38 @@ export async function register(input: RegisterRequest): Promise<UserSelf> {
   return result.data;
 }
 
-/** Login stores the short-lived access token in memory only. */
-export async function login(input: LoginRequest): Promise<UserSelf> {
+/** Login keeps the session in this tab (survives F5); remember=true also keeps it after the browser closes. */
+export async function login(input: LoginRequest, remember = false): Promise<UserSelf> {
   const result = await api.request<ApiResponse<LoginData>>('/auth/login', {
     method: 'POST', body: input, auth: false,
   });
-  session.set(result.data);
+  session.set(result.data, remember);
   return result.data.user;
+}
+
+/** Exchanges a still-valid token for a fresh 60-minute one. */
+export async function refreshSession(): Promise<void> {
+  const result = await api.request<ApiResponse<LoginData>>('/auth/refresh', { method: 'POST', body: {} });
+  session.set(result.data, session.remembered());
+}
+
+/**
+ * While the app is open, renew the token when fewer than 15 minutes remain, so counter staff are not signed
+ * out mid-shift. A closed laptop lets the token expire normally. Returns a stop function.
+ */
+export function keepSessionAlive(intervalMs = 60_000, marginMs = 15 * 60_000): () => void {
+  let busy = false;
+  const tick = () => {
+    const current = session.getSnapshot();
+    if (!current || busy || current.expires_at - Date.now() > marginMs) return;
+    busy = true;
+    refreshSession().catch(() => { /* A revoked or expired session is cleared by the API client. */ }).finally(() => { busy = false; });
+  };
+  const timer = setInterval(tick, intervalMs);
+  const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+  document.addEventListener('visibilitychange', onVisible);
+  tick();
+  return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
 }
 
 export async function loginWithGoogle(credential: string, challenge: string, password?: string): Promise<UserSelf> {
