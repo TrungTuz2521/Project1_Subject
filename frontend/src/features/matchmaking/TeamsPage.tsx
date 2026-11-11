@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { session } from '../../stores/session';
-import { logout } from '../../services/auth';
 import { recruitmentApprovalNotice } from './recruitmentApprovalNotice';
 import { teamsService } from '../../services/teams';
 import { matchPostsService } from '../../services/matchPosts';
@@ -73,10 +72,9 @@ export function TeamsPage(){
   try{await teamsService.removeMember(detail.team_id,userId,reason.trim());setNotice('Đã gửi yêu cầu xóa thành viên.');await openTeam(detail.team_id,true);}
   catch(e){setError(errorMessage(e));}finally{setBusy(false);}
  }
- return <div className="account-shell">
-  <aside className="account-sidebar"><a href="#/dashboard" className="account-brand"><span className="account-brand-mark">F</span><span>FOOTBALL<small>FIELD MANAGEMENT</small></span></a><div className="account-side-label">KHÔNG GIAN CỦA BẠN</div><nav className="account-nav" aria-label="Điều hướng chính"><a href="#/dashboard" className="account-nav-item"><span className="account-nav-icon">⌂</span><span>Tổng quan</span></a><a href="#/teams" className="account-nav-item active"><span className="account-nav-icon">♧</span><span>Đội bóng của tôi</span></a><a href="#/bookings" className="account-nav-item"><span className="account-nav-icon">▦</span><span>Đặt sân</span></a><a href="#/matchmaking" className="account-nav-item"><span className="account-nav-icon">⇄</span><span>Ghép đội & tìm trận</span></a><a href="#/schedule" className="account-nav-item"><span className="account-nav-icon">▦</span><span>Lịch thi đấu</span></a><a href="#/notifications" className="account-nav-item"><span className="account-nav-icon">♧</span><span>Thông báo</span></a><a href="#/profile" className="account-nav-item"><span className="account-nav-icon">◎</span><span>Hồ sơ cá nhân</span></a></nav><div className="account-sidebar-bottom"><div className="account-mini-pitch"><span/></div><p><i/> Cùng đội. Cùng đam mê.</p><small>Chọn đội, tìm kèo, ra sân.</small></div></aside>
-  <div className="account-workspace"><header className="account-topbar"><div className="account-breadcrumb">Không gian cá nhân <span>/</span> <strong>Đội bóng</strong></div><div className="account-user"><span className="account-avatar">{current?.user.full_name.split(/\\s+/).slice(-2).map(x=>x[0]).join('').toUpperCase()}</span><span className="account-user-name">{current?.user.full_name}</span><a href="#/dashboard">Quay lại</a><button className="account-secondary-button" onClick={()=>{window.dispatchEvent(new Event('app:manual-logout'));logout();window.location.hash='/login';}}>Đăng xuất</button></div></header>
-   <main className="account-main"><div className="account-eyebrow">QUẢN LÝ ĐỘI BÓNG</div><div className="account-page-heading"><div><h1>Đội bóng của tôi<span>.</span></h1><p>Tạo đội, quản lý thành viên và xử lý yêu cầu tuyển người.</p></div>{canCreateTeam&&<button className="account-primary-button" onClick={()=>{setDetail(null);setName('');setCreating(v=>!v);setError('');}}>＋ Tạo đội</button>}</div>
+ // The shared AppShell (App.tsx) provides navigation, the top bar and the mobile tab bar.
+ return <>
+   <div className="account-eyebrow">QUẢN LÝ ĐỘI BÓNG</div><div className="account-page-heading"><div><h1>Đội bóng của tôi<span>.</span></h1><p>Tạo đội, quản lý thành viên và xử lý yêu cầu tuyển người.</p></div>{canCreateTeam&&<button className="account-primary-button" onClick={()=>{setDetail(null);setName('');setCreating(v=>!v);setError('');}}>＋ Tạo đội</button>}</div>
     {error&&<div className="notice-error" role="alert">{error}</div>}{notice&&<div className="notice-success" role="status">{notice}</div>}
     {creating&&canCreateTeam&&<section className="profile-form-card"><div className="profile-form-heading"><div><h2>Tạo đội bóng mới</h2><p>Bạn sẽ trở thành đội trưởng đội vừa tạo.</p></div></div><form className="profile-form" onSubmit={submitTeam}><div className="form-field"><label htmlFor="team-name">Tên đội bóng</label><input id="team-name" value={name} maxLength={100} onChange={e=>setName(e.target.value)} placeholder="Ví dụ: FC Chiều Thứ Bảy" required/></div><div className="profile-actions"><button className="account-secondary-button" type="button" onClick={()=>setCreating(false)}>Hủy</button><button className="account-primary-button" disabled={busy}>{busy?'Đang lưu…':'Tạo đội'}</button></div></form></section>}
     <div className="team-workspace">
@@ -94,7 +92,5 @@ export function TeamsPage(){
       </>}
      </section>
     </div>
-   </main>
-  </div>
- </div>;
+ </>;
 }

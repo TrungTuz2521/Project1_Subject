@@ -103,6 +103,8 @@ export interface Booking {
   total_amount: Money; deposit_amount: Money; booking_type: 'ONLINE' | 'MANUAL_ADMIN' | 'MAINTENANCE_LOCK';
   status: BookingStatus; hold_expires_at: ISODateTime | null; payment_rule: BookingPaymentRule | null;
   payer_progress: PayerProgress[]; created_at: ISODateTime;
+  /** Paid so far (net of refunds), still due at the pitch, and the pitch name. */
+  paid_amount?: Money; outstanding_amount?: Money; pitch_name?: string | null;
 }
 export interface BookingCreate { pitch_id: number; start_time: ISODateTime; end_time: ISODateTime }
 export interface MatchDetail extends Match {
@@ -167,7 +169,7 @@ export interface ConfirmBookingPaid {
 export type BookingPhase = 'UPCOMING' | 'IN_PROGRESS' | 'ENDED_UNPAID' | 'PAID';
 export type ArrivalStatus = 'ARRIVED' | 'NO_SHOW';
 export interface AdminBooking extends Booking {
-  pitch_name?: string; customer?: AdminContact;
+  customer?: AdminContact;
   /** Shared by a regular customer's weekly sessions. */
   series_id?: string | null; arrival_status?: ArrivalStatus | null; arrived_at?: ISODateTime | null;
   teams?: { source: { team_name?: string }; opponent: { team_name?: string } } | null;

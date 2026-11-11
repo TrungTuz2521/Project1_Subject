@@ -146,8 +146,8 @@ def my_bookings():
         if status:
             query = query.where(Booking.status == status)
         def preload(rows):
-            payments = booking_service.payments_by_booking(ctx, rows)
-            return lambda b: booking_service.booking_data(ctx, b, payments=payments[b.booking_id])
+            payments, names = booking_service.payments_by_booking(ctx, rows), booking_service.pitch_names(ctx, rows)
+            return lambda b: booking_service.booking_data(ctx, b, payments=payments[b.booking_id], pitch_names=names)
         return paginated(ctx, query.order_by(Booking.booking_id.desc()), None, preload)
 
 @booking_api.get('/bookings/<int:booking_id>')
@@ -339,7 +339,8 @@ def _admin_booking_rows(ctx, rows):
                     email=None if walk_in or not user else user.email, walk_in=walk_in, no_show_count=no_shows.get(uid, 0))
     def row(booking):
         mine = payments[booking.booking_id]
-        result = booking_service.booking_data(ctx, booking, admin=True, payments=mine)
+        result = booking_service.booking_data(ctx, booking, admin=True, payments=mine,
+                                              pitch_names={pid: p.pitch_name for pid, p in pitches.items()})
         result['pitch_name'] = pitches[booking.pitch_id].pitch_name
         result['customer'] = contact(booking.user_id)
         for payer in result['payer_progress']:

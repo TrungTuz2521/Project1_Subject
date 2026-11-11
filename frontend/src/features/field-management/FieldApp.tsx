@@ -18,7 +18,7 @@ export function FieldApp({ tab, selectedBookingId = null }: { tab: Tab; selected
   const [balanceId, setBalanceId] = useState<number | null>(null);
   const openBalance = (id: number) => { setBalanceId(id); window.location.hash = '/admin/balance'; };
   return <div className="huy-module"><DemoNote />
-    {tab === 'pitches' && <PitchesPage onBooked={(id) => { setBookingId(id); window.location.hash = bookingHash(id); }} />}
+    {tab === 'pitches' && <PitchesPage onBooked={(id) => { setBookingId(id); window.location.hash = `${bookingHash(id)}&pay=1`; }} />}
     {tab === 'bookings' && <BookingsPage selectedId={selectedBookingId ?? bookingId} />}
     {tab === 'adminDashboard' && <AdminDashboardPage settlement={openBalance} />}
     {tab === 'adminBookings' && <AdminBookingsPage settlement={openBalance} />}

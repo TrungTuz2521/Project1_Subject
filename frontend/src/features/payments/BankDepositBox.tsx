@@ -5,7 +5,7 @@ import { DemoDepositConfirmation, demoDepositEnabled } from './DemoDepositConfir
 import { QrPaymentPanel } from './QrPaymentPanel';
 import { Banner } from '../field-management/ui';
 
-export function BankDepositBox({ instructions, validHold, demo = demoDepositEnabled, onConfirmed, onPaid }: { instructions: BankDepositInstructions; validHold: boolean; demo?: boolean; onConfirmed?: (result: DemoDepositResult) => void; onPaid?: () => void }) {
+export function BankDepositBox({ instructions, validHold, demo = demoDepositEnabled, onConfirmed, onPaid, autoStart = false }: { instructions: BankDepositInstructions; validHold: boolean; demo?: boolean; onConfirmed?: (result: DemoDepositResult) => void; onPaid?: () => void; autoStart?: boolean }) {
   const auto = instructions.qr_auto_confirm === true;
   return <section className="huy-payment-box"><h3>Chuyển khoản tiền cọc{demo ? " — Demo" : ""}</h3>
     {demo && <Banner>Chế độ demo: chỉ minh họa thao tác, không chuyển tiền thật.</Banner>}
@@ -17,7 +17,7 @@ export function BankDepositBox({ instructions, validHold, demo = demoDepositEnab
     </div>}
     {instructions.payers.map(payer => auto ?
       <QrPaymentPanel key={payer.user_id} bookingId={instructions.booking_id} payer={payer} validHold={validHold}
-        ttlSeconds={instructions.qr_ttl_seconds} onPaid={onPaid} /> :
+        ttlSeconds={instructions.qr_ttl_seconds} onPaid={onPaid} autoStart={autoStart} /> :
       <div key={payer.user_id}>
         <p>Phần cọc còn phải trả của bạn: <strong>{moneyVN(payer.due_amount)}</strong></p>
         <p>Nội dung chuyển khoản: <strong>{payer.transfer_reference}</strong></p>

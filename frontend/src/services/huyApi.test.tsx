@@ -47,10 +47,16 @@ describe('Huy frontend and Tu booking contract', () => {
     expect(request).not.toHaveBeenCalled();
   });
   it('requires login on direct field URLs and exposes real field pages in the shared shell', () => {
+    // Visitors can browse pitches and free slots; booking asks them to sign in.
+    window.location.hash = '#/bookings';
+    const visitor = renderToStaticMarkup(<App />);
+    expect(visitor).toContain('Đăng nhập để đặt');
+    window.location.hash = '#/my-bookings';
     expect(renderToStaticMarkup(<App />)).toContain('Đăng nhập');
-    signedIn('PLAYER');
+    signedIn('PLAYER'); window.location.hash = '#/bookings';
     const html = renderToStaticMarkup(<App />);
-    expect(html).toContain('Tìm sân &amp; lịch trống');
+    expect(html).toContain('Giữ sân và đặt cọc');
+    expect(html).toContain('player-tabbar');
     expect(html).toContain('href="#/my-bookings"');
     expect(html).not.toContain('ĐANG CHỜ TÍCH HỢP');
     signedIn('ADMIN'); window.location.hash = '#/admin/balance';

@@ -43,3 +43,16 @@
 .remember-me{display:flex!important;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;font-weight:500;margin:4px 0 2px;cursor:pointer}
 .remember-me input{width:auto!important;margin:0;accent-color:#21513e}
 .remember-me small{flex-basis:100%;font-weight:400;font-size:12px;color:#6b7a6f;margin-left:26px}
+
+/* Prices: normal and peak, per pitch and per slot */
+.huy-price-tag{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.huy-price-tag small{font-size:12px;color:#b45309;font-weight:600;margin:0}
+.huy-pitch-card:disabled{opacity:.55;cursor:not-allowed}
+.huy-slot .huy-slot-price{font-size:12px;color:#3e7952;font-weight:600}
+.huy-slot.chosen .huy-slot-price{color:#e8f5ec}
+.huy-slot.is-peak:not(.unavailable){border-color:#f5b971;box-shadow:inset 0 -3px 0 #fbd38d}
+.huy-peak-badge{display:inline-block;background:#fef3c7;color:#b45309;font-weight:700;font-size:12px;border-radius:999px;padding:1px 8px}
+.huy-money-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:8px 0 4px}
+.huy-money-summary>div{background:#f3f7f1;border:1px solid #dfe9da;border-radius:8px;padding:10px 12px}
+.huy-money-summary small{display:block;font-size:12px;color:#55645a}
+.huy-money-summary strong{font-size:16px;color:#21513e}
