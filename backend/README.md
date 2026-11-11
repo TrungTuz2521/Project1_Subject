@@ -88,6 +88,27 @@ Không tạo bảng/cột mới cho thu gộp; recorded_by_admin_id, paid_at, no
 Thu gộp dùng booking.user_id làm tài khoản quy chiếu, không đại diện cho người thực chuyển; không áp dụng cho cọc.
 Protocol/DTO chỉ mô tả điểm nối; code Đức không giả thành công các endpoint tài chính của Tú.
 
+## Migration 005 — vận hành tại quầy (bắt buộc trước khi chạy bản này)
+
+Chạy **một lần** file [`database/schema/005_operations.sql`](../database/schema/005_operations.sql) trên database đang dùng (TiDB của nhóm). File chỉ `ADD COLUMN IF NOT EXISTS`, không xóa hay sửa dữ liệu cũ; câu `SELECT` cuối phải trả về 7 dòng. Chưa chạy migration thì backend báo lỗi thiếu cột; `flask check-db` liệt kê cột còn thiếu.
+
+Các nghiệp vụ dùng cột mới:
+
+- **Giá cao điểm**: `pitches.peak_price_per_slot`; khung giờ ở `field_complexes.peak_start_time/peak_end_time/weekend_is_peak` (`PATCH /admin/field-complex`). Giá chốt vào booking lúc đặt.
+- **Khách cố định**: `POST /admin/bookings` nhận `repeat_weeks` (2–12), các buổi chung `bookings.series_id`; tuần đã có người đặt được bỏ qua và báo lại. Hủy cả chuỗi: `POST /admin/bookings/series/{series_id}/cancel`.
+- **Đón khách**: `POST /admin/bookings/{id}/arrival` với `ARRIVED` (từ 2 giờ trước giờ đá), `NO_SHOW` (sau giờ đá) hoặc `null`; lưu `bookings.arrival_status/arrived_at`. Số lần bùng hiện cạnh tên khách.
+- **Hủy tại quầy**: `POST /admin/bookings/{id}/cancel` nhận `cause`: `CUSTOMER` (khách hủy, giữ cọc, hoàn phần trả thêm) hoặc `VENUE` (sân có sự cố, hoàn đủ).
+- **Thu tiền khi khách đến**: xác nhận thu đủ không còn chờ hết giờ đá; bộ lọc `phase=DUE` là các booking hôm nay trở về trước còn thiếu tiền.
+- **Phiên đăng nhập**: `POST /auth/refresh` đổi token còn hạn lấy token mới; frontend giữ phiên khi F5 và khi chọn "Ghi nhớ đăng nhập".
+
+## Tạo tài khoản admin
+
+```powershell
+python -m flask --app app:create_app create-admin --email admin@sanbong.vn --name "Quản trị viên"
+```
+
+Lệnh hỏi mật khẩu (nhập ẩn, 2 lần). Email chưa có thì tạo tài khoản ADMIN mới; email đã có thì nâng quyền ADMIN và đặt lại mật khẩu (các phiên đăng nhập cũ của tài khoản đó bị đăng xuất). Lệnh ghi vào database đang cấu hình trong `.env`. Tài khoản ADMIN không dùng được các chức năng người chơi (lập đội, đặt sân online), nên dùng email riêng.
+
 ## Booking và thanh toán — phần Tú
 
 Điền `VNPAY_*` và `BANK_*` trong `.env` theo `.env.example`. Thiếu `VNPAY_*` thì tạo phiên cọc trả 503; thiếu `BANK_*` thì số dư trả `qr_unavailable_reason`. Không có chế độ giả thành công; `FakeGateway` chỉ nằm trong `tests/`.

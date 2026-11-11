@@ -87,6 +87,39 @@ def register_commands(app):
             return
         run_forever(interval, with_matchmaking, with_email, echo=click.echo)
 
+    @app.cli.command('create-admin')
+    @click.option('--email', required=True, help='Admin login email.')
+    @click.option('--name', default='Quan tri vien', show_default=True, help='Display name (new accounts only).')
+    @click.option('--password', prompt='Mat khau (8-72 ky tu)', hide_input=True, confirmation_prompt='Nhap lai mat khau',
+                  help='Omit to type it hidden; avoid passing it on the command line.')
+    def create_admin_command(email, name, password):
+        """Create an ADMIN account, or promote an existing account by email and set its password."""
+        import bcrypt
+        from app.contracts.errors import DomainError
+        from app.models import User
+        from app.utils import validation as v
+        try:
+            address = v.email(email)
+            full_name = v.text(name, 'full_name', 100, 2)
+        except DomainError as error:
+            raise click.ClickException(f'Du lieu khong hop le: {list(error.fields) or error.code}')
+        if not 8 <= len(password.encode('utf-8')) <= 72:
+            raise click.ClickException('Mat khau phai dai 8-72 byte UTF-8.')
+        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode()
+        with UnitOfWork() as ctx:
+            user = ctx.session.scalar(select(User).where(User.email == address))
+            if user is None:
+                user = User(full_name=full_name, email=address, password_hash=hashed, role='ADMIN', status='ACTIVE')
+                ctx.session.add(user)
+                ctx.session.flush()
+                action = 'Da tao'
+            else:
+                # Changing role and password also revokes every token this account held before.
+                user.role, user.status, user.password_hash = 'ADMIN', 'ACTIVE', hashed
+                action = 'Da nang quyen ADMIN va dat lai mat khau cho'
+            user_id = user.user_id
+        click.echo(f'{action} tai khoan #{user_id} <{address}>. Dang nhap bang email nay va mat khau vua nhap.')
+
     @app.cli.command('complete-matches')
     def complete_matches_command():
         """Mark confirmed matches whose booking has ended as COMPLETED, once."""

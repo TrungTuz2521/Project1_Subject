@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { errorMessage } from '../../services/api';
+import { ApiError, errorMessage } from '../../services/api';
 import { huyDemo, serverNow, todayVN } from '../../services/huyApi';
 
 export function Banner({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' | 'danger' | 'success' }) {
   return <div className={`huy-banner huy-banner-${tone}`} role={tone === 'danger' ? 'alert' : undefined}>{children}</div>;
 }
+const fieldNames: Record<string, string> = {
+  'guest.full_name': 'Tên khách', 'guest.phone': 'Số điện thoại', user_id: 'Khách', pitch_id: 'Sân', start_time: 'Giờ bắt đầu',
+  end_time: 'Giờ kết thúc', reason: 'Lý do', note: 'Ghi chú', amount: 'Số tiền', reference: 'Mã chứng từ', payment_method: 'Hình thức',
+  price_per_slot: 'Giá sân', pitch_name: 'Tên sân', date: 'Ngày', from: 'Từ ngày', to: 'Đến ngày', q: 'Tìm kiếm', receipts: 'Các khoản thu',
+};
+/** Server errors list what is wrong per field; show those, not just "Dữ liệu không hợp lệ." */
 export function Warning({ error }: { error: unknown }) {
   if (!error) return null;
-  return <Banner tone="danger">{errorMessage(error)}</Banner>;
+  const details = error instanceof ApiError ? Object.entries(error.fields).map(([key, value]) => {
+    const text = Array.isArray(value) ? value.join(' ') : value;
+    return /^(Giá trị không hợp lệ|Trường bắt buộc|Trường không được phép ghi)/.test(text) ? `${fieldNames[key] ?? key}: ${text}` : text;
+  }) : [];
+  return <Banner tone="danger">{errorMessage(error)}{details.map(d => <span key={d} className="huy-block">{d}</span>)}</Banner>;
 }
-export function Head({ kicker, title, description, aside }: { kicker: string; title: string; description: string; aside?: ReactNode }) {
-  return <header className="huy-head"><div><div className="huy-kicker">{kicker}</div><h1>{title}<span>.</span></h1><p>{description}</p></div>{aside}</header>;
+export function Head({ kicker, title, description, aside }: { kicker?: string; title: string; description: string; aside?: ReactNode }) {
+  return <header className="huy-head"><div>{kicker && <div className="huy-kicker">{kicker}</div>}<h1>{title}<span>.</span></h1><p>{description}</p></div>{aside}</header>;
 }
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`huy-card ${className}`}>{children}</div>;

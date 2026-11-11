@@ -70,6 +70,16 @@ def login():
         result = auth.login(ctx, **data)
     return response(result)
 
+@api.post('/auth/refresh')
+@authenticated
+def refresh_session():
+    """Keeps an active user signed in. Needs a still-valid token whose password fingerprint matches, so a
+    password change or a locked account ends the session here too."""
+    with UnitOfWork() as ctx:
+        user = auth.require_active_actor(ctx, g.actor)
+        result = auth.issue_session(ctx, user)
+    return response(result)
+
 @api.post('/auth/google/challenge')
 def google_challenge():
     from app.services.google_auth_service import challenge, require_web_origin

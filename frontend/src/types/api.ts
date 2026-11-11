@@ -79,6 +79,8 @@ export interface Notification {
 export interface Pitch {
   pitch_id: number; complex_id: number; pitch_name: string; pitch_type: PitchType;
   price_per_slot: Money; status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
+  /** Price inside the complex's peak hours; null = same price all day. */
+  peak_price_per_slot?: Money | null;
 }
 export interface FieldComplex {
   complex_id: number; name: string; phone: string; address: string;
@@ -87,11 +89,13 @@ export interface FieldComplex {
 }
 export interface Availability {
   pitch_id: number; date: string; slot_duration_minutes: number;
-  slots: { start_time: ISODateTime; end_time: ISODateTime; status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'MAINTENANCE' }[];
+  slots: { start_time: ISODateTime; end_time: ISODateTime; status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'MAINTENANCE'; price?: Money; is_peak?: boolean }[];
 }
 export type BookingStatus = 'PENDING_HOLD' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED' | 'MAINTENANCE';
 export interface PayerProgress {
   user_id: number; required_amount: Money; paid_amount: Money; status: 'UNPAID' | 'PARTIAL' | 'PAID';
+  /** Admin views only. */
+  full_name?: string | null; phone?: string | null;
 }
 export interface Booking {
   is_demo?: boolean;
@@ -161,8 +165,11 @@ export interface ConfirmBookingPaid {
   expected_outstanding: Money; idempotency_key: string; receipts: ManualReceipt[];
 }
 export type BookingPhase = 'UPCOMING' | 'IN_PROGRESS' | 'ENDED_UNPAID' | 'PAID';
+export type ArrivalStatus = 'ARRIVED' | 'NO_SHOW';
 export interface AdminBooking extends Booking {
-  pitch_name?: string;
+  pitch_name?: string; customer?: AdminContact;
+  /** Shared by a regular customer's weekly sessions. */
+  series_id?: string | null; arrival_status?: ArrivalStatus | null; arrived_at?: ISODateTime | null;
   teams?: { source: { team_name?: string }; opponent: { team_name?: string } } | null;
   balance?: BookingBalance | null;
 }
@@ -173,8 +180,28 @@ export interface PendingRefund extends Payment {
   payer: { user_id: number; full_name: string | null; email: string | null; phone: string | null };
   original: { payment_id: number; transaction_code: string | null; payment_type: PaymentType; paid_at: ISODateTime | null; note: string | null } | null;
 }
-/** Admin: a deposit received at the counter (cash) or seen on the bank statement. */
-export interface ManualDepositInput {
-  booking_id: number; user_id: number; amount: Money; payment_type: 'BOOKING_DEPOSIT';
-  payment_method: 'CASH' | 'BANK_TRANSFER'; reference: string; note?: string;
+
+/** Admin: contact details of a customer. */
+export interface AdminContact { user_id: number; full_name: string | null; phone: string | null; email: string | null; walk_in?: boolean; no_show_count?: number }
+export interface AdminUser { user_id: number; full_name: string; email: string | null; phone: string | null; role: 'PLAYER' | 'ADMIN'; status: string; walk_in?: boolean; no_show_count?: number }
+/** Counter customer without an account: only a name and a phone number. */
+export interface WalkInGuest { full_name: string; phone: string }
+export interface AdminBookingQuery {
+  phase?: BookingPhase | 'DUE'; status?: BookingStatus; from?: string; to?: string; page?: number; page_size?: number; series_id?: string;
+}
+export interface PeakHours { peak_start_time: string | null; peak_end_time: string | null; weekend_is_peak: boolean }
+export interface SeriesResult {
+  series_id: string; requested_weeks: number;
+  created: { booking_id: number; start_time: ISODateTime; total_amount: Money }[];
+  skipped: { start_time: ISODateTime; reason: string }[];
+}
+/** VENUE: the pitch could not be used, refund everything. CUSTOMER: the customer cancelled, the deposit is kept. */
+export type CancelCause = 'VENUE' | 'CUSTOMER';
+export interface AdminDashboard {
+  today: string;
+  revenue_today: { gross_receipts: Money; refunds: Money; net_receipts: Money };
+  pending_holds: { count: number; items: AdminBooking[] };
+  pending_refunds: { count: number; amount: Money };
+  ended_unpaid: { count: number; outstanding_amount: Money; items: AdminBooking[] };
+  today_games: { count: number; items: AdminBooking[] };
 }

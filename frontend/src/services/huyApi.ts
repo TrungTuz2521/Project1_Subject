@@ -7,7 +7,7 @@ import { api, useMocks } from './client';
 import type {
   ApiResponse, Availability, Booking, BookingCreate, Payment, PaymentSession,
   Pitch, RevenueReport, BookingStatistics, PaginatedResponse, BookingBalance, ConfirmBookingPaid, AdminBooking, BookingPhase,
-  PendingRefund, ManualDepositInput,
+  PendingRefund, AdminUser, AdminBookingQuery, AdminDashboard, WalkInGuest, PeakHours, SeriesResult, CancelCause, ArrivalStatus,
 } from '../types/api';
 
 export const huyDemo = useMocks;
@@ -32,7 +32,7 @@ export const serverNow = () => Date.now() + serverClockOffset;
 export function syncClock(serverTime: string) { const timestamp = Date.parse(serverTime); if (Number.isFinite(timestamp)) serverClockOffset = timestamp - Date.now(); }
 export const dateVN = (d: Date | string) => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(d));
 export const timeVN = (d: Date | string) => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' }).format(new Date(d));
-export const moneyVN = (value: string) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value)) + ' ₫';
+export const moneyVN = (value: string) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value)) + ' ₫'; // No-break space: the sign never wraps away from its amount.
 const integer = (s: string) => BigInt(s.split('.')[0] || '0');
 const asMoney = (v: bigint) => `${v.toString()}.00`;
 const dayOffset = (offset: number) => {
@@ -220,14 +220,17 @@ export async function getAdminBookings(phase?: BookingPhase): Promise<AdminBooki
     phase === 'IN_PROGRESS' ? Date.parse(b.start_time) <= Date.now() && Date.now() < Date.parse(b.end_time) :
     phase === 'ENDED_UNPAID' ? Date.parse(b.end_time) <= Date.now() && b.balance?.payment_status !== 'PAID' : b.balance?.payment_status === 'PAID')));
 }
-export async function addAdminBooking(input: { user_id: number; pitch_id: number; start_time: string; end_time: string; note: string }): Promise<Booking> {
+/** Money taken at the counter when booking; the rest is collected after the match. */
+export interface CounterPayment { amount: string; payment_method: 'CASH' | 'BANK_TRANSFER'; reference?: string }
+export async function addAdminBooking(input: { pitch_id: number; start_time: string; end_time: string; note: string; payment?: CounterPayment; repeat_weeks?: number } & ({ user_id: number } | { guest: WalkInGuest })): Promise<Booking & { series?: SeriesResult }> {
   if (!huyDemo) return (await api.request<ApiResponse<Booking>>('/admin/bookings', { method: 'POST', body: input })).data;
   await pause(); validateSlot(input.pitch_id, input.start_time, input.end_time);
   const pitch = findPitch(input.pitch_id); const deposit = integer(pitch.price_per_slot) / 5n;
-  const b: Booking = { booking_id: nextBookingId++, pitch_id: input.pitch_id, user_id: input.user_id,
+  const customerId = 'user_id' in input ? input.user_id : 900; // DEMO walk-in profile.
+  const b: Booking = { booking_id: nextBookingId++, pitch_id: input.pitch_id, user_id: customerId,
     start_time: input.start_time, end_time: input.end_time, total_amount: pitch.price_per_slot, deposit_amount: asMoney(deposit),
-    booking_type: 'MANUAL_ADMIN', status: 'PENDING_HOLD', hold_expires_at: new Date(Date.now() + 300000).toISOString(),
-    payment_rule: 'DIRECT_BOOKING', payer_progress: [{ user_id: input.user_id, required_amount: asMoney(deposit), paid_amount: '0.00', status: 'UNPAID' }],
+    booking_type: 'MANUAL_ADMIN', status: 'CONFIRMED', hold_expires_at: null,
+    payment_rule: 'DIRECT_BOOKING', payer_progress: [{ user_id: customerId, required_amount: asMoney(deposit), paid_amount: '0.00', status: 'UNPAID' }],
     created_at: new Date().toISOString() };
   demoBookings.unshift(b); return structuredClone(b);
 }
@@ -239,8 +242,8 @@ export async function moveAdminBooking(id: number, input: { pitch_id: number; st
   if (findPitch(b.pitch_id).price_per_slot !== findPitch(input.pitch_id).price_per_slot) throw err('PRICE_CHANGE_REQUIRES_REBOOK', 'Khác giá: cần hủy/hoàn và tạo booking mới.');
   Object.assign(b, { pitch_id: input.pitch_id, start_time: input.start_time, end_time: input.end_time }); return structuredClone(b);
 }
-export async function cancelAdminBooking(id: number, reason: string): Promise<Booking> {
-  if (!huyDemo) return (await api.request<ApiResponse<Booking>>(`/admin/bookings/${id}/cancel`, { method: 'POST', body: { reason } })).data;
+export async function cancelAdminBooking(id: number, reason: string, cause: CancelCause = 'VENUE'): Promise<Booking & { refund_summary?: { refund_amount: string; forfeited_amount: string } }> {
+  if (!huyDemo) return (await api.request<ApiResponse<Booking & { refund_summary?: { refund_amount: string; forfeited_amount: string } }>>(`/admin/bookings/${id}/cancel`, { method: 'POST', body: { reason, cause } })).data;
   await pause(); const b = findBooking(id);
   if (b.status === 'MAINTENANCE') throw err('STATE_CONFLICT', 'Dùng chức năng mở khóa bảo trì.');
   b.status = 'CANCELLED'; b.hold_expires_at = null; return structuredClone(b);
@@ -260,12 +263,12 @@ export async function removeMaintenance(id: number, reason: string): Promise<Boo
   if (b.status !== 'MAINTENANCE') throw err('STATE_CONFLICT', 'Không phải lịch bảo trì.');
   b.status = 'CANCELLED'; return structuredClone(b);
 }
-export async function addPitch(input: { pitch_name: string; pitch_type: 'PITCH_5' | 'PITCH_7'; price_per_slot: string }): Promise<Pitch> {
+export async function addPitch(input: { pitch_name: string; pitch_type: 'PITCH_5' | 'PITCH_7'; price_per_slot: string; peak_price_per_slot?: string | null }): Promise<Pitch> {
   if (!huyDemo) return (await api.request<ApiResponse<Pitch>>('/admin/pitches', { method: 'POST', body: input })).data;
   await pause(); const p: Pitch = { ...input, complex_id: 1, pitch_id: Math.max(...demoPitches.map(p => p.pitch_id), 0) + 1, status: 'ACTIVE' };
   demoPitches.push(p); return structuredClone(p);
 }
-export async function changePitch(id: number, patch: { pitch_name?: string; price_per_slot?: string; status?: Pitch['status'] }): Promise<Pitch> {
+export async function changePitch(id: number, patch: { pitch_name?: string; price_per_slot?: string; peak_price_per_slot?: string | null; status?: Pitch['status']; confirm?: boolean }): Promise<Pitch> {
   if (!huyDemo) return (await api.request<ApiResponse<Pitch>>(`/admin/pitches/${id}`, { method: 'PATCH', body: patch })).data;
   await pause(); const p = findPitch(id); Object.assign(p, patch); return structuredClone(p);
 }
@@ -293,8 +296,8 @@ export async function confirmBookingPaid(id: number, input: ConfirmBookingPaid):
   demoReceipts.set(key, { payload: JSON.stringify(input), balance: structuredClone(result) });
   return result;
 }
-export async function getTransactions(from?: string, to?: string): Promise<TransactionList> {
-  if (!huyDemo) return await api.request<TransactionList>('/admin/transactions', { query: { page: 1, page_size: 100, from, to } });
+export async function getTransactions(from?: string, to?: string, pageNumber = 1, pageSize = 20): Promise<TransactionList> {
+  if (!huyDemo) return await api.request<TransactionList>('/admin/transactions', { query: { page: pageNumber, page_size: pageSize, from, to } });
   await pause();
   const data = demoTransactions.filter(t => {
     if (!t.paid_at) return true; // show pending for reconciliation
@@ -345,8 +348,62 @@ export async function completeManualRefund(originalPaymentId: number, reason: st
   if (huyDemo) throw new Error('Chế độ demo không có khoản hoàn thật.');
   return (await api.request<ApiResponse<Payment>>(`/admin/payments/${originalPaymentId}/refund`, { method: 'POST', body: { reason } })).data;
 }
-/** Records a real deposit the Admin has received; the server checks the due share and the hold. */
-export async function recordManualDeposit(input: ManualDepositInput): Promise<Payment> {
-  if (huyDemo) throw new Error('Chế độ demo không ghi nhận tiền thật.');
-  return (await api.request<ApiResponse<Payment>>('/admin/payments/record', { method: 'POST', body: input })).data;
+
+/** Server-side filtered, paginated admin booking list. */
+export async function getAdminBookingsPage(query: AdminBookingQuery = {}): Promise<PaginatedResponse<AdminBooking>> {
+  const { page: current = 1, page_size: size = 20, ...filters } = query;
+  if (!huyDemo) return await api.request<PaginatedResponse<AdminBooking>>('/admin/bookings', { query: { page: current, page_size: size, ...filters } });
+  const rows = (await getAdminBookings(filters.phase === 'DUE' ? 'ENDED_UNPAID' : filters.phase)).filter(b => (!filters.status || b.status === filters.status)
+    && (!filters.from || localDate(new Date(b.start_time)) >= filters.from) && (!filters.to || localDate(new Date(b.start_time)) <= filters.to));
+  return page(rows, current, size);
+}
+/** Customer lookup for counter bookings (name, email or phone). */
+export async function searchUsers(q: string, signal?: AbortSignal): Promise<AdminUser[]> {
+  if (huyDemo) return [{ user_id: 2, full_name: 'Tài khoản mẫu', email: 'demo@example.test', phone: null, role: 'PLAYER', status: 'ACTIVE' }];
+  return (await api.request<PaginatedResponse<AdminUser>>('/admin/users', { query: { q, role: 'PLAYER', page: 1, page_size: 10 }, signal })).data;
+}
+export async function getAdminDashboard(): Promise<AdminDashboard> {
+  if (!huyDemo) return (await api.request<ApiResponse<AdminDashboard>>('/admin/dashboard')).data;
+  const rows = await getAdminBookings();
+  const today = todayVN();
+  const holds = rows.filter(b => b.status === 'PENDING_HOLD');
+  const unpaid = await getAdminBookings('ENDED_UNPAID');
+  const games = rows.filter(b => b.status === 'CONFIRMED' && localDate(new Date(b.start_time)) === today);
+  const zero = '0.00';
+  const owed = unpaid.reduce((sum, b) => sum + Number(b.balance?.outstanding_amount ?? 0), 0).toFixed(2);
+  return { today, revenue_today: { gross_receipts: zero, refunds: zero, net_receipts: zero },
+    pending_holds: { count: holds.length, items: holds.slice(0, 5) }, pending_refunds: { count: 0, amount: zero },
+    ended_unpaid: { count: unpaid.length, outstanding_amount: owed, items: unpaid.slice(0, 5) },
+    today_games: { count: games.length, items: games.slice(0, 10) } };
+}
+/** Downloads the revenue workbook and saves it through the browser. */
+export async function exportRevenue(from: string, to: string, period: 'day' | 'month' | 'year'): Promise<void> {
+  if (huyDemo) throw new Error('Chế độ demo không xuất file doanh thu thật.');
+  const { blob, filename } = await api.download('/admin/revenue/export', { from, to, period });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = filename === 'download' ? `doanh-thu-${from}-${to}.xlsx` : filename;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Peak window of the complex (null start/end = no daily peak). */
+export async function getPeakHours(): Promise<PeakHours> {
+  if (huyDemo) return { peak_start_time: '17:00', peak_end_time: '21:00', weekend_is_peak: false };
+  const policy = (await api.request<ApiResponse<{ policy: PeakHours }>>('/field-complex', { auth: false })).data.policy;
+  return { peak_start_time: policy.peak_start_time, peak_end_time: policy.peak_end_time, weekend_is_peak: policy.weekend_is_peak };
+}
+export async function setPeakHours(input: PeakHours): Promise<PeakHours> {
+  if (huyDemo) throw new Error('Chế độ demo không lưu giờ cao điểm.');
+  return (await api.request<ApiResponse<PeakHours>>('/admin/field-complex', { method: 'PATCH', body: input })).data;
+}
+/** Stops a regular customer's weekly slot: every future session of the series. */
+export async function cancelSeries(seriesId: string, reason: string, cause: CancelCause): Promise<{ cancelled: number[]; refund_amount: string; forfeited_amount: string }> {
+  if (huyDemo) throw new Error('Chế độ demo không hủy chuỗi.');
+  return (await api.request<ApiResponse<{ cancelled: number[]; refund_amount: string; forfeited_amount: string }>>(`/admin/bookings/series/${encodeURIComponent(seriesId)}/cancel`, { method: 'POST', body: { reason, cause } })).data;
+}
+/** Counter check-in: ARRIVED, NO_SHOW, or null to undo. */
+export async function markArrival(bookingId: number, status: ArrivalStatus | null): Promise<AdminBooking> {
+  if (huyDemo) throw new Error('Chế độ demo không ghi nhận khách đến.');
+  return (await api.request<ApiResponse<AdminBooking>>(`/admin/bookings/${bookingId}/arrival`, { method: 'POST', body: { status } })).data;
 }

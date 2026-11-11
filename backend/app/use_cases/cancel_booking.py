@@ -22,7 +22,7 @@ def close_booking(ctx, booking, *, status, cause, actor_id, reason, cancelling_u
     ctx.session.flush()
     return plan
 
-def _close_for_actor(ctx, actor, booking, reason):
+def _close_for_actor(ctx, actor, booking, reason, customer_cancel=False):
     """Cause comes from role and time, never from the request. Repeated calls create no new refund."""
     if booking.status == 'CANCELLED':
         return None
@@ -30,6 +30,12 @@ def _close_for_actor(ctx, actor, booking, reason):
         raise DomainError('STATE_CONFLICT', 'Không thể hủy booking ở trạng thái hiện tại.')
     if booking.status == 'PENDING_HOLD' and ctx.now() >= booking.hold_expires_at:
         return close_booking(ctx, booking, status='EXPIRED', cause='HOLD_TIMEOUT', actor_id=None, reason='Hết hạn trước khi hủy')
+    if actor.role == 'ADMIN' and customer_cancel:
+        # The customer called the counter to cancel: same rule as cancelling online, the deposit is kept.
+        if ctx.session.scalar(select(Match.match_id).where(Match.booking_id == booking.booking_id)):
+            raise DomainError('STATE_CONFLICT', 'Trận ghép hai đội không hủy thay một bên được; hãy để đội đó tự hủy hoặc chọn "Sân có sự cố".')
+        return close_booking(ctx, booking, status='CANCELLED', cause='USER_CANCEL', actor_id=actor.user_id,
+                             reason=f'Khach huy qua quay: {reason}', cancelling_user_id=booking.user_id)
     if actor.role == 'ADMIN':
         return close_booking(ctx, booking, status='CANCELLED', cause='ADMIN_INCIDENT', actor_id=actor.user_id, reason=reason)
     if ctx.now() >= booking.start_time:
@@ -38,13 +44,13 @@ def _close_for_actor(ctx, actor, booking, reason):
                          cancelling_user_id=actor.user_id)
 
 @retry_conflicts
-def cancel_booking(actor, *, booking_id, reason, admin_route=False):
+def cancel_booking(actor, *, booking_id, reason, admin_route=False, customer_cancel=False):
     with UnitOfWork() as ctx:
         auth_service.require_admin(ctx, actor) if admin_route else auth_service.require_active_actor(ctx, actor)
         booking, _ = booking_service.lock_booking_graph(ctx, booking_id)
         if actor.role != 'ADMIN' and not booking_service.is_party(booking, actor.user_id):
             raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
-        plan = _close_for_actor(ctx, actor, booking, reason)
+        plan = _close_for_actor(ctx, actor, booking, reason, customer_cancel=customer_cancel and admin_route)
         result = booking_service.booking_data(ctx, booking, admin=actor.role == 'ADMIN')
         result['refund_summary'] = payment_service.refund_summary(ctx, booking_id, plan.cause if plan else None)
         return result
@@ -95,3 +101,17 @@ def refund_payment(actor, *, payment_id, reason):
             payment_service.apply_verified_refund(ctx, GatewayResult('SUCCESS', refund.transaction_code, refund.amount))
             return payment_service.payment_data(refund, admin=True), 200
         return payment_service.payment_data(refund, admin=True), 202
+
+def cancel_series(actor, *, series_id, reason, customer_cancel=False):
+    """Cancels every future session of a regular customer's weekly series, one booking per transaction."""
+    from app.models import Booking
+    with UnitOfWork() as ctx:
+        auth_service.require_admin(ctx, actor)
+        ids = list(ctx.session.scalars(select(Booking.booking_id).where(Booking.series_id == series_id, Booking.status == 'CONFIRMED',
+                                                                      Booking.start_time > ctx.now()).order_by(Booking.start_time)))
+    if not ids:
+        raise DomainError('NOT_FOUND', 'Không còn buổi nào sắp tới trong chuỗi này.', 404)
+    results = [cancel_booking(actor, booking_id=booking_id, reason=reason, admin_route=True, customer_cancel=customer_cancel) for booking_id in ids]
+    return {'series_id': series_id, 'cancelled': [r['booking_id'] for r in results],
+            'refund_amount': policy.money(sum((r['refund_summary']['refund_amount'] for r in results), 0)),
+            'forfeited_amount': policy.money(sum((r['refund_summary']['forfeited_amount'] for r in results), 0))}

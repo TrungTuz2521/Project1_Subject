@@ -16,5 +16,8 @@ class Booking(db.Model):
     note = db.Column(db.String(255))
     payment_rule = db.Column(db.String(32))
     payer_plan = db.Column(db.JSON)
+    series_id = db.Column(db.String(36), index=True)  # weekly regulars (migration 005)
+    arrival_status = db.Column(db.String(16))  # NULL | ARRIVED | NO_SHOW
+    arrived_at = db.Column(UTCDateTime())
     created_at = db.Column(UTCDateTime(), nullable=False, default=utcnow)
     updated_at = db.Column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)

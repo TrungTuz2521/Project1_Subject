@@ -38,7 +38,8 @@ def create_app(config=None):
         key = 'api.' + endpoint
         app.view_functions[key] = retry_conflicts(app.view_functions[key])
     CORS(app, resources={r'/api/v1/*': {'origins': app.config['CORS_ORIGINS']}},
-         allow_headers=['Authorization', 'Content-Type'], methods=['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'])
+         allow_headers=['Authorization', 'Content-Type'], expose_headers=['Content-Disposition'],
+         methods=['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'])
 
     @app.errorhandler(DomainError)
     def domain_error(error):

@@ -8,5 +8,6 @@ class Pitch(db.Model):
     pitch_name = db.Column(db.String(100), nullable=False)
     pitch_type = db.Column(db.String(16), nullable=False)
     price_per_slot = db.Column(db.Numeric(12, 2), nullable=False)
+    peak_price_per_slot = db.Column(db.Numeric(12, 2))  # NULL = no peak surcharge (migration 005)
     status = db.Column(db.String(16), nullable=False, default='ACTIVE')
     created_at = db.Column(UTCDateTime(), nullable=False, default=utcnow)

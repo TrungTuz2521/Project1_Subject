@@ -110,7 +110,7 @@ def plan_refunds(ctx, *, booking_id, cause, cancelling_user_id=None, payment_ids
             continue
         if is_consolidated(payment):
             continue  # Reference account is not the sender: Admin must verify the recipient first.
-        if cause == 'USER_CANCEL' and payment.user_id == cancelling_user_id:
+        if cause == 'USER_CANCEL' and payment.user_id == cancelling_user_id and payment.payment_type == 'BOOKING_DEPOSIT':
             forfeited.append(payment.payment_id)
             continue
         items.append({'original_payment_id': payment.payment_id, 'payer_user_id': payment.user_id, 'amount': policy.money(payment.amount)})

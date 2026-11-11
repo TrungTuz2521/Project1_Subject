@@ -43,8 +43,6 @@ def confirm_booking_paid(actor, *, booking_id, expected_outstanding, idempotency
         now = ctx.now()
         if booking.status != 'CONFIRMED':
             raise DomainError('STATE_CONFLICT', 'Chỉ xác nhận thu đủ cho booking đã xác nhận.')
-        if now < booking.end_time:
-            raise DomainError('STATE_CONFLICT', 'Chưa hết giờ đá.')
         payment_service.require_no_pending(payments, 'BOOKING_REMAINING_PAYMENT')
         outstanding = booking_balance_service.compute(ctx, booking, payments, with_qr=False).outstanding_amount
         if outstanding == 0 or Decimal(expected_outstanding) != outstanding:

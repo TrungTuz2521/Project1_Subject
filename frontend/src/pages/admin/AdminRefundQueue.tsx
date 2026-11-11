@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { PendingRefund } from '../../types/api';
 import { completeManualRefund, dateVN, getPendingRefunds, moneyVN } from '../../services/huyApi';
 import { Banner, Card, Warning } from '../../features/field-management/ui';
+import { ReasonDialog } from './Dialog';
 
 /** Refunds still owed. Cash/bank-transfer ones wait for the Admin to pay back by hand, then confirm here. */
 export function AdminRefundQueue({ revision = 0 }: { revision?: number }) {
@@ -10,22 +11,21 @@ export function AdminRefundQueue({ revision = 0 }: { revision?: number }) {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
+  const [confirming, setConfirming] = useState<PendingRefund | null>(null);
   useEffect(() => {
     let live = true;
     getPendingRefunds().then(rows => { if (live) setItems(rows); }).catch(e => { if (live) setError(e); });
     return () => { live = false; };
   }, [revision, reload]);
 
-  async function complete(item: PendingRefund) {
-    if (!item.original || busy !== null) return;
+  async function complete(item: PendingRefund, how: string) {
+    if (!item.original) return;
     const who = item.payer.full_name ?? `#${item.payer.user_id}`;
-    const reason = window.prompt(`Xác nhận ĐÃ trả ${moneyVN(item.amount)} cho ${who}. Ghi cách trả (vd. "CK Vietcombank FT123", "tiền mặt tại quầy"):`);
-    if (!reason?.trim()) return;
     setBusy(item.payment_id); setError(null); setNotice('');
     try {
-      await completeManualRefund(item.original.payment_id, reason.trim().slice(0, 200));
+      await completeManualRefund(item.original.payment_id, how);
       setNotice(`Đã ghi nhận hoàn ${moneyVN(item.amount)} cho ${who}.`); setReload(n => n + 1);
-    } catch (e) { setError(e); } finally { setBusy(null); }
+    } finally { setBusy(null); }
   }
 
   if (items.length === 0 && !error && !notice) return null;
@@ -39,9 +39,13 @@ export function AdminRefundQueue({ revision = 0 }: { revision?: number }) {
         <td><strong>{moneyVN(item.amount)}</strong><small className="huy-block">{item.payment_method}</small></td>
         <td><small className="huy-block">{item.original?.transaction_code ?? '—'}</small><small className="huy-block">{item.original?.paid_at ? dateVN(item.original.paid_at) : ''}</small></td>
         <td><div className="huy-table-actions">{item.manual
-          ? <button type="button" disabled={busy !== null} onClick={() => void complete(item)}>{busy === item.payment_id ? 'Đang lưu…' : 'Đã trả tiền'}</button>
+          ? <button type="button" disabled={busy !== null} onClick={() => setConfirming(item)}>{busy === item.payment_id ? 'Đang lưu…' : 'Đã trả tiền'}</button>
           : <small>Cổng thanh toán tự hoàn</small>}</div></td>
       </tr>)}
     </tbody></table></div>}
+    {confirming && <ReasonDialog title="Xác nhận đã trả tiền cho khách"
+      message={<>Bạn đã trả <strong>{moneyVN(confirming.amount)}</strong> cho <strong>{confirming.payer.full_name ?? `#${confirming.payer.user_id}`}</strong>{confirming.payer.phone ? ` (${confirming.payer.phone})` : ''}? Thao tác này không hoàn tác được.</>}
+      reasonLabel="Cách trả" placeholder="Chuyển khoản Vietcombank FT123 / tiền mặt tại quầy"
+      confirmLabel={() => 'Đã trả tiền'} onConfirm={how => complete(confirming, how)} onClose={() => setConfirming(null)} />}
   </Card>;
 }

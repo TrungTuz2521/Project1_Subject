@@ -9,6 +9,9 @@ SLOT_MINUTES = 90
 OPENING_HOUR = 6
 CLOSING_HOUR = 23
 MAX_ADVANCE_DAYS = 10
+# The counter books regulars weeks ahead (up to 12 weekly sessions).
+ADMIN_MAX_ADVANCE_DAYS = 100
+MAX_REPEAT_WEEKS = 12
 DEPOSIT_PERCENT = 20
 
 def money(value):
@@ -43,14 +46,14 @@ def day_slots(local_date):
         yield start, start + step
         start += step
 
-def validate_slot(now, start, end):
+def validate_slot(now, start, end, max_days=MAX_ADVANCE_DAYS):
     if end - start != timedelta(minutes=SLOT_MINUTES):
         invalid('end_time', 'Mỗi lượt đúng 90 phút.')
     if start <= now:
         invalid('start_time', 'Giờ bắt đầu phải ở tương lai.')
     local = start.astimezone(VIETNAM)
-    if local.date() > now.astimezone(VIETNAM).date() + timedelta(days=MAX_ADVANCE_DAYS):
-        invalid('start_time', 'Chỉ đặt trước tối đa 10 ngày.')
+    if local.date() > now.astimezone(VIETNAM).date() + timedelta(days=max_days):
+        invalid('start_time', f'Chỉ đặt trước tối đa {max_days} ngày.')
     if (local, end.astimezone(VIETNAM)) not in list(day_slots(local.date())):
         invalid('start_time', 'Giờ phải theo lưới 90 phút từ 06:00 đến 23:00 giờ Việt Nam.')
 

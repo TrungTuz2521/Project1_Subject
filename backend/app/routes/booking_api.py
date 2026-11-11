@@ -9,7 +9,7 @@ from app.infrastructure.unit_of_work import UnitOfWork
 from app.middleware import authenticated
 from app.models import Booking, FieldComplex, Payment, Pitch
 from app.routes.api import body, found, paginated, response
-from app.services import auth_service as auth, booking_balance_service, booking_policy as policy, booking_service, match_service, payment_service, revenue_service
+from app.services import auth_service as auth, booking_balance_service, booking_policy as policy, booking_service, match_service, payment_service, pricing, revenue_service
 from app.services.gateway import InvalidCallback, gateway_or_none
 from app.use_cases import cancel_booking as cancelling, manage_booking as manage, process_payment, settle_booking
 from app.utils import validation as v
@@ -18,11 +18,13 @@ from app.utils.time import VIETNAM
 booking_api = Blueprint('booking_api', __name__)
 
 BOOKING_STATUSES = ('PENDING_HOLD', 'CONFIRMED', 'CANCELLED', 'EXPIRED', 'MAINTENANCE')
-PHASES = ('UPCOMING', 'IN_PROGRESS', 'ENDED_UNPAID', 'PAID')
+PHASES = ('UPCOMING', 'IN_PROGRESS', 'ENDED_UNPAID', 'PAID', 'DUE')
 PITCH_TYPES = ('PITCH_5', 'PITCH_7', 'PITCH_11')
 PAYMENT_TYPES = ('BOOKING_DEPOSIT', 'BOOKING_REMAINING_PAYMENT', 'REFUND', 'MATCH_HOST_DEPOSIT', 'MATCH_JOIN_DEPOSIT')
 PAYMENT_STATUSES = ('PENDING', 'SUCCESS', 'FAILED', 'REFUND_PROCESSING', 'REFUNDED')
 MANUAL_METHODS = ('CASH', 'BANK_TRANSFER')
+# VENUE: the pitch could not be used, everything is refunded. CUSTOMER: the customer cancelled, the deposit is kept.
+CANCEL_CAUSES = ('VENUE', 'CUSTOMER')
 
 def _reason(data):
     return v.text(data['reason'], 'reason', 200)
@@ -63,7 +65,7 @@ def field_complex():
         return response({'complex_id': row.complex_id, 'name': row.name, 'phone': row.phone, 'address': row.address,
                          'policy': {'hold_seconds': policy.HOLD_SECONDS, 'slot_duration_minutes': policy.SLOT_MINUTES, 'deposit_mode': 'PERCENT',
                                     'deposit_value': policy.money(policy.DEPOSIT_PERCENT), 'opening_time': f'{policy.OPENING_HOUR:02d}:00',
-                                    'closing_time': f'{policy.CLOSING_HOUR:02d}:00'}})
+                                    'closing_time': f'{policy.CLOSING_HOUR:02d}:00', **pricing.peak_config(row)}})
 
 @booking_api.get('/pitches')
 def pitches():
@@ -93,6 +95,7 @@ def availability(pitch_id):
         invalid('date', 'date là ngày địa phương YYYY-MM-DD.')
     with UnitOfWork() as ctx:
         pitch = found(ctx, Pitch, pitch_id)
+        complex_row = ctx.session.get(FieldComplex, pitch.complex_id)
         now = ctx.now()
         today = now.astimezone(VIETNAM).date()
         if not today <= day <= today + timedelta(days=policy.MAX_ADVANCE_DAYS):
@@ -114,7 +117,9 @@ def availability(pitch_id):
                     status = 'BOOKED'
                 elif row.status == 'PENDING_HOLD' and row.hold_expires_at > now and status == 'AVAILABLE':
                     status = 'HELD'
-            result.append({'start_time': start, 'end_time': end, 'status': status})
+            peak = pitch.peak_price_per_slot is not None and pricing.is_peak(complex_row, start)
+            result.append({'start_time': start, 'end_time': end, 'status': status, 'is_peak': peak,
+                           'price': policy.money(pitch.peak_price_per_slot if peak else pitch.price_per_slot)})
         return response({'pitch_id': pitch_id, 'date': day.isoformat(), 'slot_duration_minutes': policy.SLOT_MINUTES, 'slots': result})
 
 # ---- Player bookings ----
@@ -257,23 +262,40 @@ def momo_ipn():
 @booking_api.post('/admin/pitches')
 @authenticated
 def admin_create_pitch():
-    data = body(('pitch_name', 'pitch_type', 'price_per_slot'), ('pitch_name', 'pitch_type', 'price_per_slot'))
+    data = body(('pitch_name', 'pitch_type', 'price_per_slot', 'peak_price_per_slot'), ('pitch_name', 'pitch_type', 'price_per_slot'))
     return response(manage.create_pitch(g.actor, pitch_name=v.text(data['pitch_name'], 'pitch_name', 100),
                                         pitch_type=v.enum(data['pitch_type'], 'pitch_type', ('PITCH_5', 'PITCH_7')),
-                                        price_per_slot=policy.parse_whole_vnd(data['price_per_slot'], 'price_per_slot')), 201)
+                                        price_per_slot=policy.parse_whole_vnd(data['price_per_slot'], 'price_per_slot'),
+                                        peak_price_per_slot=_optional_price(data.get('peak_price_per_slot'))), 201)
+
+def _optional_price(value):
+    """Empty or null peak price = the pitch costs the same at every hour."""
+    return None if value in (None, '') else policy.parse_whole_vnd(value, 'peak_price_per_slot')
 
 @booking_api.patch('/admin/pitches/<int:pitch_id>')
 @authenticated
 def admin_update_pitch(pitch_id):
-    data = body(('pitch_name', 'price_per_slot', 'status'))
+    data = body(('pitch_name', 'price_per_slot', 'peak_price_per_slot', 'status', 'confirm'))
     changes = {}
+    if 'peak_price_per_slot' in data:
+        changes['peak_price_per_slot'] = _optional_price(data['peak_price_per_slot'])
     if 'pitch_name' in data:
         changes['pitch_name'] = v.text(data['pitch_name'], 'pitch_name', 100)
     if 'price_per_slot' in data:
         changes['price_per_slot'] = policy.parse_whole_vnd(data['price_per_slot'], 'price_per_slot')
     if 'status' in data:
         changes['status'] = v.enum(data['status'], 'status', ('ACTIVE', 'MAINTENANCE', 'INACTIVE'))
-    return response(manage.update_pitch(g.actor, pitch_id=pitch_id, changes=changes))
+    return response(manage.update_pitch(g.actor, pitch_id=pitch_id, changes=changes, confirm=data.get('confirm') is True))
+
+@booking_api.patch('/admin/field-complex')
+@authenticated
+def admin_peak_hours():
+    """Peak window for the whole complex; each pitch decides its own peak price."""
+    data = body(('peak_start_time', 'peak_end_time', 'weekend_is_peak'), ('peak_start_time', 'peak_end_time', 'weekend_is_peak'))
+    start, end = pricing.validate_window(data['peak_start_time'], data['peak_end_time'])
+    if not isinstance(data['weekend_is_peak'], bool):
+        invalid('weekend_is_peak')
+    return response(manage.update_peak_hours(g.actor, peak_start_time=start, peak_end_time=end, weekend_is_peak=data['weekend_is_peak']))
 
 def _phase_filter(query, phase, now):
     """PAID is computed from net receipts and is independent of the kick-off time."""
@@ -287,7 +309,17 @@ def _phase_filter(query, phase, now):
         return query.where(Booking.start_time <= now, Booking.end_time > now)
     if phase == 'ENDED_UNPAID':
         return query.where(Booking.end_time <= now, net < Booking.total_amount)
+    if phase == 'DUE':
+        today = now.astimezone(VIETNAM).date()
+        _, end_of_today = revenue_service.utc_bounds(today, today)
+        return query.where(Booking.start_time < end_of_today, net < Booking.total_amount, Booking.booking_type != 'MAINTENANCE_LOCK')
     return query.where(net >= Booking.total_amount)
+
+def _no_show_counts(ctx, user_ids):
+    if not user_ids:
+        return {}
+    return dict(ctx.session.execute(select(Booking.user_id, func.count()).where(
+        Booking.user_id.in_(user_ids), Booking.arrival_status == 'NO_SHOW').group_by(Booking.user_id)).all())
 
 def _admin_booking_rows(ctx, rows):
     """Payments and pitches for the whole page in two queries; parties only for match bookings."""
@@ -296,10 +328,23 @@ def _admin_booking_rows(ctx, rows):
     ids, pitch_ids = [b.booking_id for b in rows], {b.pitch_id for b in rows}
     pitches = {p.pitch_id: p for p in ctx.session.scalars(select(Pitch).where(Pitch.pitch_id.in_(pitch_ids)))} if pitch_ids else {}
     with_match = set(ctx.session.scalars(select(Match.booking_id).where(Match.booking_id.in_(ids)))) if ids else set()
+    from app.models import User
+    user_ids = {b.user_id for b in rows} | {p['user_id'] for b in rows for p in (b.payer_plan or [])}
+    users = {u.user_id: u for u in ctx.session.scalars(select(User).where(User.user_id.in_(user_ids)))} if user_ids else {}
+    no_shows = _no_show_counts(ctx, user_ids)
+    def contact(uid):
+        user = users.get(uid)
+        walk_in = auth.is_walk_in(user)
+        return dict(user_id=uid, full_name=user.full_name if user else None, phone=user.phone if user else None,
+                    email=None if walk_in or not user else user.email, walk_in=walk_in, no_show_count=no_shows.get(uid, 0))
     def row(booking):
         mine = payments[booking.booking_id]
         result = booking_service.booking_data(ctx, booking, admin=True, payments=mine)
         result['pitch_name'] = pitches[booking.pitch_id].pitch_name
+        result['customer'] = contact(booking.user_id)
+        for payer in result['payer_progress']:
+            info = contact(payer['user_id'])
+            payer.update(full_name=info['full_name'], phone=info['phone'])
         parties = match_service.get_booking_parties(ctx, booking_id=booking.booking_id) if booking.booking_id in with_match else None
         result['teams'] = {'source': parties.source, 'opponent': parties.opponent} if parties else None
         result['balance'] = None if booking.booking_type == 'MAINTENANCE_LOCK' else booking_balance_service.compute(ctx, booking, mine, with_qr=False)
@@ -310,11 +355,27 @@ def _admin_booking_rows(ctx, rows):
 @authenticated
 def admin_bookings():
     if request.method == 'POST':
-        data = body(('user_id', 'pitch_id', 'start_time', 'end_time', 'note'), ('user_id', 'pitch_id', 'start_time', 'end_time', 'note'))
+        data = body(('user_id', 'guest', 'pitch_id', 'start_time', 'end_time', 'note', 'payment', 'repeat_weeks'), ('pitch_id', 'start_time', 'end_time', 'note'))
+        repeat_weeks = v.integer(data.get('repeat_weeks', 1), 'repeat_weeks', 1, policy.MAX_REPEAT_WEEKS)
+        if ('user_id' in data) == ('guest' in data):
+            invalid('user_id', 'Chọn tài khoản khách hoặc nhập khách vãng lai (tên và số điện thoại).')
+        guest = None
+        if 'guest' in data:
+            guest = v.fields(data['guest'], ('full_name', 'phone'), ('full_name', 'phone'))
+        payment = None
+        if data.get('payment') is not None:
+            raw = v.fields(data['payment'], ('amount', 'payment_method', 'reference'), ('amount', 'payment_method'))
+            payment = {'amount': policy.parse_whole_vnd(raw['amount'], 'payment.amount', allow_zero=True),
+                       'method': v.enum(raw['payment_method'], 'payment.payment_method', MANUAL_METHODS),
+                       'reference': v.text(raw.get('reference'), 'payment.reference', 100, minimum=0, nullable=True)}
+            if payment['amount'] == 0:
+                payment = None
         start, end = _interval(data)
-        return response(manage.admin_create_booking(g.actor, user_id=v.integer(data['user_id'], 'user_id'), pitch_id=v.integer(data['pitch_id'], 'pitch_id'),
-                                                    start_time=start, end_time=end, note=v.text(data['note'], 'note', 255)), 201)
+        return response(manage.admin_create_booking(g.actor, user_id=v.integer(data['user_id'], 'user_id') if guest is None else None, guest=guest,
+                                                    pitch_id=v.integer(data['pitch_id'], 'pitch_id'), start_time=start, end_time=end,
+                                                    note=v.text(data['note'], 'note', 200), payment=payment, repeat_weeks=repeat_weeks), 201)
     status, phase, pitch_id = _enum_arg('status', BOOKING_STATUSES), _enum_arg('phase', PHASES), _int_arg('pitch_id')
+    series_id = request.args.get('series_id')
     with UnitOfWork() as ctx:
         auth.require_admin(ctx, g.actor)
         query = select(Booking)
@@ -324,6 +385,8 @@ def admin_bookings():
             query = query.where(Booking.start_time >= start, Booking.start_time < end)
         if pitch_id:
             query = query.where(Booking.pitch_id == pitch_id)
+        if series_id:
+            query = query.where(Booking.series_id == v.text(series_id, 'series_id', 36))
         if status:
             query = query.where(Booking.status == status)
         if phase:
@@ -342,8 +405,27 @@ def admin_reschedule(booking_id):
 @booking_api.post('/admin/bookings/<int:booking_id>/cancel')
 @authenticated
 def admin_cancel(booking_id):
-    reason = _reason(body(('reason',), ('reason',)))
-    return response(cancelling.cancel_booking(g.actor, booking_id=booking_id, reason=reason, admin_route=True))
+    data = body(('reason', 'cause'), ('reason',))
+    cause = v.enum(data.get('cause', 'VENUE'), 'cause', CANCEL_CAUSES)
+    return response(cancelling.cancel_booking(g.actor, booking_id=booking_id, reason=_reason(data), admin_route=True,
+                                              customer_cancel=cause == 'CUSTOMER'))
+
+@booking_api.post('/admin/bookings/series/<series_id>/cancel')
+@authenticated
+def admin_cancel_series(series_id):
+    """Stop a regular customer's weekly slot: every future session of the series."""
+    data = body(('reason', 'cause'), ('reason',))
+    cause = v.enum(data.get('cause', 'CUSTOMER'), 'cause', CANCEL_CAUSES)
+    v.text(series_id, 'series_id', 36)
+    return response(cancelling.cancel_series(g.actor, series_id=series_id, reason=_reason(data), customer_cancel=cause == 'CUSTOMER'))
+
+@booking_api.post('/admin/bookings/<int:booking_id>/arrival')
+@authenticated
+def admin_arrival(booking_id):
+    """Counter check-in: ARRIVED, NO_SHOW, or null to undo."""
+    data = body(('status',), ('status',))
+    status = None if data['status'] is None else v.enum(data['status'], 'status', ('ARRIVED', 'NO_SHOW'))
+    return response(manage.mark_arrival(g.actor, booking_id=booking_id, status=status))
 
 @booking_api.post('/admin/maintenance-locks')
 @authenticated
@@ -357,6 +439,60 @@ def admin_lock():
 def admin_unlock(booking_id):
     reason = _reason(body(('reason',), ('reason',)))
     return response(manage.cancel_maintenance_lock(g.actor, booking_id=booking_id, reason=reason))
+
+# ---- Admin: customers and overview ----
+
+@booking_api.get('/admin/users')
+@authenticated
+def admin_users():
+    """Find a customer for a counter booking by name, email or phone (at least 2 characters)."""
+    from app.models import User
+    q = (request.args.get('q') or '').strip()
+    if not 2 <= len(q) <= 100:
+        invalid('q', 'Nhập từ 2 đến 100 ký tự để tìm.')
+    role = _enum_arg('role', ('PLAYER', 'ADMIN'))
+    with UnitOfWork() as ctx:
+        auth.require_admin(ctx, g.actor)
+        # LIKE wildcards typed by the admin are matched literally.
+        pattern = '%' + q.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        query = select(User).where(or_(func.lower(User.full_name).like(pattern, escape='\\'),
+                                       func.lower(User.email).like(pattern, escape='\\'),
+                                       User.phone.like(pattern, escape='\\')))
+        if role:
+            query = query.where(User.role == role)
+        def preload(rows):
+            counts = _no_show_counts(ctx, {u.user_id for u in rows})
+            return lambda u: {'user_id': u.user_id, 'full_name': u.full_name, 'email': None if auth.is_walk_in(u) else u.email,
+                              'phone': u.phone, 'role': u.role, 'status': u.status, 'walk_in': auth.is_walk_in(u),
+                              'no_show_count': counts.get(u.user_id, 0)}
+        return paginated(ctx, query.order_by(User.full_name, User.user_id), None, preload)
+
+@booking_api.get('/admin/dashboard')
+@authenticated
+def admin_dashboard():
+    """What needs the Admin now: live holds, refunds owed, ended-but-unpaid bookings, today's money and games."""
+    with UnitOfWork() as ctx:
+        auth.require_admin(ctx, g.actor)
+        now = ctx.now()
+        today = now.astimezone(VIETNAM).date()
+        day_start, day_end = revenue_service.utc_bounds(today, today)
+        holds = ctx.session.scalars(select(Booking).where(Booking.status == 'PENDING_HOLD', Booking.hold_expires_at > now)
+                                    .order_by(Booking.hold_expires_at)).all()
+        refunds = ctx.session.scalars(select(Payment).where(Payment.payment_type == 'REFUND', Payment.status == 'REFUND_PROCESSING')).all()
+        unpaid = ctx.session.scalars(_phase_filter(select(Booking), 'ENDED_UNPAID', now).order_by(Booking.end_time)).all()
+        games = ctx.session.scalars(select(Booking).where(Booking.status == 'CONFIRMED', Booking.start_time >= day_start,
+                                                          Booking.start_time < day_end).order_by(Booking.start_time)).all()
+        rows = _admin_booking_rows(ctx, [*holds[:5], *unpaid, *games[:40]])
+        unpaid_rows = [rows(b) for b in unpaid]
+        outstanding = sum((Decimal(r['balance'].outstanding_amount) for r in unpaid_rows if r['balance']), Decimal('0'))
+        return response({
+            'today': today.isoformat(),
+            'revenue_today': revenue_service.revenue_report(ctx, today, today, 'day')['totals'],
+            'pending_holds': {'count': len(holds), 'items': [rows(b) for b in holds[:5]]},
+            'pending_refunds': {'count': len(refunds), 'amount': policy.money(sum((Decimal(p.amount) for p in refunds), Decimal('0')))},
+            'ended_unpaid': {'count': len(unpaid), 'outstanding_amount': policy.money(outstanding), 'items': unpaid_rows[:5]},
+            'today_games': {'count': len(games), 'items': [rows(b) for b in games[:40]]},
+        })
 
 # ---- Admin: money ----
 
