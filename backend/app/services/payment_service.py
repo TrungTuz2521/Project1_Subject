@@ -132,13 +132,29 @@ def create_refund(ctx, original, note=None):
     ctx.session.flush()
     return refund
 
+MANUAL_REFUND_METHODS = ('CASH', 'BANK_TRANSFER')
+
+def refund_account(user):
+    """Where the venue sends a bank refund; None until the customer fills it in on their profile."""
+    if user is None or not (user.refund_bank_name and user.refund_account_no and user.refund_account_name):
+        return None
+    return {'bank_name': user.refund_bank_name, 'account_no': user.refund_account_no, 'account_name': user.refund_account_name}
+
+def notify_refund(ctx, refund, lead='Khoản hoàn của bạn đang được xử lý.'):
+    """A bank or cash refund is paid back by hand, so tell the customer where it will go."""
+    if refund.payment_method in MANUAL_REFUND_METHODS:
+        from app.models import User
+        account = refund_account(ctx.session.get(User, refund.user_id))
+        lead += (f' Cửa hàng sẽ chuyển vào tài khoản {account["bank_name"]} {account["account_no"]} ({account["account_name"]}).'
+                 if account else ' Hãy điền "Tài khoản nhận hoàn tiền" trong Hồ sơ để cửa hàng chuyển lại, hoặc nhận tiền mặt tại quầy.')
+    notification_service.notify(ctx, [refund.user_id], 'REFUND_PROCESSING', 'Đang hoàn tiền', lead)
+
 def execute_refund_plan(ctx, plan, note=None):
     refunds = []
     for item in plan.items:
         refund = create_refund(ctx, ctx.session.get(Payment, item['original_payment_id']), note=note)
         refunds.append(refund)
-        notification_service.notify(ctx, [refund.user_id], 'REFUND_PROCESSING', 'Đang hoàn tiền',
-                                    'Khoản hoàn của bạn đang được xử lý.')
+        notify_refund(ctx, refund)
     for payment_id in plan.forfeited_payment_ids:
         payment = ctx.session.get(Payment, payment_id)
         payment.note = policy.add_note(payment.note, FORFEITED_NOTE)

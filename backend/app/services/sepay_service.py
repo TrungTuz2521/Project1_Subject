@@ -149,35 +149,29 @@ def verify_webhook(authorization, payload):
                          paid_at=_parse_time(payload.get('transactionDate'))), None
 
 
-def _flag_extra_money(verified, outcome):
-    """Money the automatic path did not apply to a due share is real: leave evidence for Admin refund."""
-    with UnitOfWork() as ctx:
-        payment = ctx.session.scalar(select(Payment).where(Payment.transaction_code == verified.merchant_reference))
-        booking, payments = booking_service.lock_booking_graph(ctx, payment.booking_id)
-        payment = next(p for p in payments if p.payment_id == payment.payment_id)
-        if outcome == 'DUPLICATE' and verified.provider_reference not in (payment.note or ''):
-            payment.note = policy.add_note(payment.note, f'Nhan them {verified.provider_reference} '
-                                                         f'{int(verified.amount)}d cho ma da thu, can hoan')
-        elif outcome == 'OK' and not any(p.refund_for_payment_id == payment.payment_id for p in payments):
-            # A late payment already has its refund row; only an unplanned surplus is flagged here.
-            from app.use_cases.process_payment import _required_for
-            required = _required_for(booking, payment.user_id) or Decimal('0')
-            paid = booking_service.paid_deposit_by_user(payments).get(payment.user_id, Decimal('0'))
-            if paid > required:
-                payment.note = policy.add_note(payment.note, f'Thu vuot coc {int(paid - required)}d, can hoan')
-
-
 def handle_webhook(authorization, payload):
     """Every authenticated notification is answered 200 so SePay stops retrying; the outcome is for logs/tests."""
     from app.use_cases.process_payment import process_gateway_callback
     verified, ignored = verify_webhook(authorization, payload)
+    if verified is None and ignored == 'NO_REFERENCE':
+        # Not a deposit code: maybe the pitch fee paid with the booking's balance QR (content SAN<id>TT).
+        from app.use_cases.process_payment import find_balance_booking, record_balance_transfer
+        booking_id = find_balance_booking(payload)
+        if booking_id is not None:
+            outcome = record_balance_transfer(booking_id, _parse_amount(payload.get('transferAmount')),
+                                              f"sepay:{payload.get('id')}", _parse_time(payload.get('transactionDate')))
+            if outcome == 'NO_REFERENCE':
+                current_app.logger.warning('SePay pitch-fee transfer for an unknown booking needs review')
+            return outcome
     if verified is None:
         current_app.logger.info('SePay notification ignored (%s)', ignored)
         return ignored
-    outcome = process_gateway_callback(METHOD, verified).outcome
-    if outcome in ('OK', 'DUPLICATE'):
-        _flag_extra_money(verified, outcome)
-    if outcome != 'OK':
+    # Bank transfer: whatever amount arrived is recorded; a short share stays partial, extra money pays the
+    # booking or is queued for refund. Nothing real is ever left only in a note.
+    outcome = process_gateway_callback(METHOD, verified, bank_transfer=True).outcome
+    if outcome == 'DUPLICATE':
+        current_app.logger.info('SePay notification already recorded (retry)')
+    elif outcome not in ('OK', 'EXTRA_RECORDED'):
         current_app.logger.warning('SePay notification needs review (%s)', outcome)
     return outcome
 

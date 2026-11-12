@@ -17,11 +17,13 @@ export interface UserSelf {
   has_password?: boolean;
   user_id: number; full_name: string; email: string; phone: string | null;
   role: 'PLAYER' | 'ADMIN'; skill_level: SkillLevel; status: 'ACTIVE' | 'BANNED' | 'INACTIVE';
+  /** Where the venue sends a bank refund. */
+  refund_bank_name?: string | null; refund_account_no?: string | null; refund_account_name?: string | null;
 }
 export interface LoginRequest { email: string; password: string }
 export interface RegisterRequest extends LoginRequest { full_name: string; phone?: string; skill_level?: SkillLevel }
 export interface LoginData { access_token: string; expires_in: number; user: UserSelf }
-export type ProfileUpdate = Partial<Pick<UserSelf, 'full_name' | 'phone' | 'skill_level'>>;
+export type ProfileUpdate = Partial<Pick<UserSelf, 'full_name' | 'phone' | 'skill_level' | 'refund_bank_name' | 'refund_account_no' | 'refund_account_name'>>;
 export interface Team {
   team_id: number; team_name: string; created_by: number | null;
   creation_type: 'USER_CREATED' | 'AI_RANDOM'; status: 'ACTIVE' | 'INACTIVE'; active_member_count: number;
@@ -179,7 +181,8 @@ export interface AdminBooking extends Booking {
 /** Admin: a refund still owed. manual = CASH/BANK_TRANSFER (incl. SePay); the Admin pays it back by hand. */
 export interface PendingRefund extends Payment {
   manual: boolean; note?: string | null;
-  payer: { user_id: number; full_name: string | null; email: string | null; phone: string | null };
+  payer: { user_id: number; full_name: string | null; email: string | null; phone: string | null;
+    refund_account?: { bank_name: string; account_no: string; account_name: string } | null };
   original: { payment_id: number; transaction_code: string | null; payment_type: PaymentType; paid_at: ISODateTime | null; note: string | null } | null;
 }
 

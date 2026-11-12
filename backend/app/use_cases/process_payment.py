@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha256
@@ -82,6 +83,15 @@ def _vnd(amount):
 def _after_deposit_recorded(ctx, booking, payment):
     demo = payment_service.is_demo_payment(payment)
     summary = _booking_summary(ctx, booking)
+    required = _required_for(booking, payment.user_id) or Decimal('0')
+    paid = booking_service.paid_deposit_by_user(booking_service.payments_of(ctx, booking.booking_id)).get(payment.user_id, Decimal('0'))
+    if not demo and paid < required:
+        deadline = booking.hold_expires_at.astimezone(VIETNAM)
+        notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS', 'Đã nhận một phần tiền cọc',
+            f'Đã nhận {_vnd(payment.amount)} (mã {payment.transaction_code}), còn thiếu {_vnd(required - paid)} tiền cọc. '
+            f'Mở Lịch đã đặt và quét mã mới cho phần còn thiếu trước {deadline:%H:%M} ngày {deadline:%d/%m}; '
+            f'quá hạn thì sân không được giữ và số đã chuyển sẽ được hoàn. {summary}')
+        return
     notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS',
         'Đã xác nhận cọc DEMO' if demo else 'Đã thanh toán tiền cọc đặt sân',
         'Cọc mô phỏng đã được lưu; chưa xác minh tiền ngân hàng.' if demo else
@@ -103,25 +113,147 @@ def _handle_late(ctx, booking, payment):
         payment_service.execute_refund_plan(ctx, plan, note='LATE_PAYMENT')
     payment.note = policy.add_note(payment.note, 'Tien den muon, can doi soat')
 
-def process_gateway_callback(provider, verified):
-    """verified has passed the adapter's signature/merchant checks. Same path for IPN and reconciliation."""
+def process_gateway_callback(provider, verified, *, bank_transfer=False):
+    """verified has passed the adapter's signature/merchant checks. Same path for IPN and reconciliation.
+
+    A card/wallet gateway charges exactly the amount it was given, so any other amount is an error. A bank
+    transfer (bank_transfer=True) carries whatever the customer typed: the real amount is recorded, a short
+    deposit stays a partial share, and money beyond the share pays the booking or goes back to the customer."""
     with UnitOfWork() as ctx:
         payment = ctx.session.scalar(select(Payment).where(Payment.transaction_code == verified.merchant_reference))
         if (payment is None or payment.payment_method != provider or payment.booking_id is None
                 or payment.payment_type not in payment_service.COLLECTED_TYPES):
             return CommandResult('NOT_FOUND', http_status=404)
         booking, _ = booking_service.lock_booking_graph(ctx, payment.booking_id)
-        if Decimal(verified.amount) != Decimal(payment.amount) or verified.currency != 'VND':
+        amount = Decimal(verified.amount)
+        if verified.currency != 'VND' or (not bank_transfer and amount != Decimal(payment.amount)):
             payment.note = policy.add_note(payment.note, 'Callback sai so tien, can doi soat')
             return CommandResult('AMOUNT_MISMATCH', http_status=422)
+        if payment.status in ('SUCCESS', 'REFUNDED'):
+            # The code was paid before. A retry of the same notification changes nothing; a new transfer is real money.
+            if bank_transfer and verified.provider_reference and not _seen(ctx, payment, verified.provider_reference):
+                row = _extra_row(ctx, booking, payment, amount, verified.provider_reference)
+                _place_extra(ctx, booking, row, 'Chuyển khoản thêm cho mã đã thanh toán')
+                return CommandResult('EXTRA_RECORDED')
+            return CommandResult('DUPLICATE', data=payment_service.apply_verified_payment(ctx, verified))
+        if amount != Decimal(payment.amount):
+            payment.note = policy.add_note(payment.note, f'Khach chuyen {int(amount)}d, ma yeu cau {int(Decimal(payment.amount))}d')
+            payment.amount = policy.money(amount)
         result = payment_service.apply_verified_payment(ctx, verified)
-        if result.duplicate:
-            return CommandResult('DUPLICATE', data=result)
         if result.late:
             _handle_late(ctx, booking, payment)
         elif result.applied:
             _after_deposit_recorded(ctx, booking, payment)
+            if bank_transfer:
+                _split_surplus(ctx, booking, payment, verified.provider_reference)
         return CommandResult(data=result)
+
+EXTRA_NOTE = 'Tien chuyen them'
+
+def _tag(provider_reference):
+    return (provider_reference or 'x').split(':')[-1][:40]
+
+def _seen(ctx, payment, provider_reference):
+    """This bank transaction is already recorded, on the payment itself or as money split off it."""
+    if f'gw={provider_reference}' in (payment.note or ''):
+        return True
+    return bool(ctx.session.scalar(select(Payment.payment_id).where(
+        Payment.transaction_code.like(f'{payment.transaction_code}-{_tag(provider_reference)}%'))))
+
+def _extra_row(ctx, booking, source, amount, provider_reference, suffix=''):
+    """Money a payer sent beyond their deposit share, kept as its own receipt next to the deposit."""
+    row = Payment(user_id=source.user_id, booking_id=booking.booking_id, amount=policy.money(amount),
+                  payment_type='BOOKING_REMAINING_PAYMENT', payment_method=source.payment_method,
+                  transaction_code=f'{source.transaction_code}-{_tag(provider_reference)}{suffix}'[:100], status='SUCCESS',
+                  paid_at=ctx.now(), note=f'{EXTRA_NOTE} (ma {source.transaction_code}) | gw={provider_reference}'[:255])
+    ctx.session.add(row)
+    ctx.session.flush()
+    return row
+
+def _split_surplus(ctx, booking, payment, provider_reference):
+    """A transfer larger than the payer's remaining share: the deposit row keeps the share, the rest is extra."""
+    if payment.payment_type != 'BOOKING_DEPOSIT':
+        return
+    required = _required_for(booking, payment.user_id) or Decimal('0')
+    paid = booking_service.paid_deposit_by_user(booking_service.payments_of(ctx, booking.booking_id)).get(payment.user_id, Decimal('0'))
+    surplus = min(paid - required, Decimal(payment.amount))
+    if surplus <= 0:
+        return
+    if surplus == Decimal(payment.amount):
+        # The share was already paid by another transfer: this whole transfer is extra.
+        payment.payment_type = 'BOOKING_REMAINING_PAYMENT'
+        payment.note = policy.add_note(payment.note, EXTRA_NOTE)
+        ctx.session.flush()
+        _place_extra(ctx, booking, payment, 'Chuyển dư so với phần cọc')
+        return
+    payment.amount = policy.money(Decimal(payment.amount) - surplus)
+    ctx.session.flush()
+    _place_extra(ctx, booking, _extra_row(ctx, booking, payment, surplus, provider_reference, '-S'), 'Chuyển dư so với phần cọc')
+
+BALANCE_REFERENCE = re.compile(r'SAN(\d{1,10})TT')
+
+def find_balance_booking(payload):
+    """Booking id from a pitch-fee transfer content (SAN<id>TT), after banks upper-case it and drop spaces."""
+    for field in ('code', 'content', 'description'):
+        found = BALANCE_REFERENCE.search(str(payload.get(field) or '').upper().replace(' ', ''))
+        if found:
+            return int(found.group(1))
+    return None
+
+@retry_conflicts
+def record_balance_transfer(booking_id, amount, provider_reference, paid_at=None):
+    """A bank credit for a booking's pitch-fee QR: recorded as the remaining payment without the Admin
+    typing it in. Money above what is still owed, or for a booking no longer confirmed, is queued for refund."""
+    from app.models import Booking
+    code = f'SEPAY-{_tag(provider_reference)}'
+    with UnitOfWork() as ctx:
+        found = ctx.session.get(Booking, booking_id)
+        if found is None or found.booking_type == 'MAINTENANCE_LOCK':
+            return 'NO_REFERENCE'
+        booking, payments = booking_service.lock_booking_graph(ctx, booking_id)
+        if ctx.session.scalar(select(Payment.payment_id).where(Payment.transaction_code == code)):
+            return 'DUPLICATE'
+        row = Payment(user_id=booking.user_id, booking_id=booking_id, amount=policy.money(amount), payment_type='BOOKING_REMAINING_PAYMENT',
+                      payment_method='BANK_TRANSFER', transaction_code=code, status='SUCCESS', paid_at=paid_at or ctx.now(),
+                      note=f'QR tien san {compute_reference(booking_id)} | gw={provider_reference}'[:255])
+        ctx.session.add(row)
+        ctx.session.flush()
+        if booking.status == 'CONFIRMED':
+            left = compute(ctx, booking, with_qr=False).outstanding_amount
+            notification_service.notify(ctx, [booking.user_id], 'PAYMENT_SUCCESS', 'Đã nhận tiền sân',
+                f'Đã nhận {_vnd(amount)} chuyển khoản tiền sân. '
+                + (f'Còn {_vnd(left)} trả tại sân. ' if left > 0 else 'Đã thanh toán đủ. ') + _booking_summary(ctx, booking))
+        _place_extra(ctx, booking, row, 'Chuyển khoản tiền sân', tell_kept=False)
+        return 'BALANCE_RECORDED'
+
+def compute_reference(booking_id):
+    from app.services.booking_balance_service import transfer_reference
+    return transfer_reference(booking_id)
+
+def _place_extra(ctx, booking, row, why, tell_kept=True):
+    """Extra money first pays what the booking still owes at the pitch. Anything beyond the pitch fee, or any
+    money for a booking that is no longer confirmed, goes back to the payer through the refund queue."""
+    if booking.status == 'CONFIRMED':
+        collected = compute(ctx, booking, with_qr=False).collected_amount
+        excess = min(max(Decimal(collected) - Decimal(booking.total_amount), Decimal('0')), Decimal(row.amount))
+    else:
+        excess = Decimal(row.amount)
+    kept = Decimal(row.amount) - excess
+    if kept > 0 and tell_kept:
+        notification_service.notify(ctx, [row.user_id], 'PAYMENT_SUCCESS', 'Đã trừ tiền chuyển dư vào tiền sân',
+            f'{why}: {_vnd(kept)} được tính vào tiền sân còn lại. {_booking_summary(ctx, booking)}')
+    if excess <= 0:
+        return
+    if kept > 0:
+        row.amount = policy.money(kept)
+        ctx.session.flush()
+        row = Payment(user_id=row.user_id, booking_id=booking.booking_id, amount=policy.money(excess), payment_type=row.payment_type,
+                      payment_method=row.payment_method, transaction_code=f'{row.transaction_code}-H'[:100], status='SUCCESS',
+                      paid_at=row.paid_at, note=policy.add_note(row.note, 'Phan vuot gia san, hoan lai'))
+        ctx.session.add(row)
+        ctx.session.flush()
+    refund = payment_service.create_refund(ctx, row, note=f'{why}, hoan lai'[:255])
+    payment_service.notify_refund(ctx, refund, f'{why}: {_vnd(excess)} sẽ được hoàn cho bạn.')
 
 @retry_conflicts
 def record_manual_payment(actor, *, booking_id, user_id, payment_type, amount, method, reference, note=None):

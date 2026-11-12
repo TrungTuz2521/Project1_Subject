@@ -32,4 +32,6 @@ def settings():
             'PUBLIC_WEB_URL': os.getenv('PUBLIC_WEB_URL', 'http://localhost:5173'),
             'JWT_ISSUER': 'football-field-api', 'JWT_AUDIENCE': 'football-field-web',
             'CORS_ORIGINS': os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(','),
+            # Number of reverse proxies in front of the app on the cloud (load balancer, Cloudflare...). 0 locally.
+            'TRUSTED_PROXY_HOPS': int(os.getenv('TRUSTED_PROXY_HOPS', '0')),
             'MAX_CONTENT_LENGTH': 64 * 1024}

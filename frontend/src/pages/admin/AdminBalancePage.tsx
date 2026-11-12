@@ -103,7 +103,7 @@ function BalancePanel({ id, booking, onBusy }: { id: number; booking?: AdminBook
         {balance.qr_payload && !huyDemo && <BankQR payload={balance.qr_payload} />}
         {balance.transfer_reference && <p>Nội dung chuyển khoản: <strong>{balance.transfer_reference}</strong></p>}
         {balance.qr_unavailable_reason && <Banner>{balance.qr_unavailable_reason}</Banner>}
-        <Banner>QR chung gợi ý số còn thiếu. Hai đội có thể chuyển nhiều khoản hoặc trả tiền mặt. Quét QR không xác nhận đã thanh toán.</Banner>
+        <Banner>Khách quét QR này và giữ nguyên nội dung chuyển khoản: khi tiền vào, hệ thống tự ghi nhận (cần bật SePay), chuyển dư sẽ vào "Khoản cần hoàn". Tiền mặt hoặc chuyển khoản khác thì xác nhận tay bên dưới.</Banner>
       </Card>
       <Card><h2>Xác nhận tiền thực nhận</h2>
         {balance.payment_status === 'PAID' ? <Banner tone="success">Booking đã thu đủ.</Banner> : !canCollect ? <Banner>Booking này không còn ở trạng thái đã xác nhận nên không thu thêm.</Banner> : <>

@@ -22,6 +22,12 @@ def create_app(config=None):
         app.config['DEMO_PAYMENT_ENABLED'] = (config or {}).get('DEMO_PAYMENT_ENABLED', False)
         # A developer's real SePay key in backend/.env must not switch legacy tests to QR auto-confirmation.
         app.config['SEPAY_WEBHOOK_KEY'] = (config or {}).get('SEPAY_WEBHOOK_KEY', '')
+    hops = int(app.config.get('TRUSTED_PROXY_HOPS') or 0)
+    if hops:
+        # Behind a load balancer the socket address is the proxy: read the client IP and https from its headers,
+        # so rate limits apply per customer. Only as many hops as there really are, or a client could forge them.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
     db.init_app(app)
     from app import models
     from app.routes.api import api

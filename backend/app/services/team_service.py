@@ -81,8 +81,15 @@ def add_member(ctx, team_id, actor, contact):
     ctx.locks.users([actor.user_id])
     ctx.locks.lock(Team, [team_id])
     team = captain(ctx, team_id, actor)
-    lookup = User.email == contact.lower() if '@' in contact else User.phone == contact.replace(' ', '')
-    user = ctx.session.scalar(select(User).where(lookup))
+    if '@' in contact:
+        lookup = User.email == contact.lower()
+    else:
+        from app.services.auth_service import normalize_phone
+        try:
+            lookup = User.phone == normalize_phone(contact, 'contact')
+        except DomainError:
+            lookup = None
+    user = ctx.session.scalar(select(User).where(lookup)) if lookup is not None else None
     if user is None or user.status != 'ACTIVE' or user.role != 'PLAYER' or user.email.endswith('@walkin.invalid'):
         raise DomainError('NOT_FOUND', 'Không tìm thấy người chơi với email hoặc số điện thoại này.', 404, {'contact': 'Kiểm tra lại email hoặc số điện thoại họ đã đăng ký.'})
     membership = ctx.session.scalar(select(TeamMember).where(TeamMember.team_id == team_id, TeamMember.user_id == user.user_id))

@@ -367,6 +367,8 @@ python -m flask --app app:create_app scheduler --with-matchmaking --with-email
 Mỗi yêu cầu mới cũng được quét ngay khi gửi. Admin xem mọi yêu cầu và bấm "Quét ngay" ở trang **Kèo ghép**. Trước khi chạy code này trên TiDB phải chạy migration `database/schema/006_match_requests.sql` (chỉ thêm cột).
 
 
+Thanh toán QR SePay: [cài đặt](docs/setup/SEPAY_QR.md), [đưa lên cloud](docs/setup/DEPLOY_CLOUD.md) (chạy migration `007_refund_account.sql`).
+
 Danh sách việc còn lại, ưu tiên demo và giới hạn thực tế: [Những phần cần hoàn thiện](docs/api/REMAINING_WORK.md).
 
 

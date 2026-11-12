@@ -76,6 +76,23 @@ def send_email(recipient, title, content, notification_id, link):
         client.close()
 
 
+def send_password_reset(recipient, full_name, link, minutes):
+    """Sent at once (not through the notification outbox): the link is short-lived and must not be stored."""
+    username, _ = smtp_settings()
+    message = EmailMessage()
+    message['From'] = formataddr(('Football Booking', username))
+    message['To'] = recipient
+    message['Subject'] = '[Football Booking] Đặt lại mật khẩu'
+    message.set_content(f'Xin chào {full_name},\n\nBạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu. Mở link sau trong {minutes} phút '
+                        f'để đặt mật khẩu mới:\n{link}\n\nLink chỉ dùng được một lần. Nếu bạn không yêu cầu, hãy bỏ qua email này, '
+                        'mật khẩu hiện tại vẫn giữ nguyên.\n\nEmail tự động từ Football Booking.')
+    client = smtp_connection()
+    try:
+        if client.send_message(message):
+            raise RuntimeError('SMTP recipient refused')
+    finally:
+        client.close()
+
 def claim_email(notification_id):
     """Conservative claim with the existing enum: reserve as FAILED before SMTP.
 

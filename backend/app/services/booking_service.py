@@ -146,7 +146,8 @@ def booking_data(ctx, booking, admin=False, payments=None, pitch_names=None):
                      and p.status in ('SUCCESS', 'REFUNDED')), Decimal('0'))
     collected -= sum((Decimal(p.amount) for p in rows if p.payment_type == 'REFUND' and p.status == 'SUCCESS'), Decimal('0'))
     result['paid_amount'] = policy.money(collected)
-    result['outstanding_amount'] = policy.money(max(Decimal(booking.total_amount) - collected, Decimal('0')))
+    owed = Decimal(booking.total_amount) - collected if booking.status in ('CONFIRMED', 'PENDING_HOLD') else Decimal('0')
+    result['outstanding_amount'] = policy.money(max(owed, Decimal('0')))
     if pitch_names is not None and booking.pitch_id in pitch_names:
         result['pitch_name'] = pitch_names[booking.pitch_id]
     else:

@@ -657,8 +657,8 @@ class BalanceAndConfirmPaid(BookingCase):
         data = self.balance(booking_id).json['data']
         self.assertEqual((data['total_amount'], data['deposit_collected_amount'], data['remaining_collected_amount'], data['collected_amount'], data['outstanding_amount'], data['payment_status']),
                          ('600000.00', '120000.00', '0.00', '120000.00', '480000.00', 'PARTIAL'))
-        self.assertEqual(data['transfer_reference'], f'BOOKING-{booking_id}')
-        self.assertIn('BOOKING-', data['qr_payload'])
+        self.assertEqual(data['transfer_reference'], f'SAN{booking_id}TT')
+        self.assertIn(f'SAN{booking_id}TT', data['qr_payload'])
         self.assertIsNone(data['qr_unavailable_reason'])
 
     def test_viewing_qr_records_nothing(self):

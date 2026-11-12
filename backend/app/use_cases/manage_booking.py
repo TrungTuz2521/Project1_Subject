@@ -96,7 +96,7 @@ def reschedule_booking(actor, *, booking_id, start_time, end_time, pitch_id=None
         from app.services.pricing import slot_price
         if slot_price(ctx, target, start_time)[0] != Decimal(booking.total_amount):
             raise DomainError('PRICE_CHANGE_REQUIRES_REBOOK', 'Lượt mới khác giá (giờ thường/cao điểm hoặc sân khác giá): cần hủy và đặt lại.')
-        policy.validate_slot(ctx.now(), start_time, end_time)
+        policy.validate_slot(ctx.now(), start_time, end_time, policy.ADMIN_MAX_ADVANCE_DAYS)
         if booking_service.find_conflict(ctx, target_id, start_time, end_time, exclude_booking_id=booking_id):
             raise SlotUnavailable()
         match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))

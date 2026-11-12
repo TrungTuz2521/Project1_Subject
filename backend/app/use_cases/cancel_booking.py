@@ -42,6 +42,11 @@ def _close_for_actor(ctx, actor, booking, reason, customer_cancel=False):
         return close_booking(ctx, booking, status='CANCELLED', cause='ADMIN_INCIDENT', actor_id=actor.user_id, reason=reason)
     if ctx.now() >= booking.start_time:
         raise DomainError('STATE_CONFLICT', 'Đã đến giờ đá, không thể tự hủy.')
+    from app.services.match_request_service import ACTIVE_MATCH, CUTOFF
+    paired = ctx.session.scalar(select(Match.match_id).where(Match.booking_id == booking.booking_id, Match.status.in_(ACTIVE_MATCH)))
+    if paired and booking.start_time - ctx.now() < CUTOFF:
+        # Same rule as withdrawing from the match request page: the other team needs a day to find someone else.
+        raise DomainError('TOO_LATE', 'Lượt này là kèo ghép, còn dưới 24 giờ trước giờ đá nên không tự hủy được. Vui lòng gọi quầy.')
     return close_booking(ctx, booking, status='CANCELLED', cause='USER_CANCEL', actor_id=actor.user_id, reason=reason,
                          cancelling_user_id=actor.user_id)
 

@@ -25,7 +25,8 @@ def bank_qr_payload(bin_code, account_no, amount, reference):
     return body + crc16(body)
 
 def transfer_reference(booking_id):
-    return f'BOOKING-{booking_id}'
+    """Pitch-fee transfer content. The closing TT keeps digits a bank appends from being read as the booking id."""
+    return f'SAN{booking_id}TT'
 
 def compute(ctx, booking, payments=None, with_qr=True):
     rows = payments if payments is not None else booking_service.payments_of(ctx, booking.booking_id)

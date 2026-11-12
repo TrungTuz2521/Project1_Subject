@@ -21,6 +21,10 @@ class User(Timestamped, db.Model):
     match_priority = db.Column(db.Integer, nullable=False, default=100)
     radar_stats = db.Column(db.JSON)
     status = db.Column(db.String(16), nullable=False, default='ACTIVE')
+    # Where a bank refund is sent (migration 007). Webhooks never tell who sent a transfer.
+    refund_bank_name = db.Column(db.String(100))
+    refund_account_no = db.Column(db.String(30))
+    refund_account_name = db.Column(db.String(100))
 
 class Team(Timestamped, db.Model):
     __tablename__ = 'teams'

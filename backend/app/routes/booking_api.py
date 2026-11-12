@@ -177,8 +177,12 @@ def deposit_instructions(booking_id):
 @booking_api.post('/payments/deposit/demo-confirm')
 @authenticated
 def demo_confirm_deposit():
-    if request.remote_addr not in ('127.0.0.1', '::1'):
-        raise DomainError('DEMO_DISABLED', 'Chỉ dùng xác nhận demo trên máy phát triển local.', 403)
+    # Simulated money only on a developer machine: never next to real SePay payments, and never through a
+    # tunnel or reverse proxy (those reach Flask from 127.0.0.1 too, but add forwarding headers).
+    from app.services.sepay_service import enabled as sepay_enabled
+    forwarded = any(request.headers.get(h) for h in ('X-Forwarded-For', 'Forwarded', 'CF-Connecting-IP', 'X-Real-IP'))
+    if forwarded or sepay_enabled() or request.remote_addr not in ('127.0.0.1', '::1'):
+        raise DomainError('DEMO_DISABLED', 'Chỉ dùng xác nhận demo trên máy phát triển local, khi chưa bật SePay.', 403)
     from app.services.demo_deposit_service import confirm_demo_deposit
     data = body(('booking_id',), ('booking_id',))
     return response(confirm_demo_deposit(g.actor, v.integer(data['booking_id'], 'booking_id')))
@@ -456,9 +460,12 @@ def admin_users():
         auth.require_admin(ctx, g.actor)
         # LIKE wildcards typed by the admin are matched literally.
         pattern = '%' + q.lower().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
-        query = select(User).where(or_(func.lower(User.full_name).like(pattern, escape='\\'),
-                                       func.lower(User.email).like(pattern, escape='\\'),
-                                       User.phone.like(pattern, escape='\\')))
+        matches = [func.lower(User.full_name).like(pattern, escape='\\'), func.lower(User.email).like(pattern, escape='\\'),
+                   User.phone.like(pattern, escape='\\')]
+        digits = ''.join(ch for ch in q if ch.isdigit())
+        if len(digits) >= 3 and len(digits) >= len(q.replace(' ', '').replace('.', '').replace('-', '').lstrip('+')):
+            matches.append(User.phone.like(f'%{digits}%'))  # "0912 345" finds 0912345678 as stored
+        query = select(User).where(or_(*matches))
         if role:
             query = query.where(User.role == role)
         def preload(rows):
@@ -547,7 +554,8 @@ def admin_pending_refunds():
                 return dict(payment_service.payment_data(refund, admin=True),
                             manual=refund.payment_method in MANUAL_METHODS,
                             payer=dict(user_id=refund.user_id, full_name=payer.full_name if payer else None,
-                                       email=payer.email if payer else None, phone=payer.phone if payer else None),
+                                       email=payer.email if payer else None, phone=payer.phone if payer else None,
+                                       refund_account=payment_service.refund_account(payer)),
                             original=dict(payment_id=original.payment_id, transaction_code=original.transaction_code,
                                           payment_type=original.payment_type, paid_at=original.paid_at,
                                           note=original.note) if original else None)

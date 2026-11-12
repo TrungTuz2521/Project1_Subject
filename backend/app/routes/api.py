@@ -68,6 +68,32 @@ def login():
         result = auth.login(ctx, **data)
     return response(result)
 
+@api.post('/auth/password/forgot')
+def forgot_password():
+    """Always the same answer, so the form never reveals which emails have an account."""
+    data = body(('email',), ('email',))
+    with UnitOfWork() as ctx:
+        user = auth.reset_candidate(ctx, data['email'])
+        mail = (user.email, user.full_name, auth.password_reset_token(ctx, user)) if user else None
+    if mail and current_app.config.get('EMAIL_ENABLED'):
+        from urllib.parse import quote
+        from app.services.email_service import send_password_reset
+        link = f"{current_app.config['PUBLIC_WEB_URL'].rstrip('/')}/#/reset-password?token={quote(mail[2])}"
+        try:
+            send_password_reset(mail[0], mail[1], link, auth.RESET_MINUTES)
+        except Exception as error:  # Never reveal the account through a different answer.
+            current_app.logger.error('Password reset email failed (%s)', type(error).__name__)
+    elif mail:
+        current_app.logger.warning('Password reset requested but EMAIL_ENABLED is off')
+    return response({'sent': True, 'message': 'Nếu email đã đăng ký, bạn sẽ nhận được link đặt lại mật khẩu trong vài phút.'})
+
+@api.post('/auth/password/reset')
+def reset_password():
+    data = body(('token', 'new_password', 'confirm_password'), ('token', 'new_password', 'confirm_password'))
+    with UnitOfWork() as ctx:
+        result = auth.reset_password(ctx, data['token'], data['new_password'], data['confirm_password'])
+    return response(result)
+
 @api.post('/auth/refresh')
 @authenticated
 def refresh_session():
