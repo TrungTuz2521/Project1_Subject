@@ -64,11 +64,10 @@ def open_qr_session(actor, booking_id):
     """Returns (session, created). Reuses the payer's code while it is still shown; afterwards a new one."""
     if not enabled():
         raise DomainError('PAYMENT_PROVIDER_UNAVAILABLE', 'Chưa cấu hình thanh toán QR tự động.', 503)
-    from app.use_cases.process_payment import _required_for
     with UnitOfWork() as ctx:
         auth_service.require_active_actor(ctx, actor)
         booking, payments = booking_service.lock_booking_graph(ctx, booking_id)
-        required = _required_for(booking, actor.user_id)
+        required = booking_service.required_share(booking, actor.user_id)
         if required is None:
             raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
         if any(payment_service.is_demo_payment(p) for p in payments):

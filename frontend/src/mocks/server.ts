@@ -108,7 +108,6 @@ export function createMockServer(delayMs = 80) {
     }
     const activeCount = currentMembers.filter(member => member.status === 'ACTIVE').length;
     const sourceTeam = teams.find(team => team.team_id === sourcePost.team_id);
-    if (sourceTeam) sourceTeam.active_member_count = activeCount;
     sourcePost.current_players = activeCount;
     if (sourcePost.post_type === 'RECRUIT_MEMBERS') {
       sourcePost.required_players = Math.max(0, (sourcePost.required_players ?? 1) - 1);
@@ -239,7 +238,7 @@ export function createMockServer(delayMs = 80) {
       const body = parseBody(init);const name = body?.team_name;
       if (typeof name !== 'string' || !name.trim() || name.trim().length > 100 || scenario === 'validation-error') return fail(422, 'VALIDATION_ERROR', 'Kiểm tra lại thông tin đội bóng.', { team_name: 'Tên đội cần từ 1 đến 100 ký tự.' });
       if (teams.some(team => team.team_name.toLocaleLowerCase() === name.trim().toLocaleLowerCase())) return fail(409, 'STATE_CONFLICT', 'Đã có đội dùng tên này.', { team_name: 'Hãy chọn một tên khác.' });
-      const team: Team = { team_id: nextTeamId++, team_name: name.trim(), created_by: currentUser.user_id, creation_type: 'USER_CREATED', status: 'ACTIVE', active_member_count: 1 };
+      const team: Team = { team_id: nextTeamId++, team_name: name.trim(), created_by: currentUser.user_id, creation_type: 'USER_CREATED', status: 'ACTIVE', last_player_count: null };
       teams.unshift(team);
       teamMembers[team.team_id] = [{ user_id: currentUser.user_id, full_name: currentUser.full_name, role: 'CAPTAIN', status: 'ACTIVE', joined_at: new Date().toISOString() }];
       return reply(team, 201);
@@ -248,7 +247,7 @@ export function createMockServer(delayMs = 80) {
       const teamId = Number(parts[1]);const team = teams.find(t => t.team_id === teamId);
       if (!team) return fail(404, 'NOT_FOUND', 'Không tìm thấy đội bóng.');
       if (currentUser.role !== 'ADMIN' && !ownedTeamIds().includes(teamId)) return fail(403, 'FORBIDDEN', 'Bạn không phải thành viên của đội.');
-      return reply({ ...team, members: teamMembers[teamId] ?? [] });
+      return reply(team);
     }
     if (parts[0] === 'teams' && parts.length === 2 && method === 'PATCH') {
       const teamId=Number(parts[1]);const team=teams.find(t=>t.team_id===teamId);
@@ -294,30 +293,6 @@ export function createMockServer(delayMs = 80) {
       }
       return reply({ ...participant, proposal_id: proposal?.proposal_id ?? 0 });
     }
-    if(parts[0]==='teams'&&parts[2]==='members'&&parts[3]==='me'&&method==='DELETE'){
-      const teamId=Number(parts[1]);if(currentIsCaptain(teamId))return fail(409,'CAPTAIN_TRANSFER_REQUIRED','Đội trưởng cần chuyển quyền trước khi rời đội.');
-      const member=(teamMembers[teamId]??[]).find(m=>m.user_id===currentUser.user_id&&m.status==='ACTIVE');
-      if(!member)return fail(404,'NOT_FOUND','Bạn không phải thành viên đang hoạt động.');
-      member.status='LEFT';const team=teams.find(t=>t.team_id===teamId);if(team)team.active_member_count=Math.max(0,team.active_member_count-1);
-      return reply({team_id:teamId,status:'LEFT'});
-    }
-    if(parts[0]==='teams'&&parts[2]==='members'&&parts.length===4&&method==='DELETE'){
-      const teamId=Number(parts[1]);const userId=Number(parts[3]);
-      if(!currentIsCaptain(teamId))return fail(403,'FORBIDDEN','Chỉ đội trưởng mới được xóa thành viên.');
-      const reason=parseBody(init)?.reason;if(typeof reason!=='string'||!reason.trim())return fail(422,'VALIDATION_ERROR','Cần cung cấp lý do xóa thành viên.',{reason:'Lý do không được để trống.'});
-      const member=(teamMembers[teamId]??[]).find(m=>m.user_id===userId&&m.status==='ACTIVE');
-      if(!member)return fail(404,'NOT_FOUND','Không tìm thấy thành viên đang hoạt động.');
-      if(member.role==='CAPTAIN')return fail(409,'CAPTAIN_TRANSFER_REQUIRED','Không thể xóa đội trưởng.');
-      const boundToUpcomingMatch=matches.some(match=>{
-        const source=posts.find(post=>post.post_id===match.post_id);
-        const target=match.opponent_post_id===null?undefined:posts.find(post=>post.post_id===match.opponent_post_id);
-        return (source?.team_id===teamId||target?.team_id===teamId)&&Date.parse(match.match_time)>Date.now()&&['SUGGESTED','CONFIRMED'].includes(match.status);
-      });
-      if(boundToUpcomingMatch)return fail(409,'ACTIVE_MATCH_MEMBERSHIP','Thành viên đang gắn với trận sắp diễn ra.');
-      member.status='REMOVED';const team=teams.find(t=>t.team_id===teamId);if(team)team.active_member_count=Math.max(0,team.active_member_count-1);
-      return reply({team_id:teamId,user_id:userId,status:'REMOVED'});
-    }
-
     if(path==='/pitches'&&method==='GET')return reply(pitches,200,{page:1,page_size:20,total:pitches.length});
     if(path==='/match-posts'&&method==='GET'){
       let visible=[...posts];
@@ -334,7 +309,7 @@ export function createMockServer(delayMs = 80) {
     }
     if(path==='/match-posts'&&method==='POST'){
       const body=parseBody(init) as Partial<PostCreate>|null;if(!body)return fail(422,'VALIDATION_ERROR','Dữ liệu bài đăng không hợp lệ.');
-      if(body.attendance_user_ids!==undefined||body.guest_players!==undefined)return fail(501,'MOCK_NOT_IMPLEMENTED','Quân số theo buổi đá cần kết nối backend thật; chế độ demo chưa hỗ trợ.');
+      if(body.guest_players!==undefined)return fail(501,'MOCK_NOT_IMPLEMENTED','Quân số theo buổi đá cần kết nối backend thật; chế độ demo chưa hỗ trợ.');
       const fields:Record<string,string>={};
       if(typeof body.title!=='string'||body.title.trim().length<1||body.title.trim().length>150)fields.title='Tiêu đề cần từ 1 đến 150 ký tự.';
       if(!body.post_type||!postTypes.includes(body.post_type))fields.post_type='Loại bài đăng không hợp lệ.';
@@ -353,7 +328,7 @@ export function createMockServer(delayMs = 80) {
       const post:MatchPost={post_id:nextPostId++,title:(body.title as string).trim(),description:body.description??null,post_type:body.post_type as PostType,
         team_id:teamId,pitch_id:body.pitch_id??null,pitch_type:body.pitch_type??null,match_time:body.match_time??null,end_time:body.end_time??null,
         skill_level:body.skill_level as SkillLevel,payment_rule:body.payment_rule??null,required_players:body.required_players??null,
-        current_players:teamId?(teams.find(t=>t.team_id===teamId)?.active_member_count??1):1,expiry_time:body.expiry_time as string,status:'OPEN',
+        current_players:1,expiry_time:body.expiry_time as string,status:'OPEN',
         matching_ready:Boolean((body.pitch_type??null)&&(body.match_time??null)&&(body.end_time??null))};
       posts.unshift(post);postOwners.set(post.post_id,currentUser.user_id);return reply(post,201);
     }
@@ -484,7 +459,7 @@ export function createMockServer(delayMs = 80) {
     if(path==='/match-requests/options'&&method==='GET'){
       const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date());
       const mine=teams.filter(t=>(teamMembers[t.team_id]??[]).some(m=>m.user_id===currentUser.user_id&&m.role==='CAPTAIN'&&m.status==='ACTIVE'));
-      return reply({teams:mine.map(t=>({team_id:t.team_id,team_name:t.team_name,members:(teamMembers[t.team_id]??[]).filter(m=>m.status==='ACTIVE').map(m=>({user_id:m.user_id,full_name:m.full_name}))})),
+      return reply({teams:mine.map(t=>({team_id:t.team_id,team_name:t.team_name,last_player_count:t.last_player_count})),
         opponent_bookings:[],recruit_games:[],today,rules:{opponent_lead_days:2,cutoff_hours:24,max_days:10,deposit_hold_hours:6,max_open_requests:5}});
     }
     if(path==='/match-requests'&&method==='POST')return fail(501,'MOCK_NOT_IMPLEMENTED','Chế độ demo không ghép kèo thật. Hãy chạy cùng backend để thử.');

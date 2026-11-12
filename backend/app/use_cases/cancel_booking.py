@@ -16,7 +16,7 @@ def close_booking(ctx, booking, *, status, cause, actor_id, reason, cancelling_u
     plan = payment_service.plan_refunds(ctx, booking_id=booking.booking_id, cause=cause, cancelling_user_id=cancelling_user_id)
     payment_service.execute_refund_plan(ctx, plan, note=cause)
     match_service.cancel_for_booking(ctx, booking_id=booking.booking_id, cause=cause, actor_id=actor_id)
-    from app.services.match_request_service import booking_closed
+    from app.services.match_requests import booking_closed
     booking_closed(ctx, booking.booking_id)
     payers = {p['user_id'] for p in booking.payer_plan or []} | {booking.user_id}
     if status == 'EXPIRED':
@@ -42,7 +42,7 @@ def _close_for_actor(ctx, actor, booking, reason, customer_cancel=False):
         return close_booking(ctx, booking, status='CANCELLED', cause='ADMIN_INCIDENT', actor_id=actor.user_id, reason=reason)
     if ctx.now() >= booking.start_time:
         raise DomainError('STATE_CONFLICT', 'Đã đến giờ đá, không thể tự hủy.')
-    from app.services.match_request_service import ACTIVE_MATCH, CUTOFF
+    from app.services.match_requests import ACTIVE_MATCH, CUTOFF
     paired = ctx.session.scalar(select(Match.match_id).where(Match.booking_id == booking.booking_id, Match.status.in_(ACTIVE_MATCH)))
     if paired and booking.start_time - ctx.now() < CUTOFF:
         # Same rule as withdrawing from the match request page: the other team needs a day to find someone else.
@@ -64,7 +64,7 @@ def cancel_booking(actor, *, booking_id, reason, admin_route=False, customer_can
 
 @retry_conflicts
 def cancel_match(actor, *, match_id, reason):
-    """Registered as app.extensions['cancel_match']; Đức's route has checked the viewer may act."""
+    """POST /matches/{id}/cancel; the route has already checked the viewer may act."""
     with UnitOfWork() as ctx:
         auth_service.require_active_actor(ctx, actor)
         match = ctx.session.get(Match, match_id)

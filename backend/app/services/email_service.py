@@ -8,10 +8,10 @@ from flask import current_app
 from sqlalchemy import select, update
 from app.contracts.errors import DomainError
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Notification, User, Match, MatchProposal, Booking
+from app.models import Notification, User, Match, Booking
 
+LEGACY_TYPES = frozenset({'MATCH_PROPOSAL', 'PROPOSAL_ACCEPTED', 'PROPOSAL_REJECTED', 'PROPOSAL_EXPIRED'})
 EMAIL_TYPES = frozenset({
-    'MATCH_PROPOSAL', 'PROPOSAL_ACCEPTED', 'PROPOSAL_REJECTED', 'PROPOSAL_EXPIRED',
     'BOOKING_HOLD', 'BOOKING_CONFIRMED', 'BOOKING_EXPIRED', 'PAYMENT_SUCCESS',
     'MATCH_CONFIRMED', 'MATCH_CANCELLED', 'TEAM_JOINED', 'POST_EXPIRED',
     'REFUND_PROCESSING', 'REFUND_SUCCESS', 'REFUND_FAILED',
@@ -114,10 +114,8 @@ def claim_email(notification_id):
         if row.notification_type == 'BOOKING_HOLD' and (not booking or booking.status != 'PENDING_HOLD'
                 or not booking.hold_expires_at or booking.hold_expires_at <= ctx.now()):
             return None  # Never send an obsolete request to pay a deposit.
-        if row.notification_type == 'MATCH_PROPOSAL':
-            proposal = ctx.session.get(MatchProposal, row.proposal_id) if row.proposal_id else None
-            if not proposal or proposal.status != 'PENDING_CONFIRMATION' or proposal.expires_at <= ctx.now():
-                return None
+        if row.notification_type in LEGACY_TYPES:
+            return None  # Queued by the old proposal flow, which no longer exists.
         base = current_app.config['PUBLIC_WEB_URL'].rstrip('/')
         parsed = urlsplit(base)
         if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.fragment or parsed.query:

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createApiClient } from '../services/api';
 import { createSessionStore } from '../stores/session';
 import { createMockServer } from './server';
-import type { ApiResponse, LoginData, Match, MatchPost, ProposalDetail, TeamDetail, TeamJoinRequest, Notification } from '../types/api';
+import type { ApiResponse, LoginData, Match, MatchPost, ProposalDetail, Team, TeamJoinRequest, Notification } from '../types/api';
 
 describe('matchmaking mock API', () => {
   const stores: ReturnType<typeof createSessionStore>[] = [];
@@ -136,12 +136,11 @@ describe('matchmaking mock API', () => {
     expect(captainNotifications.data.some(item => item.notification_type === 'TEAM_JOINED' && item.proposal_id === result.data.proposal_id)).toBe(true);
   });
 
-  it('returns team detail and protects captain leave rules', async () => {
+  it('returns a team as its name and head count, without a member list', async () => {
     const { api } = await setup();
-    const team = await api.request<ApiResponse<TeamDetail>>('/teams/1');
-    expect(team.data.members.some(member => member.role === 'CAPTAIN' && member.user_id === 2)).toBe(true);
-    await expect(api.request('/teams/1/members/me', { method: 'DELETE' }))
-      .rejects.toMatchObject({ status: 409, code: 'CAPTAIN_TRANSFER_REQUIRED' });
+    const team = await api.request<ApiResponse<Team>>('/teams/1');
+    expect(team.data.team_name).toBe('FC Bình Minh');
+    expect(team.data).not.toHaveProperty('members');
   });
 
   it('does not expose another player\'s proposals or matches', async () => {
@@ -200,8 +199,6 @@ describe('matchmaking mock API', () => {
       auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' },
     });
     store.set(demoLogin.data);
-    await expect(api.request('/teams/1/members/4', { method: 'DELETE', body: { reason: 'Vi phạm nội quy đội' } }))
-      .rejects.toMatchObject({ status: 409, code: 'ACTIVE_MATCH_MEMBERSHIP' });
     await expect(api.request('/match-posts/1/cancel', { method: 'POST', body: { reason: 'test' } }))
       .rejects.toMatchObject({ status: 409, code: 'MATCH_CANCELLATION_REQUIRED' });
   });
@@ -247,8 +244,6 @@ describe('matchmaking mock API', () => {
     expect(accepted.data.status).toBe('ACCEPTED');
     const inbox = await api.request<{ data: Notification[] }>('/notifications');
     expect(inbox.data.some(n => n.notification_type === 'TEAM_JOINED' && n.proposal_id === request.data.proposal_id)).toBe(true);
-    const detail = await api.request<ApiResponse<TeamDetail>>('/teams/' + team.data.team_id);
-    expect(detail.data.members.some(member => member.user_id === candidateLogin.data.user.user_id && member.status === 'ACTIVE')).toBe(true);
     const matches = await api.request<{ data: Match[] }>('/matches');
     expect(matches.data).toHaveLength(0);
     const finalPost = await api.request<ApiResponse<MatchPost>>('/match-posts/' + post.data.post_id, { auth: false });
@@ -294,8 +289,6 @@ describe('matchmaking mock API', () => {
       method: 'PATCH', body: { decision: 'ACCEPTED' },
     });
     expect(captainAccepted.data.status).toBe('ACCEPTED');
-    const detail = await api.request<ApiResponse<TeamDetail>>('/teams/' + team.data.team_id);
-    expect(detail.data.members.some(member => member.user_id === candidateLogin.data.user.user_id && member.status === 'ACTIVE')).toBe(true);
     const finalPost = await api.request<ApiResponse<MatchPost>>('/match-posts/' + post.data.post_id, { auth: false });
     expect(finalPost.data.status).toBe('MATCHED');
     expect(finalPost.data.required_players).toBe(0);

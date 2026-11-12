@@ -1,4 +1,4 @@
-"""Models owned by Đức; Tú registers his models on the same db.metadata."""
+"""Account, team and matchmaking models; booking-side models are re-exported at the bottom (same metadata)."""
 from sqlalchemy import UniqueConstraint
 from app.extensions import db
 from app.utils.time import UTCDateTime, utcnow
@@ -134,8 +134,8 @@ class Notification(db.Model):
     sent_at = db.Column(UTCDateTime(), default=utcnow)
     read_at = db.Column(UTCDateTime())
 
-# Models owned by Tú, registered on the same metadata.
-from app.models.field_complex import FieldComplex  # noqa: E402
-from app.models.pitch import Pitch  # noqa: E402
-from app.models.booking import Booking  # noqa: E402
-from app.models.payment import Payment  # noqa: E402
+# Booking-side models live in their own files and are re-exported here, on the same metadata.
+from app.models.field_complex import FieldComplex  # noqa: E402,F401
+from app.models.pitch import Pitch  # noqa: E402,F401
+from app.models.booking import Booking  # noqa: E402,F401
+from app.models.payment import Payment  # noqa: E402,F401

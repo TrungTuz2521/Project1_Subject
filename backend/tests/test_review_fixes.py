@@ -43,8 +43,6 @@ class ReviewFixTests(BookingCase):
         self.assertEqual(r.json['data']['phone'], '0987654321')
         found = self.client.get('/api/v1/admin/users', headers=self.admin, query_string={'q': '0912 345'}).json['data']
         self.assertEqual([u['email'] for u in found], ['p1@example.test'])
-        tid = self.client.post('/api/v1/teams', headers=self.b, json={'team_name': 'FC Phone'}).json['data']['team_id']
-        self.assertEqual(self.client.post(f'/api/v1/teams/{tid}/members', headers=self.b, json={'contact': '0912 345 678'}).status_code, 201)
 
     # ---- 8. forgotten password
 
@@ -145,3 +143,29 @@ class PitchFeeQrTests(BookingCase):
 
     def test_unknown_booking_reference_is_not_recorded(self):
         self.assertEqual(self.webhook('SAN999999TT', 100000), 'NO_REFERENCE')
+
+
+class NotesTeamsAndJobsTests(BookingCase):
+    # ---- a long note never loses the markers the code reads back
+
+    def test_note_keeps_markers_when_it_is_full(self):
+        from app.services.booking_policy import add_note
+        note = 'THU_GOP theo booking; ref=abc'
+        note = add_note(note, 'gw=sepay:42')
+        for i in range(30):
+            note = add_note(note, f'ghi chu cu so {i} rat dai de day cot')
+        note = add_note(note, 'MAT_COC do tu huy')
+        self.assertLessEqual(len(note), 255)
+        self.assertTrue(note.startswith('THU_GOP theo booking'))
+        self.assertIn('gw=sepay:42', note)
+        self.assertTrue(note.endswith('MAT_COC do tu huy'))
+
+    # ---- the dashboard tells when the scheduler is not running
+
+    def test_dashboard_flags_overdue_background_work(self):
+        self.hold()
+        jobs = self.client.get('/api/v1/admin/dashboard', headers=self.admin).json['data']['background_jobs']
+        self.assertFalse(jobs['lagging'])
+        self.advance(minutes=10)  # hold ended 5 minutes ago and nobody expired it
+        jobs = self.client.get('/api/v1/admin/dashboard', headers=self.admin).json['data']['background_jobs']
+        self.assertEqual((jobs['lagging'], jobs['expired_holds']), (True, 1))

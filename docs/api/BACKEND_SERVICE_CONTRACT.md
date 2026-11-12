@@ -13,7 +13,7 @@ Phiên bản 1.2 — cập nhật tài liệu ngày 08/11/2026, gồm quân số
 
 Đức điều phối tệp models/__init__.py và constants; Tú viết các Model mình sở hữu rồi export dùng chung. Một bảng chỉ có một ORM Model. Không sao chép User/Match/Booking sang module khác. Controller không tự cập nhật trạng thái hay tiền bằng ORM ngoài service đã phân công.
 
-Database test dùng chung đã áp dụng V3 và 004: không chạy lại schema gốc/V2/V3/004, không create_all khi khởi động. Không tự sửa database để vừa với code; tạo migration riêng và review trước. Hợp đồng mô tả trách nhiệm tích hợp; phần đã có code và kết quả kiểm thử xem [trạng thái triển khai](BACKEND_IMPLEMENTATION_STATUS.md).
+Database test dùng chung đã áp dụng V3 và 004: không chạy lại schema gốc/V2/V3/004, không create_all khi khởi động. Không tự sửa database để vừa với code; tạo migration riêng và review trước. Hợp đồng mô tả trách nhiệm tích hợp; việc còn lại xem [REMAINING_WORK.md](REMAINING_WORK.md).
 
 ## 2. Quy tắc nghiệp vụ dùng chung
 
@@ -360,4 +360,4 @@ Mỗi PR thay một điểm nối phải cập nhật hợp đồng, service cal
 
 ### Bổ sung quân số từng buổi (06/11/2026)
 
-MatchPost.attendance_plan là snapshot JSON riêng từng bài: user_ids và guest_players. PostService.party_users chỉ lấy user_ids của snapshot để khóa/kiểm tra trùng lịch/thông báo; NULL mới fallback roster đội cũ. Matchmaking so tổng tài khoản + khách để đủ sân 5/7. AcceptMemberProposal giữ khách, hợp nhất ID không trùng rồi tính lại current_players; TeamMember vẫn đếm tài khoản lâu dài. Nhóm AI_RANDOM sao chép snapshot khi tạo FIND_OPPONENT. Xem [migration 004 đã áp dụng](../../database/schema/004_session_attendance_README.md) và [luồng quân số/API/demo](SESSION_ATTENDANCE_GUIDE.md) cho ví dụ 7 người/3 tài khoản.
+MatchPost.attendance_plan là snapshot JSON riêng từng bài: user_ids và guest_players. PostService.party_users chỉ lấy user_ids của snapshot để khóa/kiểm tra trùng lịch/thông báo; NULL mới fallback roster đội cũ. Matchmaking so tổng tài khoản + khách để đủ sân 5/7. AcceptMemberProposal giữ khách, hợp nhất ID không trùng rồi tính lại current_players; TeamMember vẫn đếm tài khoản lâu dài. Nhóm AI_RANDOM sao chép snapshot khi tạo FIND_OPPONENT. Xem [migration 004 đã áp dụng](../../database/schema/004_session_attendance_README.md). Hiện tại chỉ đội trưởng nằm trong user_ids, phần còn lại là guest_players = player_count − 1.

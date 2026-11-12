@@ -130,8 +130,6 @@ Khi báo lỗi, gửi nhánh/commit, URL trang, HTTP status và error.code, nộ
 
 Giữ các file local trên máy. Khi pull có đổi package-lock, chạy npm ci; khi requirements đổi thì cài lại thư viện backend. Khởi động backend và frontend ở hai Terminal như trên. Chuyển nhánh không có nghĩa cấu hình local tự đổi theo: kiểm tra lại mock/API URL nếu chuyển giữa nhánh demo và nhánh tích hợp.
 
-## 8. Demo quân số theo buổi đá
+## 9. Demo quân số theo buổi đá
 
-Làm theo [hướng dẫn từng chức năng](../api/SESSION_ATTENDANCE_GUIDE.md#demo-từng-bước). Để người demo thực hiện một bước rồi xác nhận kết quả trước khi chuyển bước kế tiếp. Dùng backend thật, tắt mock; mock hiện trả 501 cho payload quân số mới. Không chỉ nhìn số thành viên ở trang đội để kết luận một buổi đá đã đủ người.
-
-Đã xác minh trên giao diện ngày 06/11: chọn đại diện + 4 người ngoài ứng dụng cho sân 7 hiển thị 5/7 và thiếu 2. Luồng nhận thêm hai người, chống cộng trùng và đủ 7 nhưng đội chỉ có 3 tài khoản đã kiểm thử trên SQLite cô lập. Chưa dùng dữ liệu nhóm để tạo booking/thu tiền thử cho ca này.
+Tạo đội ở trang Đội, rồi gửi yêu cầu tìm đối ở trang Tìm kèo với số người đi đá (ví dụ 7 cho sân 7). Lần gửi sau, ô số người được điền sẵn. Dùng backend thật, tắt mock.

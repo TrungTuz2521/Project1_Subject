@@ -64,7 +64,7 @@ Mở link email khi chưa có session sẽ yêu cầu đăng nhập lại theo q
 
 1. Cấu hình Gmail + `check-email` thành công.
 2. Khởi động backend và worker.
-3. Dùng người chơi có email thật tạo hai bài phù hợp; chạy scan-matchmaking để sinh đề xuất mới.
+3. Dùng người chơi có email thật gửi hai yêu cầu tìm đối phù hợp; hệ thống ghép ngay khi yêu cầu thứ hai được gửi.
 4. Người chơi nhận thông báo trên app và email đề xuất; email mở app để xem trạng thái mới nhất.
 5. Hai bên chấp nhận → nhận email giữ sân; đủ cọc → nhận xác nhận tương ứng.
 6. Nếu SMTP lỗi, thông báo trong app và dữ liệu đặt sân vẫn được lưu; EMAIL row là FAILED, không báo SENT giả.

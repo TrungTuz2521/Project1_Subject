@@ -8,7 +8,7 @@ from app.contracts.dto import CommandResult
 from app.contracts.errors import DomainError, invalid
 from app.infrastructure.retry import retry_conflicts
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Payment, Pitch, User
+from app.models import Payment, User
 from app.utils.time import VIETNAM
 from app.services import auth_service, booking_policy as policy, booking_service, match_service, notification_service, payment_service
 from app.services.gateway import get_gateway
@@ -24,10 +24,6 @@ class _OpenSession:
     created_at: object
     created: bool
 
-def _required_for(booking, user_id):
-    item = next((p for p in booking.payer_plan or [] if p['user_id'] == user_id), None)
-    return Decimal(item['amount']) if item else None
-
 @retry_conflicts
 def _open_deposit(actor, booking_id, method):
     with UnitOfWork() as ctx:
@@ -35,7 +31,7 @@ def _open_deposit(actor, booking_id, method):
         booking, payments = booking_service.lock_booking_graph(ctx, booking_id)
         if any(payment_service.is_demo_payment(p) for p in payments):
             raise DomainError('DEMO_ONLY', 'Booking DEMO không mở phiên thanh toán thật.', 409)
-        required = _required_for(booking, actor.user_id)
+        required = booking_service.required_share(booking, actor.user_id)
         if required is None:
             raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
         if booking.status != 'PENDING_HOLD':
@@ -71,38 +67,29 @@ def create_deposit_session(actor, *, booking_id, payment_method, client_ip=None)
     session = dict(opened.data, payment_url=result.payment_url, qr_payload=result.qr_payload, expires_at=opened.expires_at)
     return session, opened.created
 
-def _booking_summary(ctx, booking):
-    pitch = ctx.session.get(Pitch, booking.pitch_id)
-    start, end = booking.start_time.astimezone(VIETNAM), booking.end_time.astimezone(VIETNAM)
-    return (f'Booking #{booking.booking_id} - {pitch.pitch_name if pitch else f"sân #{booking.pitch_id}"}, '
-            f'{start:%H:%M}-{end:%H:%M} ngày {start:%d/%m/%Y}.')
-
-def _vnd(amount):
-    return f'{int(Decimal(amount)):,}'.replace(',', '.') + ' VND'
-
 def _after_deposit_recorded(ctx, booking, payment):
     demo = payment_service.is_demo_payment(payment)
-    summary = _booking_summary(ctx, booking)
-    required = _required_for(booking, payment.user_id) or Decimal('0')
+    summary = booking_service.summary_text(ctx, booking)
+    required = booking_service.required_share(booking, payment.user_id) or Decimal('0')
     paid = booking_service.paid_deposit_by_user(booking_service.payments_of(ctx, booking.booking_id)).get(payment.user_id, Decimal('0'))
     if not demo and paid < required:
         deadline = booking.hold_expires_at.astimezone(VIETNAM)
         notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS', 'Đã nhận một phần tiền cọc',
-            f'Đã nhận {_vnd(payment.amount)} (mã {payment.transaction_code}), còn thiếu {_vnd(required - paid)} tiền cọc. '
+            f'Đã nhận {policy.vnd(payment.amount)} (mã {payment.transaction_code}), còn thiếu {policy.vnd(required - paid)} tiền cọc. '
             f'Mở Lịch đã đặt và quét mã mới cho phần còn thiếu trước {deadline:%H:%M} ngày {deadline:%d/%m}; '
             f'quá hạn thì sân không được giữ và số đã chuyển sẽ được hoàn. {summary}')
         return
     notification_service.notify(ctx, [payment.user_id], 'PAYMENT_SUCCESS',
         'Đã xác nhận cọc DEMO' if demo else 'Đã thanh toán tiền cọc đặt sân',
         'Cọc mô phỏng đã được lưu; chưa xác minh tiền ngân hàng.' if demo else
-        f'Đã nhận {_vnd(payment.amount)} tiền cọc của bạn (mã giao dịch {payment.transaction_code}). {summary}')
+        f'Đã nhận {policy.vnd(payment.amount)} tiền cọc của bạn (mã giao dịch {payment.transaction_code}). {summary}')
     if booking_service.confirm_if_deposit_complete(ctx, booking_id=booking.booking_id):
         match = match_service.confirm_after_deposit(ctx, booking_id=booking.booking_id, **({'is_demo': True} if demo else {}))
         if match is None:
             notification_service.notify(ctx, [booking.user_id], 'BOOKING_CONFIRMED',
                 'Đặt sân DEMO thành công' if demo else 'Đặt sân thành công - đã thanh toán đủ cọc',
                 'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if demo else
-                f'Đã nhận đủ {_vnd(booking.deposit_amount)} tiền cọc, sân đã được giữ cho bạn. {summary}')
+                f'Đã nhận đủ {policy.vnd(booking.deposit_amount)} tiền cọc, sân đã được giữ cho bạn. {summary}')
 
 def _handle_late(ctx, booking, payment):
     """Money is real but never revives the hold: refund it and keep the slot released."""
@@ -174,7 +161,7 @@ def _split_surplus(ctx, booking, payment, provider_reference):
     """A transfer larger than the payer's remaining share: the deposit row keeps the share, the rest is extra."""
     if payment.payment_type != 'BOOKING_DEPOSIT':
         return
-    required = _required_for(booking, payment.user_id) or Decimal('0')
+    required = booking_service.required_share(booking, payment.user_id) or Decimal('0')
     paid = booking_service.paid_deposit_by_user(booking_service.payments_of(ctx, booking.booking_id)).get(payment.user_id, Decimal('0'))
     surplus = min(paid - required, Decimal(payment.amount))
     if surplus <= 0:
@@ -221,8 +208,8 @@ def record_balance_transfer(booking_id, amount, provider_reference, paid_at=None
         if booking.status == 'CONFIRMED':
             left = compute(ctx, booking, with_qr=False).outstanding_amount
             notification_service.notify(ctx, [booking.user_id], 'PAYMENT_SUCCESS', 'Đã nhận tiền sân',
-                f'Đã nhận {_vnd(amount)} chuyển khoản tiền sân. '
-                + (f'Còn {_vnd(left)} trả tại sân. ' if left > 0 else 'Đã thanh toán đủ. ') + _booking_summary(ctx, booking))
+                f'Đã nhận {policy.vnd(amount)} chuyển khoản tiền sân. '
+                + (f'Còn {policy.vnd(left)} trả tại sân. ' if left > 0 else 'Đã thanh toán đủ. ') + booking_service.summary_text(ctx, booking))
         _place_extra(ctx, booking, row, 'Chuyển khoản tiền sân', tell_kept=False)
         return 'BALANCE_RECORDED'
 
@@ -241,7 +228,7 @@ def _place_extra(ctx, booking, row, why, tell_kept=True):
     kept = Decimal(row.amount) - excess
     if kept > 0 and tell_kept:
         notification_service.notify(ctx, [row.user_id], 'PAYMENT_SUCCESS', 'Đã trừ tiền chuyển dư vào tiền sân',
-            f'{why}: {_vnd(kept)} được tính vào tiền sân còn lại. {_booking_summary(ctx, booking)}')
+            f'{why}: {policy.vnd(kept)} được tính vào tiền sân còn lại. {booking_service.summary_text(ctx, booking)}')
     if excess <= 0:
         return
     if kept > 0:
@@ -253,7 +240,7 @@ def _place_extra(ctx, booking, row, why, tell_kept=True):
         ctx.session.add(row)
         ctx.session.flush()
     refund = payment_service.create_refund(ctx, row, note=f'{why}, hoan lai'[:255])
-    payment_service.notify_refund(ctx, refund, f'{why}: {_vnd(excess)} sẽ được hoàn cho bạn.')
+    payment_service.notify_refund(ctx, refund, f'{why}: {policy.vnd(excess)} sẽ được hoàn cho bạn.')
 
 @retry_conflicts
 def record_manual_payment(actor, *, booking_id, user_id, payment_type, amount, method, reference, note=None):
@@ -272,7 +259,7 @@ def record_manual_payment(actor, *, booking_id, user_id, payment_type, amount, m
             raise DomainError('DEMO_ONLY', 'Booking DEMO không nhận khoản thu thật.', 409)
         now = ctx.now()
         if payment_type == 'BOOKING_DEPOSIT':
-            required = _required_for(booking, user_id)
+            required = booking_service.required_share(booking, user_id)
             if required is None:
                 invalid('user_id', 'Người này không có phần cọc trong booking.')
             if booking.status != 'PENDING_HOLD':

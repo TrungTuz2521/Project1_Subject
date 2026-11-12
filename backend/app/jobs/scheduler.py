@@ -7,13 +7,13 @@ from flask import current_app
 
 def _jobs(with_matchmaking, with_email):
     from app.jobs.booking_jobs import expire_holds, process_refunds, reconcile_payments
-    from app.jobs.commands import expire_proposals, scan_open_posts
+    from app.jobs.commands import close_requests, scan_requests
     from app.services.match_service import complete_finished_matches
-    jobs = [('close_requests', expire_proposals), ('expire_holds', expire_holds),
+    jobs = [('close_requests', close_requests), ('expire_holds', expire_holds),
             ('reconcile_payments', reconcile_payments), ('process_refunds', process_refunds),
             ('complete_matches', complete_finished_matches)]
     if with_matchmaking:
-        jobs.append(('matchmaking', scan_open_posts))
+        jobs.append(('matchmaking', scan_requests))
     if with_email:
         from app.services.email_service import process_emails
         jobs.append(('emails', process_emails))

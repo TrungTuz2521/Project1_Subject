@@ -94,7 +94,7 @@ class SepayQrTests(BookingCase):
         self.assertIn(('PAYMENT_SUCCESS', 'PENDING'), types)
         self.assertIn(('BOOKING_CONFIRMED', 'PENDING'), types)
         mail = next(n for n in self.emails(self.ua) if n.notification_type == 'PAYMENT_SUCCESS')
-        self.assertIn('120.000 VND', mail.content)
+        self.assertIn('120.000 ₫', mail.content)
         self.assertIn(f'#{bid}', mail.content)
         # SePay retries the same notification: nothing changes, no second email.
         self.assertEqual(self.webhook(code, 120000).json['outcome'], 'DUPLICATE')
@@ -133,7 +133,7 @@ class SepayQrTests(BookingCase):
         [payment] = self.payments(bid)
         self.assertEqual((payment.status, str(payment.amount)), ('SUCCESS', '100000.00'))
         self.assertEqual(self.booking(bid).status, 'PENDING_HOLD')
-        self.assertTrue(any('còn thiếu 20.000 VND' in n for n in self.notices(self.ua, 'PAYMENT_SUCCESS')))
+        self.assertTrue(any('còn thiếu 20.000 ₫' in n for n in self.notices(self.ua, 'PAYMENT_SUCCESS')))
         rest = self.open_qr(bid).json['data']
         self.assertEqual(rest['amount'], '20000.00')
         self.assertEqual(self.webhook(rest['transfer_reference'], 20000, sepay_id=2).json['outcome'], 'OK')

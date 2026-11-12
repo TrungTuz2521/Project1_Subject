@@ -32,7 +32,7 @@ Không bật backend demo sau reverse proxy production; remote_addr của proxy 
 
 ## Cách demo
 
-1. Chạy backend, frontend; giữ email-worker/matchmaking-worker nếu demo cả ghép trận và email.
+1. Chạy backend, frontend; chạy scheduler `--with-matchmaking --with-email` nếu demo cả ghép kèo và email.
 2. Tạo booking hoặc để hai đội chấp nhận ghép. Hạn giữ sân vẫn 5 phút từ server tạo hold.
 3. Vào **Booking của tôi → chọn đơn → Đóng cọc bằng chuyển khoản**.
 4. Web hiển thị tài khoản nhận, QR, số tiền của chính đại diện đang đăng nhập và nội dung `COC{booking_id}U{user_id}`.

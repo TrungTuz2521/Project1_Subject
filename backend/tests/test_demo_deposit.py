@@ -1,7 +1,6 @@
-from datetime import timedelta
-from sqlalchemy import select, func
+from sqlalchemy import select
 from booking_fixtures import BookingCase
-from app.models import Payment, Match, Notification
+from app.models import Match, Notification
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.services.revenue_service import revenue_report
 from app.utils.time import VIETNAM

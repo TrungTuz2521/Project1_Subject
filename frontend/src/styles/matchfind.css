@@ -131,8 +131,3 @@ fieldset.mf-seg,fieldset.mf-days,fieldset.mf-window,fieldset.mf-roster{border:0;
 .mf-inbox-text{font-size:14px;color:var(--pl-muted);line-height:1.5}
 .mf-inbox button.is-unread .mf-inbox-text{color:var(--pl-text)}
 
-/* Teams page: captain adds a member */
-.team-add-member{margin-top:14px;display:flex;flex-direction:column;gap:6px}
-.team-add-member label{font-weight:700;font-size:14px}
-.team-add-member div{display:flex;gap:8px;flex-wrap:wrap}
-.team-add-member input{flex:1;min-width:200px;font:inherit;border:1px solid #cbd6c6;border-radius:9px;padding:9px 10px;min-height:42px}

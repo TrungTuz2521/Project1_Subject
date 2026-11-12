@@ -4,9 +4,9 @@ import type { Booking, MatchPost, Notification, Payment, Pitch, ProposalDetail, 
 export const demoUser: UserSelf = { user_id: 2, full_name: 'Đức · Tài khoản mẫu', email: 'demo@example.test',
   phone: null, role: 'PLAYER', skill_level: 'INTERMEDIATE', status: 'ACTIVE' };
 export const initialTeams: Team[] = [
-  { team_id: 1, team_name: 'FC Bình Minh', created_by: 2, creation_type: 'USER_CREATED', status: 'ACTIVE', active_member_count: 7 },
-  { team_id: 2, team_name: 'Những người bạn', created_by: 3, creation_type: 'USER_CREATED', status: 'ACTIVE', active_member_count: 5 },
-  { team_id: 3, team_name: 'Đội chiều thứ Bảy', created_by: 2, creation_type: 'AI_RANDOM', status: 'ACTIVE', active_member_count: 4 },
+  { team_id: 1, team_name: 'FC Bình Minh', created_by: 2, creation_type: 'USER_CREATED', status: 'ACTIVE', last_player_count: null },
+  { team_id: 2, team_name: 'Những người bạn', created_by: 3, creation_type: 'USER_CREATED', status: 'ACTIVE', last_player_count: null },
+  { team_id: 3, team_name: 'Đội chiều thứ Bảy', created_by: 2, creation_type: 'AI_RANDOM', status: 'ACTIVE', last_player_count: null },
 ];
 export const pitches: Pitch[] = [
   { pitch_id: 1, complex_id: 1, pitch_name: 'Sân 5A', pitch_type: 'PITCH_5', price_per_slot: '300000.00', status: 'ACTIVE' },

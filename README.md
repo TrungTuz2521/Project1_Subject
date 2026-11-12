@@ -151,7 +151,7 @@ npm run build
 
 Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO; `mocks` cho dữ liệu tổng hợp và handler; `features/matchmaking/TeamsPage.tsx` cho luồng tải danh sách/gửi form/báo lỗi.
 
-Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [trạng thái triển khai và kiểm thử](docs/api/BACKEND_IMPLEMENTATION_STATUS.md) cho phạm vi đã xác minh.
+Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [những phần còn cần hoàn thiện](docs/api/REMAINING_WORK.md).
 
 Build production luôn tắt mock. Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
 
@@ -251,10 +251,7 @@ Kết quả kiểm tra sau V3: còn 1 bài đăng thiếu thông tin phục vụ
 
 ### Migration 004: quân số từng buổi — đã áp dụng
 
-- Một đội có thể có 3 tài khoản nhưng buổi đá đủ 7 người: 3 tài khoản tham gia + 4 người ngoài ứng dụng.
-- Đội trưởng khai báo quân số trong bài đăng, không phải thay danh sách đội mỗi ngày. Nhận thêm người chỉ được cộng sau đủ hai xác nhận.
-- Đội thường tuyển đủ có nút **Tạo bài tìm đối thủ với quân số này**; AI_RANDOM giữ luồng tự tạo bài tìm đối thủ khi đủ người.
-- [Quy tắc, API và hướng dẫn demo](docs/api/SESSION_ATTENDANCE_GUIDE.md).
+- Đội chỉ có tên và đội trưởng (người đại diện đặt sân, nhận thông báo); không lưu danh sách thành viên. Mỗi yêu cầu tìm đối khai báo `player_count` (tính cả đội trưởng, tối thiểu 5 với sân 5, 7 với sân 7); form điền sẵn số của lần trước (`last_player_count` của đội).
 - [SQL 004](database/schema/004_session_attendance.sql) và [trạng thái/hướng dẫn migration](database/schema/004_session_attendance_README.md). File SQL phục vụ môi trường khác chưa cập nhật; thành viên dùng TiDB nhóm không chạy lại.
 
 Các tệp V3 trong repository:

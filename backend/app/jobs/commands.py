@@ -1,43 +1,35 @@
 import click
 from sqlalchemy import select
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.contracts.errors import DomainError
 
-def scan_open_posts(post_id=None):
-    """One matchmaking pass over every open request (kept under the old name used by the scheduler)."""
-    from app.services.match_request_service import scan
+def scan_requests(post_id=None):
+    """One matchmaking pass over every open request."""
+    from app.services.match_requests import scan
     return scan(post_id)
 
-def expire_proposals():
+def close_requests():
     """Close requests that reached their cut-off (one day before kick-off) and tell the requester."""
-    from app.services.match_request_service import close_expired
+    from app.services.match_requests import close_expired
     return close_expired()
 
 def register_commands(app):
-    @app.cli.command('scan-matchmaking')
+    @app.cli.command('scan-requests')
     def scan_command():
-        """Run one matchmaking scan; schedule externally every 15 seconds."""
-        click.echo(scan_open_posts())
+        """Run one matchmaking scan (the scheduler does this every 15 seconds with --with-matchmaking)."""
+        click.echo(scan_requests())
 
-    @app.cli.command('matchmaking-worker')
-    @click.option('--interval', default=15, show_default=True, type=click.IntRange(1, 300))
-    def matchmaking_worker_command(interval):
-        """Continuously scan open posts; default interval 15 seconds. Stop with Ctrl+C."""
-        from app.jobs.matchmaking_worker import run_matchmaking_worker
-        run_matchmaking_worker(interval)
-
-    @app.cli.command('expire-proposals')
-    def expire_command():
-        """Close match requests past their cut-off; booking expiry is owned by Tú."""
-        click.echo({'closed_requests': expire_proposals()})
+    @app.cli.command('close-requests')
+    def close_command():
+        """Close match requests past their cut-off, once."""
+        click.echo({'closed_requests': close_requests()})
 
     @app.cli.command('scheduler')
     @click.option('--interval', default=15, show_default=True, type=click.IntRange(5, 300))
-    @click.option('--with-matchmaking', is_flag=True, help='Also scan open posts (replaces matchmaking-worker).')
+    @click.option('--with-matchmaking', is_flag=True, help='Also scan open match requests.')
     @click.option('--with-email', is_flag=True, help='Also send pending emails (replaces email-worker).')
     @click.option('--once', is_flag=True, help='Run every job a single time and exit.')
     def scheduler_command(interval, with_matchmaking, with_email, once):
-        """Run all periodic jobs: proposal/hold expiry, payment reconciliation, refunds, match completion."""
+        """Run all periodic jobs: request/hold expiry, payment reconciliation, refunds, match completion."""
         from app.jobs.scheduler import run_forever, run_once
         if once:
             click.echo(run_once(with_matchmaking, with_email))

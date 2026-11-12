@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from app.services.match_request_service import MATCH_HOLD_SECONDS
+from app.services.match_requests import MATCH_HOLD_SECONDS
 from datetime import timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -11,7 +11,7 @@ from booking_fixtures import BookingCase
 from app.contracts.dto import GatewayResult
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.jobs.booking_jobs import expire_holds, process_refunds, reconcile_payments
-from app.jobs.commands import scan_open_posts
+from app.jobs.commands import scan_requests
 from app.models import Booking, Match, MatchPost, Notification, Payment
 from app.services import booking_policy as policy
 from app.services.booking_balance_service import bank_qr_payload, crc16
@@ -368,7 +368,7 @@ class MatchFlowWithRealServices(BookingCase):
         self.assertEqual((booking.user_id, booking.payment_rule, booking.pitch_id), (self.ua, 'SPLIT_EQUAL', 1))
         # Two teams that never booked get six hours to pay their halves.
         self.assertEqual(booking.hold_expires_at, self.now + timedelta(seconds=MATCH_HOLD_SECONDS))
-        self.assertEqual(scan_open_posts()['matches'], [])
+        self.assertEqual(scan_requests()['matches'], [])
         with UnitOfWork() as ctx:
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Booking)), 1)
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Match)), 1)

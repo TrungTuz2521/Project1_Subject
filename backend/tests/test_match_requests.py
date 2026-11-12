@@ -3,8 +3,8 @@ from datetime import timedelta
 from sqlalchemy import func, select
 from booking_fixtures import BookingCase
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.jobs.commands import expire_proposals, scan_open_posts
-from app.models import Booking, Match, MatchPost, Notification, Payment
+from app.jobs.commands import close_requests, scan_requests
+from app.models import Booking, MatchPost, Notification, Payment
 from app.utils.time import VIETNAM
 
 
@@ -41,11 +41,11 @@ class MatchRequestTests(BookingCase):
     def test_opponent_request_needs_two_days_a_full_team_and_the_captain(self):
         tid = self.team(self.a)
         base = dict(post_type='FIND_OPPONENT', team_id=tid, skill_level='INTERMEDIATE', payment_rule='SPLIT_EQUAL',
-                    pitch_type='PITCH_5', window_start='17:00', window_end='21:00', guest_players=4)
+                    pitch_type='PITCH_5', window_start='17:00', window_end='21:00', player_count=5)
         r = self.send(self.a, **base, preferred_dates=[self.day(1)])
         self.assertEqual((r.status_code, list(r.json['error']['fields'])), (422, ['preferred_dates']))
-        r = self.send(self.a, **{**base, 'guest_players': 2}, preferred_dates=[self.day(2)])
-        self.assertEqual((r.status_code, list(r.json['error']['fields'])), (422, ['guest_players']))
+        r = self.send(self.a, **{**base, 'player_count': 4}, preferred_dates=[self.day(2)])
+        self.assertEqual((r.status_code, list(r.json['error']['fields'])), (422, ['player_count']))
         self.assertEqual(self.send(self.b, **base, preferred_dates=[self.day(2)]).status_code, 403)
         r = self.send(self.a, **base, preferred_dates=[self.day(2), self.day(3)])
         self.assertEqual((r.status_code, list(r.json['error']['fields'])), (422, ['preferred_dates']))  # one match day
@@ -67,7 +67,7 @@ class MatchRequestTests(BookingCase):
         booking_id = self.confirmed(self.a, days=3)['booking_id']
         options = self.client.get('/api/v1/match-requests/options', headers=self.a).json['data']
         self.assertEqual([t['team_id'] for t in options['teams']], [tid])
-        self.assertEqual(len(options['teams'][0]['members']), 5)
+        self.assertIsNone(options['teams'][0]['last_player_count'])
         self.assertEqual([b['booking_id'] for b in options['opponent_bookings']], [booking_id])
         self.assertEqual([b['booking_id'] for b in options['recruit_games']], [booking_id])
         self.request_opponent(self.a, booking_id=booking_id)
@@ -97,7 +97,7 @@ class MatchRequestTests(BookingCase):
     def test_overlapping_windows_meet_on_a_common_slot(self):
         for header, window in ((self.a, ('17:00', '21:00')), (self.b, ('19:00', '23:00'))):
             r = self.send(header, post_type='FIND_OPPONENT', team_id=self.team(header), skill_level='INTERMEDIATE', payment_rule='SPLIT_EQUAL',
-                          pitch_type='PITCH_5', preferred_dates=[self.day(2)], window_start=window[0], window_end=window[1], guest_players=4)
+                          pitch_type='PITCH_5', preferred_dates=[self.day(2)], window_start=window[0], window_end=window[1], player_count=5)
             self.assertEqual(r.status_code, 201, r.json)
         match = self.latest_match()
         self.assertEqual(match.match_time.astimezone(VIETNAM).strftime('%H:%M'), '19:30')
@@ -158,7 +158,7 @@ class MatchRequestTests(BookingCase):
         ra = self.request_opponent(self.a, booking_id=first)
         rb = self.request_opponent(self.b, booking_id=second)
         self.advance(hours=7)
-        self.assertEqual(len(scan_open_posts()['matches']), 1)
+        self.assertEqual(len(scan_requests()['matches']), 1)
         return first, second, ra, rb
 
     def test_two_booked_teams_merge_and_the_deposit_counts_towards_the_fee(self):
@@ -178,7 +178,8 @@ class MatchRequestTests(BookingCase):
         self.assertEqual(self.post(ra).status, 'CANCELLED')
         reopened = self.post(rb)
         self.assertEqual((reopened.status, reopened.booking_id), ('OPEN', None))
-        self.assertEqual(reopened.preferred_dates, [self.day(3)])
+        # booked_pair moves the clock 7 hours, which may cross midnight: compare with the booking's own day.
+        self.assertEqual(reopened.preferred_dates, [self.booking(second).start_time.astimezone(VIETNAM).date().isoformat()])
         refund = [p for p in self.payments(first) if p.payment_type == 'REFUND']
         self.assertEqual([(p.user_id, p.status) for p in refund], [(self.ub, 'REFUND_PROCESSING')])
         self.assertEqual(self.booking(first).status, 'CONFIRMED')
@@ -197,8 +198,8 @@ class MatchRequestTests(BookingCase):
         booking_id = self.confirmed(self.a, days=3)['booking_id']
         rid = self.request_opponent(self.a, booking_id=booking_id)
         self.go_after(self.post(rid).expiry_time)
-        self.assertEqual(expire_proposals(), 1)
-        self.assertEqual(expire_proposals(), 0)
+        self.assertEqual(close_requests(), 1)
+        self.assertEqual(close_requests(), 0)
         self.assertEqual(self.post(rid).status, 'EXPIRED')
         notice = self.notices(self.ua, 'POST_EXPIRED')
         self.assertEqual(len(notice), 1)
@@ -270,7 +271,7 @@ class MatchRequestTests(BookingCase):
         self.assertEqual(self.post(rc).status, 'OPEN')  # only one place left
         self.assertEqual(self.cancel(self.b, rb).status_code, 200)
         self.assertEqual(self.post(rr).required_players, 3)
-        scan_open_posts()
+        scan_requests()
         self.assertEqual((self.post(rc).status, self.post(rr).required_players), ('MATCHED', 1))
 
     def test_filling_every_place_closes_the_recruit_request(self):
@@ -297,17 +298,14 @@ class MatchRequestTests(BookingCase):
         self.assertEqual(self.client.get('/api/v1/admin/match-requests', headers=self.a).status_code, 403)
 
 
-class TeamMemberTests(BookingCase):
-    def test_captain_adds_a_player_by_email_or_phone(self):
-        tid = self.client.post('/api/v1/teams', headers=self.a, json={'team_name': 'FC A'}).json['data']['team_id']
+class TeamTests(BookingCase):
+    def test_a_team_is_only_its_captain_and_remembers_the_last_head_count(self):
+        rid = self.request_opponent(self.a)
         with UnitOfWork() as ctx:
-            from app.models import User
-            ctx.session.get(User, self.uc).phone = '0912345678'
-        r = self.client.post(f'/api/v1/teams/{tid}/members', headers=self.a, json={'contact': 'U2@example.test'})
-        self.assertEqual(r.status_code, 201, r.json)
-        r = self.client.post(f'/api/v1/teams/{tid}/members', headers=self.a, json={'contact': '0912345678'})
-        self.assertEqual(r.status_code, 201, r.json)
-        self.assertEqual(r.json['data']['active_member_count'], 3)
-        self.assertEqual(self.client.post(f'/api/v1/teams/{tid}/members', headers=self.a, json={'contact': 'u2@example.test'}).status_code, 409)
-        self.assertEqual(self.client.post(f'/api/v1/teams/{tid}/members', headers=self.a, json={'contact': 'nobody@example.test'}).status_code, 404)
-        self.assertEqual(self.client.post(f'/api/v1/teams/{tid}/members', headers=self.b, json={'contact': 'u3@example.test'}).status_code, 403)
+            tid = ctx.session.get(MatchPost, rid).team_id
+        teams = self.client.get('/api/v1/teams', headers=self.a).json['data']
+        self.assertEqual([(t['team_id'], t['last_player_count']) for t in teams], [(tid, 5)])
+        options = self.client.get('/api/v1/match-requests/options', headers=self.a).json['data']
+        self.assertEqual(options['teams'][0]['last_player_count'], 5)
+        self.assertNotIn('members', self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data'])
+        self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.b).status_code, 404)

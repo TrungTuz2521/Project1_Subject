@@ -2,7 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from booking_fixtures import BookingCase
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Booking, FieldComplex, Pitch
+from app.models import Booking, Pitch
 from app.utils.time import VIETNAM
 
 

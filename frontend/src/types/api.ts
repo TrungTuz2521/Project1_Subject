@@ -26,13 +26,14 @@ export interface LoginData { access_token: string; expires_in: number; user: Use
 export type ProfileUpdate = Partial<Pick<UserSelf, 'full_name' | 'phone' | 'skill_level' | 'refund_bank_name' | 'refund_account_no' | 'refund_account_name'>>;
 export interface Team {
   team_id: number; team_name: string; created_by: number | null;
-  creation_type: 'USER_CREATED' | 'AI_RANDOM'; status: 'ACTIVE' | 'INACTIVE'; active_member_count: number;
+  creation_type: 'USER_CREATED' | 'AI_RANDOM'; status: 'ACTIVE' | 'INACTIVE';
+  /** Head count of the team's latest opponent request; players are not on record. */
+  last_player_count: number | null;
 }
 export interface TeamMember {
   user_id: number; full_name: string; role: 'CAPTAIN' | 'MEMBER';
   status: 'ACTIVE' | 'LEFT' | 'REMOVED'; joined_at: ISODateTime;
 }
-export interface TeamDetail extends Team { members: TeamMember[] }
 export interface TeamCreate { team_name: string }
 export type PostType = 'FIND_OPPONENT' | 'RECRUIT_MEMBERS' | 'LOOK_FOR_TEAM' | 'RANDOM_SQUAD';
 export type PostStatus = 'OPEN' | 'LOCKED' | 'MATCHED' | 'EXPIRED' | 'CANCELLED' | 'PENDING_DEPOSIT';
@@ -209,4 +210,6 @@ export interface AdminDashboard {
   pending_refunds: { count: number; amount: Money };
   ended_unpaid: { count: number; outstanding_amount: Money; items: AdminBooking[] };
   today_games: { count: number; items: AdminBooking[] };
+  /** Work the scheduler should already have done; lagging = it is probably not running. */
+  background_jobs?: { lagging: boolean; expired_holds: number; expired_requests: number; unsent_emails: number };
 }

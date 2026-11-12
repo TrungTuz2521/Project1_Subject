@@ -6,7 +6,7 @@ from app.infrastructure.retry import retry_conflicts
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.models import Payment
 from app.services import auth_service, booking_policy as policy, booking_service, payment_service
-from app.use_cases.process_payment import _required_for, _after_deposit_recorded
+from app.use_cases.process_payment import _after_deposit_recorded
 
 
 @retry_conflicts
@@ -16,7 +16,7 @@ def confirm_demo_deposit(actor, booking_id):
     with UnitOfWork() as ctx:
         auth_service.require_player(ctx, actor)
         booking, payments = booking_service.lock_booking_graph(ctx, booking_id)
-        required = _required_for(booking, actor.user_id)
+        required = booking_service.required_share(booking, actor.user_id)
         if required is None:
             raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
         code = f'DEMO-DEP-{booking_id}-{actor.user_id}'
