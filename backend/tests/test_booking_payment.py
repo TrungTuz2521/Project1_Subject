@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from app.services.match_request_service import MATCH_HOLD_SECONDS
 from datetime import timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -10,6 +11,7 @@ from booking_fixtures import BookingCase
 from app.contracts.dto import GatewayResult
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.jobs.booking_jobs import expire_holds, process_refunds, reconcile_payments
+from app.jobs.commands import scan_open_posts
 from app.models import Booking, Match, MatchPost, Notification, Payment
 from app.services import booking_policy as policy
 from app.services.booking_balance_service import bank_qr_payload, crc16
@@ -359,39 +361,37 @@ class MatchFlowWithRealServices(BookingCase):
             posts = [ctx.session.get(MatchPost, match.post_id).status, ctx.session.get(MatchPost, match.opponent_post_id).status]
             return ctx.session.get(Booking, booking_id).status, match.status, posts
 
-    def test_two_acceptances_create_one_hold_with_two_payers(self):
-        first, second, proposal, r = self.agreed_match()
-        self.assertEqual(r.status_code, 200, r.json)
-        booking_id = r.json['data']['booking_id']
+    def test_paired_requests_create_one_hold_with_two_payers(self):
+        booking_id, match_id = self.match_booking()
         booking = self.booking(booking_id)
         self.assertEqual(booking.payer_plan, [{'user_id': self.ua, 'amount': '60000.00'}, {'user_id': self.ub, 'amount': '60000.00'}])
         self.assertEqual((booking.user_id, booking.payment_rule, booking.pitch_id), (self.ua, 'SPLIT_EQUAL', 1))
-        self.assertEqual(self.respond(proposal, self.b).status_code, 200)
+        # Two teams that never booked get six hours to pay their halves.
+        self.assertEqual(booking.hold_expires_at, self.now + timedelta(seconds=MATCH_HOLD_SECONDS))
+        self.assertEqual(scan_open_posts()['matches'], [])
         with UnitOfWork() as ctx:
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Booking)), 1)
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Match)), 1)
-        self.assertEqual(self.statuses(booking_id, r.json['data']['match_id']), ('PENDING_HOLD', 'SUGGESTED', ['LOCKED', 'LOCKED']))
+        self.assertEqual(self.statuses(booking_id, match_id), ('PENDING_HOLD', 'SUGGESTED', ['MATCHED', 'MATCHED']))
 
-    def test_no_pitch_left_commits_failure_without_money(self):
-        self.hold(self.c, pitch_id=1)
-        self.hold(self.c, pitch_id=2)
-        first, second, proposal, r = self.agreed_match()
-        self.assertEqual((r.status_code, r.json['error']['code']), (409, 'SLOT_UNAVAILABLE'))
+    def test_no_pitch_left_pairs_nobody_and_keeps_searching(self):
+        self.hold(self.c, pitch_id=1, days=2)
+        self.hold(self.c, pitch_id=2, days=2)
+        first, second, match = self.agreed_match()
+        self.assertIsNone(match)
         with UnitOfWork() as ctx:
-            match = ctx.session.scalar(select(Match))
-            self.assertEqual((match.status, match.booking_id), ('CANCELLED', None))
-            self.assertEqual(ctx.session.get(MatchPost, first).status, 'OPEN')
+            self.assertEqual([ctx.session.get(MatchPost, i).status for i in (first, second)], ['OPEN', 'OPEN'])
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Payment)), 0)
 
     def test_second_pitch_used_when_first_is_taken(self):
-        self.hold(self.c, pitch_id=1)
+        self.hold(self.c, pitch_id=1, days=2)
         booking_id, _ = self.match_booking()
         self.assertEqual(self.booking(booking_id).pitch_id, 2)
 
     def test_one_team_paying_does_not_confirm(self):
         booking_id, match_id = self.match_booking()
         self.pay(booking_id, self.a)
-        self.assertEqual(self.statuses(booking_id, match_id), ('PENDING_HOLD', 'SUGGESTED', ['LOCKED', 'LOCKED']))
+        self.assertEqual(self.statuses(booking_id, match_id), ('PENDING_HOLD', 'SUGGESTED', ['MATCHED', 'MATCHED']))
 
     def test_both_deposits_confirm_everything_in_one_transaction(self):
         booking_id, match_id = self.match_booking()
@@ -410,13 +410,14 @@ class MatchFlowWithRealServices(BookingCase):
         detail = self.client.get(f'/api/v1/matches/{match_id}', headers=self.b).json['data']
         self.assertEqual(detail['booking']['booking_id'], booking_id)
 
-    def test_timeout_with_one_deposit_refunds_it_and_reopens_posts(self):
+    def test_timeout_with_one_deposit_refunds_it_and_reopens_only_the_payer(self):
         booking_id, match_id = self.match_booking()
         self.pay(booking_id, self.a)
-        self.advance(seconds=300)
+        self.advance(seconds=MATCH_HOLD_SECONDS)
         self.assertEqual(expire_holds(), 1)
         self.assertEqual(expire_holds(), 0)
-        self.assertEqual(self.statuses(booking_id, match_id), ('EXPIRED', 'CANCELLED', ['OPEN', 'OPEN']))
+        # The team that paid searches again; the team that did not pay is dropped.
+        self.assertEqual(self.statuses(booking_id, match_id), ('EXPIRED', 'CANCELLED', ['OPEN', 'CANCELLED']))
         rows = self.payments(booking_id)
         self.assertEqual([(p.payment_type, p.user_id) for p in rows], [('BOOKING_DEPOSIT', self.ua), ('REFUND', self.ua)])
 
@@ -424,7 +425,7 @@ class MatchFlowWithRealServices(BookingCase):
         booking_id, match_id = self.match_booking()
         self.pay(booking_id, self.a)
         session = self.open_deposit(booking_id, self.b)
-        self.advance(seconds=300)
+        self.advance(seconds=MATCH_HOLD_SECONDS)
         self.callback(session)
         self.assertEqual(self.statuses(booking_id, match_id)[:2], ('EXPIRED', 'CANCELLED'))
         refunded = [p.user_id for p in self.payments(booking_id) if p.payment_type == 'REFUND']

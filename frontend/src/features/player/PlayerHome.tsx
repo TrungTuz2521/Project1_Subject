@@ -48,7 +48,7 @@ export function PlayerHome({ user }: { user: UserSelf }) {
 
     <section className="home-links">
       <a href="#/my-bookings"><strong>Lịch đã đặt</strong><span>Trạng thái, tiền đã trả và còn phải trả.</span></a>
-      <a href="#/matchmaking"><strong>Đá cùng đội</strong><span>Tìm đối thủ, tuyển thêm người cho đội.</span></a>
+      <a href="#/matchmaking"><strong>Tìm kèo</strong><span>Gửi yêu cầu tìm đối, tìm thêm người hoặc đá ké. Hệ thống tự ghép.</span></a>
       <a href="#/teams"><strong>Đội bóng của tôi</strong><span>Thành viên và yêu cầu tham gia đội.</span></a>
       <a href="#/profile"><strong>Hồ sơ cá nhân</strong><span>Tên, số điện thoại, mật khẩu.</span></a>
     </section>

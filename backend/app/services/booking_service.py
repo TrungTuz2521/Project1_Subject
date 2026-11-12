@@ -34,7 +34,7 @@ def _locked_active_pitch(ctx, pitch_id):
         raise SlotUnavailable()
     return rows[0]
 
-def _insert_hold(ctx, *, pitch, user_id, start, end, payment_rule, payer_ids, booking_type='ONLINE', note=None):
+def _insert_hold(ctx, *, pitch, user_id, start, end, payment_rule, payer_ids, booking_type='ONLINE', note=None, hold_seconds=None):
     from app.services.pricing import slot_price
     total, _ = slot_price(ctx, pitch, start)  # Peak or normal price, fixed onto the booking now.
     deposit = policy.deposit_total(total)
@@ -43,7 +43,7 @@ def _insert_hold(ctx, *, pitch, user_id, start, end, payment_rule, payer_ids, bo
     now = ctx.now().replace(microsecond=0)
     booking = Booking(pitch_id=pitch.pitch_id, user_id=user_id, start_time=start, end_time=end, total_amount=total,
                       deposit_amount=deposit, booking_type=booking_type, status='PENDING_HOLD',
-                      hold_expires_at=now + timedelta(seconds=policy.HOLD_SECONDS), payment_rule=payment_rule,
+                      hold_expires_at=now + timedelta(seconds=hold_seconds or policy.HOLD_SECONDS), payment_rule=payment_rule,
                       payer_plan=plan, note=note)
     ctx.session.add(booking)
     ctx.session.flush()
@@ -62,7 +62,7 @@ def create_direct_hold(ctx, *, pitch_id, user_id, start_time, end_time, booking_
     return _insert_hold(ctx, pitch=pitch, user_id=user_id, start=start_time, end=end_time,
                         payment_rule='DIRECT_BOOKING', payer_ids=[user_id], booking_type=booking_type, note=note)
 
-def create_match_hold(ctx, *, match_id, pitch_id, start_time, end_time, source_user_id, opponent_user_id, payment_rule):
+def create_match_hold(ctx, *, match_id, pitch_id, start_time, end_time, source_user_id, opponent_user_id, payment_rule, hold_seconds=None):
     """Caller already holds parent locks. Raises SlotUnavailable before any Booking is inserted."""
     if payment_rule not in PAYMENT_RULES or source_user_id == opponent_user_id:
         raise DomainError('STATE_CONFLICT', 'Thể thức hoặc đại diện hai bên không hợp lệ.')
@@ -76,7 +76,8 @@ def create_match_hold(ctx, *, match_id, pitch_id, start_time, end_time, source_u
     if find_conflict(ctx, pitch_id, start_time, end_time):
         raise SlotUnavailable()
     return _hold(_insert_hold(ctx, pitch=pitch, user_id=source_user_id, start=start_time, end=end_time,
-                              payment_rule=payment_rule, payer_ids=[source_user_id, opponent_user_id]))
+                              payment_rule=payment_rule, payer_ids=[source_user_id, opponent_user_id],
+                              hold_seconds=hold_seconds))
 
 def payments_of(ctx, booking_id):
     return list(ctx.session.scalars(select(Payment).where(Payment.booking_id == booking_id).order_by(Payment.payment_id)))
@@ -87,7 +88,7 @@ def lock_booking_graph(ctx, booking_id, extra_pitch_ids=()):
     if found is None:
         raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
     pitch_id = found.pitch_id
-    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
+    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))
     ctx.locks.lock(Pitch, [pitch_id, *extra_pitch_ids])
     if match:
         ctx.locks.lock(MatchPost, [match.post_id, match.opponent_post_id])

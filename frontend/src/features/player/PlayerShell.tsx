@@ -13,16 +13,15 @@ const groups: { title: string; items: Item[] }[] = [
     { path: '/notifications', icon: '◔', label: 'Thông báo' },
   ] },
   { title: 'Đá cùng đội', items: [
+    { path: '/matchmaking', icon: '⇄', label: 'Tìm kèo', short: 'Tìm kèo' },
     { path: '/teams', icon: '♧', label: 'Đội bóng của tôi' },
-    { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận', short: 'Đá cùng đội' },
-    { path: '/schedule', icon: '◷', label: 'Lịch thi đấu' },
   ] },
   { title: 'Tài khoản', items: [{ path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân', short: 'Tài khoản' }] },
 ];
 const all = groups.flatMap(g => g.items);
 /** Phone tab bar: five places a customer goes; notifications sit in the top bar. */
 const tabs = ['/dashboard', '/bookings', '/my-bookings', '/matchmaking', '/profile'].map(p => all.find(i => i.path === p)!);
-const teamPaths = ['/teams', '/matchmaking', '/schedule'];
+const teamPaths = ['/teams', '/matchmaking'];
 
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(-2).map(part => part[0]?.toLocaleUpperCase() ?? '').join('') || 'U';

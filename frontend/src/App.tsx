@@ -3,8 +3,8 @@ import type { FormEvent, ReactNode } from 'react';
 import { ChangePasswordForm } from './features/auth/ChangePasswordForm';
 import { GoogleSignIn } from './features/auth/GoogleSignIn';
 import { TeamsPage } from './features/matchmaking/TeamsPage';
-import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
-import { SchedulePage } from './features/matchmaking/SchedulePage';
+import { MatchFindPage } from './features/matchfind/MatchFindPage';
+import { NotificationsPage } from './features/matchfind/NotificationsPage';
 import { FieldApp } from './features/field-management/FieldApp';
 import { AdminShell } from './features/admin/AdminShell';
 import { PlayerShell, PublicShell } from './features/player/PlayerShell';
@@ -15,11 +15,10 @@ import { getCurrentUser, keepSessionAlive, login, logout, register, updateCurren
 import { errorMessage, ApiError } from './services/api';
 import { useMocks } from './services/client';
 import { session } from './stores/session';
-import { selectedProposalFromHash } from './services/notificationNavigation';
 import { selectedBookingFromHash } from './services/bookingNavigation';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
-const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/admin/statistics', '/matchmaking', '/notifications', '/schedule'] as const;
+const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/admin/statistics', '/admin/match-requests', '/matchmaking', '/notifications'] as const;
 type Route = typeof routes[number];
 const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
@@ -46,13 +45,12 @@ export default function App() {
   const current = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const [route, setRoute] = useState<Route>(readRoute);
   const [bookingTarget, setBookingTarget] = useState(() => selectedBookingFromHash(window.location.hash));
-  const [proposalTarget, setProposalTarget] = useState(() => selectedProposalFromHash(window.location.hash));
   const [notice, setNotice] = useState('');
   const previousSession = useRef(Boolean(session.getSnapshot()));
   const manualLogout = useRef(false);
 
   useEffect(() => {
-    const onHashChange = () => { setRoute(readRoute()); setBookingTarget(selectedBookingFromHash(window.location.hash)); setProposalTarget(selectedProposalFromHash(window.location.hash)); };
+    const onHashChange = () => { setRoute(readRoute()); setBookingTarget(selectedBookingFromHash(window.location.hash)); };
     const onManualLogout = () => { manualLogout.current = true; setNotice('Bạn đã đăng xuất khỏi hệ thống.'); };
     window.addEventListener('hashchange', onHashChange);
     window.addEventListener('app:manual-logout', onManualLogout);
@@ -94,7 +92,7 @@ export default function App() {
   }
   if (!current) {
     return <AuthPage mode={route === '/register' ? 'register' : 'login'} notice={notice} clearNotice={() => setNotice('')}
-      onNavigate={go} onSuccess={(message) => { setNotice(message); go('/login'); }} onLogin={() => { setNotice(''); if (hasBookingIntent()) go('/bookings'); else if(route!=='/my-bookings' && !(route==='/notifications' && proposalTarget)) go('/dashboard'); }} />;
+      onNavigate={go} onSuccess={(message) => { setNotice(message); go('/login'); }} onLogin={() => { setNotice(''); if (hasBookingIntent()) go('/bookings'); else if(route!=='/my-bookings' && route!=='/notifications' && route!=='/matchmaking') go('/dashboard'); }} />;
   }
 
   // Public auth URLs should never display an authenticated user a login form.
@@ -102,7 +100,7 @@ export default function App() {
   if (current.user.role === 'ADMIN') {
     const adminTabs = {
       '/dashboard': 'adminDashboard', '/admin/bookings': 'adminBookings', '/admin/pitches': 'adminPitches',
-      '/admin/balance': 'settlement', '/admin/revenue': 'revenue', '/admin/statistics': 'statistics',
+      '/admin/balance': 'settlement', '/admin/revenue': 'revenue', '/admin/statistics': 'statistics', '/admin/match-requests': 'matchRequests',
     } as const;
     const adminRoute = (activeRoute in adminTabs || activeRoute === '/profile' ? activeRoute : '/dashboard') as AdminRoute;
     return <AdminShell current={current.user} route={adminRoute} onLogout={onLogout}>
@@ -114,9 +112,8 @@ export default function App() {
     </AdminShell>;
   }
   if (activeRoute === '/teams') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><TeamsPage /></AppShell>;
-  if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage /></AppShell>;
-  if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage initialTab='notifications' initialProposalId={proposalTarget} /></AppShell>;
-  if (activeRoute === '/schedule') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><SchedulePage /></AppShell>;
+  if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchFindPage user={current.user} /></AppShell>;
+  if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><NotificationsPage /></AppShell>;
   if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} onPasswordChanged={()=>{
     manualLogout.current=true;setNotice('Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.');logout();go('/login');
   }} /></AppShell>;

@@ -7,7 +7,7 @@ from app.services.notification_service import notify
 
 def get_booking_parties(ctx, *, booking_id):
     """Display teams/representatives only; never infer a winner or payment obligation."""
-    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
+    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))
     if not match:
         return None
     def party(pid):
@@ -17,7 +17,7 @@ def get_booking_parties(ctx, *, booking_id):
     return MatchParties(match.match_id, booking_id, party(match.post_id), party(match.opponent_post_id))
 
 def confirm_after_deposit(ctx, *, booking_id, is_demo=False):
-    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
+    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))
     if not match:
         return None
     if match.status == 'CONFIRMED':
@@ -48,30 +48,29 @@ def confirm_after_deposit(ctx, *, booking_id, is_demo=False):
     match.status, match.confirmed_at = 'CONFIRMED', ctx.now()
     for post in posts:
         post.status = 'MATCHED'
-    notify(ctx, parties, 'MATCH_CONFIRMED', 'Trận DEMO đã xác nhận' if is_demo else 'Trận đã xác nhận',
-        'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if is_demo else 'Đã nhận đủ cọc.', match_id=match.match_id)
+    from app.services.match_request_service import label
+    notify(ctx, parties, 'MATCH_CONFIRMED', 'Trận DEMO đã xác nhận' if is_demo else 'Hai đội đã đặt đủ cọc',
+        'Đã đủ cọc mô phỏng; không phải khoản thu ngân hàng.' if is_demo else
+        f'Kèo lúc {label(match.match_time)} đã chốt. Phần tiền sân còn lại trả tại quầy theo thể thức hai đội đã chọn.', match_id=match.match_id)
     return match
 
 def cancel_for_booking(ctx, *, booking_id, cause, actor_id):
     """Called by Tú after booking/refund planning, under the same ordered locks."""
-    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
-    if not match or match.status == 'CANCELLED':
+    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))
+    if not match or match.status in ('CANCELLED', 'COMPLETED'):
         return match
     if cause not in ('HOLD_TIMEOUT', 'USER_CANCEL', 'ADMIN_INCIDENT', 'LATE_PAYMENT'):
         raise DomainError('STATE_CONFLICT', 'Nguyên nhân hủy không hợp lệ.')
     booking = ctx.session.execute(text('SELECT status FROM bookings WHERE booking_id=:id'), {'id': booking_id}).scalar()
     if booking not in ('EXPIRED', 'CANCELLED') or (cause == 'HOLD_TIMEOUT' and booking != 'EXPIRED'):
         raise DomainError('STATE_CONFLICT', 'Booking chưa được hủy/hết hạn bởi orchestration.')
-    from app.services.post_service import release_after_cancel
-    posts = [ctx.session.get(MatchPost, pid) for pid in (match.post_id, match.opponent_post_id)]
-    if cause == 'USER_CANCEL':
-        cancelling_post = next((p for p in posts if p.creator_id == actor_id), None)
-        if not cancelling_post:
-            raise DomainError('FORBIDDEN', 'Người hủy không phải đại diện kèo.', 403)
-        cancelling_post.status = 'CANCELLED'
+    from app.services.match_request_service import release_match
+    posts = [ctx.session.get(MatchPost, pid) for pid in (match.post_id, match.opponent_post_id) if pid]
+    if cause == 'USER_CANCEL' and not any(p.creator_id == actor_id for p in posts):
+        raise DomainError('FORBIDDEN', 'Người hủy không phải đại diện kèo.', 403)
     match.status = 'CANCELLED'
-    release_after_cancel(ctx, match_id=match.match_id, cause=cause)
-    notify(ctx, [p.creator_id for p in posts], 'MATCH_CANCELLED', 'Trận đã hủy', cause, match_id=match.match_id)
+    ctx.session.flush()
+    release_match(ctx, match, cause=cause, actor_id=actor_id)
     return match
 
 def cancel_after_booking_change(ctx, *, booking_id, cause, actor_id=None):

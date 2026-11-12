@@ -11,7 +11,6 @@ from sqlalchemy.engine import make_url
 from booking_fixtures import BookingCase
 from app.extensions import db
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.jobs.commands import scan_open_posts
 from app.models import Booking, Match, Notification, Payment
 from app.use_cases.expire_hold import expire_booking_hold
 
@@ -153,14 +152,14 @@ class Races(BookingCase):
         self.assertEqual(codes, [200, 200, 200])
         self.assertEqual(self.count(Payment, Payment.payment_type == 'BOOKING_REMAINING_PAYMENT'), 1)
 
-    def test_two_final_confirmations_create_one_match_and_one_hold(self):
-        self.post(self.a), self.post(self.b)
-        proposal = scan_open_posts()['created_proposal_ids'][0]
-        clients = [self.app.test_client(), self.app.test_client()]
-        url = f'/api/v1/match-proposals/{proposal}/respond'
-        codes = self.race(lambda: clients[0].post(url, headers=self.a, json={'decision': 'ACCEPTED'}).status_code,
-                          lambda: clients[1].post(url, headers=self.b, json={'decision': 'ACCEPTED'}).status_code)
-        self.assertEqual(codes, [200, 200])
+    def test_two_scans_racing_create_one_match_and_one_hold(self):
+        from unittest import mock
+        from app.services.match_request_service import scan
+        self.request_opponent(self.a)
+        # Second request without its immediate scan, so two scheduler passes can race for the pair.
+        with mock.patch('app.services.match_request_service.scan', return_value={}):
+            self.request_opponent(self.b)
+        self.race(lambda: scan(), lambda: scan())
         self.assertEqual(self.count(Match), 1)
         self.assertEqual(self.count(Booking), 1)
 

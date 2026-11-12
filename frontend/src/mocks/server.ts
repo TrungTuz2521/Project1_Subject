@@ -479,6 +479,15 @@ export function createMockServer(delayMs = 80) {
       notification.is_read=true;notification.read_at=new Date().toISOString();return reply(notification);
     }
     if(path==='/bookings/my'&&method==='GET')return reply([fixtures.booking],200,{page:1,page_size:20,total:1});
+    // "Tìm kèo" in demo mode: an empty list and the form options, so the page can be explored without a backend.
+    if(path==='/match-requests/my'&&method==='GET')return reply([],200,{page:1,page_size:100,total:0});
+    if(path==='/match-requests/options'&&method==='GET'){
+      const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date());
+      const mine=teams.filter(t=>(teamMembers[t.team_id]??[]).some(m=>m.user_id===currentUser.user_id&&m.role==='CAPTAIN'&&m.status==='ACTIVE'));
+      return reply({teams:mine.map(t=>({team_id:t.team_id,team_name:t.team_name,members:(teamMembers[t.team_id]??[]).filter(m=>m.status==='ACTIVE').map(m=>({user_id:m.user_id,full_name:m.full_name}))})),
+        opponent_bookings:[],recruit_games:[],today,rules:{opponent_lead_days:2,cutoff_hours:24,max_days:10,deposit_hold_hours:6,max_open_requests:5}});
+    }
+    if(path==='/match-requests'&&method==='POST')return fail(501,'MOCK_NOT_IMPLEMENTED','Chế độ demo không ghép kèo thật. Hãy chạy cùng backend để thử.');
     return fail(501,'MOCK_NOT_IMPLEMENTED','Mock chưa hỗ trợ '+method+' '+path+'. Bổ sung handler trước khi dùng.');
   };
 

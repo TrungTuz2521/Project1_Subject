@@ -39,26 +39,18 @@ class ApiHardeningTests(BookingCase):
                                 iss='football-field-api', aud='football-field-web'), SECRET, algorithm='HS256')
         self.assertEqual(self.client.get('/api/v1/users/me', headers={'Authorization': 'Bearer ' + token}).status_code, 401)
 
-    # 5. Public post detail hides attendance and non-listed posts.
-    def test_post_detail_shows_private_fields_only_to_insiders(self):
-        pid = self.post(self.a)
-        public = self.client.get(f'/api/v1/match-posts/{pid}').json['data']
-        self.assertNotIn('attendance_user_ids', public)
-        self.assertIn('description', public)
-        self.assertNotIn('attendance_user_ids', self.client.get(f'/api/v1/match-posts/{pid}', headers=self.c).json['data'])
-        self.assertIn('attendance_user_ids', self.client.get(f'/api/v1/match-posts/{pid}', headers=self.a).json['data'])
-        self.assertIn('attendance_user_ids', self.client.get(f'/api/v1/match-posts/{pid}', headers=self.admin).json['data'])
-        with UnitOfWork() as ctx:
-            ctx.session.get(MatchPost, pid).status = 'CANCELLED'
-        self.assertEqual(self.client.get(f'/api/v1/match-posts/{pid}').status_code, 404)
-        self.assertEqual(self.client.get(f'/api/v1/match-posts/{pid}', headers=self.c).status_code, 404)
-        self.assertEqual(self.client.get(f'/api/v1/match-posts/{pid}', headers=self.a).status_code, 200)
-        # A broken token is treated as anonymous, not as an error, on this public endpoint.
-        self.assertEqual(self.client.get(f'/api/v1/match-posts/{pid}', headers={'Authorization': 'Bearer junk'}).status_code, 404)
+    # 5. Requests are private: no public listing, only the requester (or an admin) reads one.
+    def test_requests_are_private(self):
+        rid = self.request_opponent(self.a)
+        self.assertEqual(self.client.get(f'/api/v1/match-requests/{rid}', headers=self.a).status_code, 200)
+        self.assertEqual(self.client.get(f'/api/v1/match-requests/{rid}', headers=self.admin).status_code, 200)
+        self.assertEqual(self.client.get(f'/api/v1/match-requests/{rid}', headers=self.c).status_code, 404)
+        self.assertEqual(self.client.get(f'/api/v1/match-requests/{rid}').status_code, 401)
+        self.assertEqual(self.client.get('/api/v1/match-posts').status_code, 404)
 
     # 8. Mistyped status filters are rejected.
     def test_unknown_status_filters_are_422(self):
-        for path in ('/api/v1/match-posts/my', '/api/v1/match-proposals', '/api/v1/matches'):
+        for path in ('/api/v1/match-requests/my', '/api/v1/matches'):
             r = self.client.get(path, headers=self.a, query_string={'status': 'BOGUS'})
             self.assertEqual(r.status_code, 422, path)
         self.assertEqual(self.client.get('/api/v1/matches', headers=self.a, query_string={'status': 'COMPLETED'}).status_code, 200)
@@ -80,7 +72,7 @@ class ApiHardeningTests(BookingCase):
     # 4. Scheduler runs every job and survives one failing.
     def test_scheduler_runs_every_job_once(self):
         result = run_once()
-        self.assertEqual(set(result), {'expire_proposals', 'expire_holds', 'reconcile_payments', 'process_refunds', 'complete_matches'})
+        self.assertEqual(set(result), {'close_requests', 'expire_holds', 'reconcile_payments', 'process_refunds', 'complete_matches'})
         self.assertFalse(any(str(v).startswith('ERROR') for v in result.values()), result)
         self.assertIn('matchmaking', run_once(with_matchmaking=True))
 
