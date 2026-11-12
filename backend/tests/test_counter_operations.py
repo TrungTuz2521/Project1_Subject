@@ -13,6 +13,8 @@ class CounterOperationsTests(BookingCase):
         start, end = self.slot(days, index)
         body = dict(pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat(), note='Tai quay', **extra)
         body.setdefault('guest', {'full_name': 'Anh Minh', 'phone': '0988111222'})
+        if body['guest'] is None:
+            body.pop('guest')
         return self.client.post('/api/v1/admin/bookings', headers=self.admin, json=body)
 
     def set_peak(self, start='17:00', end='21:00', weekend=False):
@@ -171,3 +173,11 @@ class CounterOperationsTests(BookingCase):
             from app.models import User
             ctx.session.get(User, self.uadmin).password_hash = 'changed'
         self.assertEqual(self.client.post('/api/v1/auth/refresh', headers=token).json['error']['code'], 'SESSION_REVOKED')
+
+    # Client sync: a customer with an account sees counter bookings with the money already paid.
+    def test_customer_sees_counter_booking_paid_and_due(self):
+        r = self.counter(guest=None, user_id=self.ua, payment={'amount': '120000', 'payment_method': 'CASH'})
+        mine = self.client.get('/api/v1/bookings/my', headers=self.a).json['data']
+        row = next(b for b in mine if b['booking_id'] == r.json['data']['booking_id'])
+        self.assertEqual((row['status'], row['paid_amount'], row['outstanding_amount'], row['pitch_name']),
+                         ('CONFIRMED', '120000.00', '480000.00', 'Sân 5A'))

@@ -32,9 +32,8 @@ def create_app(config=None):
     install_auth_limit(app)
     from app.infrastructure.retry import retry_conflicts
     # These endpoints perform only database work; never wrap external payment orchestration.
-    for endpoint in ('register', 'me', 'team_collection', 'team_item', 'remove_member', 'post_collection',
-                     'post_item', 'cancel_post', 'participants', 'request_team_join', 'respond_join',
-                     'proposal_respond', 'read_notification'):
+    for endpoint in ('register', 'me', 'team_collection', 'team_item', 'remove_member', 'add_member', 'create_request',
+                     'request_item', 'read_notification'):
         key = 'api.' + endpoint
         app.view_functions[key] = retry_conflicts(app.view_functions[key])
     CORS(app, resources={r'/api/v1/*': {'origins': app.config['CORS_ORIGINS']}},

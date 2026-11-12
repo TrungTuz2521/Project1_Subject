@@ -337,27 +337,35 @@ Kiểm tra `git status` và `git diff --cached` trước khi commit; không stag
 
 Kết quả ngày **10/11/2026**: backend chạy 182 test, **168 đạt và 14 bỏ qua** (kiểm thử đồng thời cần MySQL/TiDB thử nghiệm riêng); frontend **45 test đạt**, build thành công. Auth Google dùng verifier giả, email dùng SMTP giả trong unit test; `check-email` thực tế chỉ xác minh kết nối/đăng nhập Gmail và không gửi thư. Các kết quả này chưa thay thế demo end-to-end hoặc kiểm thử khóa TiDB.
 
-### Quét bài tự động mỗi 15 giây
+### Tìm kèo: ghép tự động theo yêu cầu
 
-Mở một terminal riêng tại thư mục `backend`, bên cạnh terminal web server và email worker:
+Người chơi không xem bài của nhau. Họ gửi **yêu cầu** ở trang **Tìm kèo** (`#/matchmaking`), hệ thống tự ghép rồi báo qua email và thông báo trên web:
+
+| Loại | Ai gửi | Ghép với |
+|---|---|---|
+| Tìm đối | Đội trưởng, chỉ nhập số người đi đá (đủ 5/7) | Một đội khác cùng loại sân, cùng ngày, khung giờ giao nhau, trình độ trong mức chấp nhận, cách chia tiền khớp (hoặc một bên "không yêu cầu") |
+| Tìm thêm người | Người có lượt sân đã cọc | Người chơi đá ké phù hợp, thêm thẳng vào trận |
+| Đá ké | Một người (đi cùng tối đa 2 bạn) | Trận đang thiếu người |
+
+Quy tắc:
+- Tìm đối gửi trước ngày đá ít nhất 2 ngày; tìm thêm người và đá ké chỉ cần còn hơn 1 ngày.
+- Hệ thống dừng tìm 24 giờ trước giờ đá và báo "không tìm được".
+- Tìm đối chọn **1 ngày** và một khung giờ (vd 17:00–21:00).
+- Cặp phù hợp nhất được ghép trước (gần trình độ nhất, ít vắng mặt nhất).
+- Ghép là chốt, không cần xác nhận lại. Chỉ **đội trưởng** nhận email và thông báo, đội trưởng tự báo cho thành viên.
+- Đội đã đặt sân được ưu tiên ghép với đội chưa có sân, đá luôn trên sân đó và không cọc thêm.
+- Hai đội cùng đã đặt sân (cùng giờ) chỉ được ghép sau khi đã chờ 6 giờ hoặc khi sắp hết hạn tìm. Khi đó hệ thống giữ lượt sân đặt sớm hơn, hủy lượt kia, và **chuyển tiền cọc** của lượt kia sang lượt được giữ (không hoàn).
+- Hai đội đều chưa có sân: hệ thống tự giữ một sân trống, mỗi đội cọc một nửa trong 12 giờ. Quá hạn thì đội chưa cọc bị hủy yêu cầu, đội đã cọc được hoàn cọc và tìm tiếp.
+- Hủy kèo đã ghép chỉ được khi còn hơn 24 giờ; sau đó phải gọi quầy.
+
+**Phải chạy bộ lập lịch** thì việc ghép, đóng yêu cầu quá hạn, hết hạn giữ sân và gửi email mới diễn ra. Mở thêm một terminal tại thư mục `backend`:
 
 ```powershell
-.\.venv\Scripts\python.exe -m flask --app app:create_app matchmaking-worker
+python -m flask --app app:create_app scheduler --with-matchmaking --with-email
 ```
 
-Worker quét ngay khi chạy, sau đó bắt đầu lượt kế tiếp cách 15 giây nếu lượt trước đã xong; lượt chậm không chạy chồng nhau. Giữ terminal mở, Ctrl+C để dừng. Chỉ chạy backend hoặc email worker không tự bật quét bài.
+Mỗi yêu cầu mới cũng được quét ngay khi gửi. Admin xem mọi yêu cầu và bấm "Quét ngay" ở trang **Kèo ghép**. Trước khi chạy code này trên TiDB phải chạy migration `database/schema/006_match_requests.sql` (chỉ thêm cột).
 
-Worker dùng lại logic ghép hiện có, chỉ tạo đề xuất cho bài phù hợp; các lượt sau không tạo lại đề xuất đang tồn tại. Hai bên vẫn phải chấp nhận, rồi server mới giữ sân 5 phút để cọc. Không tự chấp nhận, giữ sân hoặc thu tiền chỉ vì tìm thấy bài. Không đổi Google/SMTP hoặc schema TiDB. Nếu đã bật email, đề xuất mới tạo thêm hàng đợi để email worker gửi riêng.
-
-Lỗi một lượt được ghi log và worker tiếp tục ở lượt sau. Có thể điều chỉnh bằng `--interval 15` (1–300 giây). Khi deploy cần service duy trì worker; không chạy thêm scheduler gọi scan liên tục song song với worker này. Bản hiện tại nên chỉ vận hành một matchmaking worker.
-
-`scan-matchmaking` vẫn chạy một lượt để kiểm tra thủ công. Các job `expire-proposals`, `expire-booking-holds`, xử lý hoàn tiền/đối soát vẫn cần scheduler riêng; matchmaking worker không thay thế các job này. Xem [hướng dẫn backend](backend/README.md). Đối chiếu [hợp đồng API/Models](docs/api/API_MODELS_CONTRACT_PROJECT1.md) và [hướng dẫn test tích hợp](docs/setup/FRONTEND_BACKEND_TESTING.md).
-
-Thông báo tuyển người: A nhận tên người đăng ký/tên bài; web tự cập nhật mỗi 10 giây khi đang mở trang. Email mới mở đúng đề xuất sau đăng nhập. Xem [hướng dẫn email](docs/setup/EMAIL_NOTIFICATIONS.md).
-
-Tuyển người trực tiếp (10/11/2026): B bấm Đăng ký tham gia là đã đồng ý; A nhận thông báo/email và duyệt một lần.
-Sau duyệt, B được thêm vào đội, quân số được cập nhật và B nhận email thành công; không có bước B xác nhận lại.
-Đề xuất AI ghép hai bài và ghép đối thủ vẫn cần hai bên tự chấp nhận. Không chạy migration hoặc gửi lại thông báo cũ.
 
 Danh sách việc còn lại, ưu tiên demo và giới hạn thực tế: [Những phần cần hoàn thiện](docs/api/REMAINING_WORK.md).
 

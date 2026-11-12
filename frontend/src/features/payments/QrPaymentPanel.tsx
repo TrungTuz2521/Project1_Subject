@@ -9,8 +9,10 @@ import { BankQR } from './BankQR';
 const POLL_MS = 3000;
 
 /** One payer's short-lived QR. The browser only shows and polls; the bank webhook on the server marks it paid. */
-export function QrPaymentPanel({ bookingId, payer, validHold, ttlSeconds = 60, onPaid }: {
+export function QrPaymentPanel({ bookingId, payer, validHold, ttlSeconds = 60, onPaid, autoStart = false }: {
   bookingId: number; payer: BankDepositPayer; validHold: boolean; ttlSeconds?: number; onPaid?: () => void;
+  /** Right after the customer holds a slot: show the QR at once instead of asking for another click. */
+  autoStart?: boolean;
 }) {
   const [session, setSession] = useState<QrPaymentSession | null>(payer.qr_session ?? null);
   const [paid, setPaid] = useState(false);
@@ -38,6 +40,12 @@ export function QrPaymentPanel({ bookingId, payer, validHold, ttlSeconds = 60, o
     }, POLL_MS);
     return () => { alive = false; controller.abort(); window.clearInterval(timer); };
   }, [paymentId, paid, watchUntil]);
+
+  const started = useRef(false);
+  useEffect(() => {
+    if (autoStart && !started.current && !session && payer.can_open_qr && validHold) { started.current = true; void open(); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, payer.can_open_qr, validHold]);
 
   async function open() {
     if (busy) return;

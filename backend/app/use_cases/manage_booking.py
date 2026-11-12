@@ -99,7 +99,7 @@ def reschedule_booking(actor, *, booking_id, start_time, end_time, pitch_id=None
         policy.validate_slot(ctx.now(), start_time, end_time)
         if booking_service.find_conflict(ctx, target_id, start_time, end_time, exclude_booking_id=booking_id):
             raise SlotUnavailable()
-        match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
+        match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))
         if match:
             posts = [ctx.session.get(MatchPost, pid) for pid in (match.post_id, match.opponent_post_id)]
             if target.pitch_type != ctx.session.get(Pitch, booking.pitch_id).pitch_type:
@@ -108,6 +108,12 @@ def reschedule_booking(actor, *, booking_id, start_time, end_time, pitch_id=None
             for post in posts:
                 post.match_time, post.end_time = start_time, end_time
                 post.pitch_id = target_id
+        # Requests built on this booking (find an opponent, find more players) and players who joined follow the new time.
+        tied = list(ctx.session.scalars(select(MatchPost).where(MatchPost.booking_id == booking_id, MatchPost.status.in_(('OPEN', 'MATCHED')))))
+        tied += list(ctx.session.scalars(select(MatchPost).where(MatchPost.matched_post_id.in_([p.post_id for p in tied] or [0]), MatchPost.status == 'MATCHED')))
+        for post in tied:
+            if post.preferred_dates is None or post.status == 'MATCHED':
+                post.match_time, post.end_time, post.pitch_id = start_time, end_time, target_id
         booking.pitch_id, booking.start_time, booking.end_time = target_id, start_time, end_time
         booking.note = policy.add_note(booking.note, f'Doi lich boi admin {actor.user_id}: {reason}')
         payers = {p['user_id'] for p in booking.payer_plan or []} | {booking.user_id}

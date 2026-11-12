@@ -68,24 +68,31 @@ def remove_member(ctx, team_id, actor, user_id, reason=None):
             ids.remove(user_id)
             post.attendance_plan = {**post.attendance_plan, 'user_ids': sorted(ids)}
             post.current_players = len(ids) + post.attendance_plan['guest_players']
-            if post.post_type == 'FIND_OPPONENT':
-                post.status = 'CANCELLED'  # A listed player left; captain must publish a new session.
-            elif post.post_type in ('RECRUIT_MEMBERS', 'RANDOM_SQUAD'):
-                post.required_players = (5 if post.pitch_type == 'PITCH_5' else 7) - post.current_players
-        elif post.status == 'OPEN':
-            post.current_players = count_members(ctx, team_id)
-            if post.post_type == 'RECRUIT_MEMBERS':
-                post.required_players = (post.required_players or 0) + 1
+            if post.post_type == 'FIND_OPPONENT' and post.current_players < (5 if post.pitch_type == 'PITCH_5' else 7):
+                post.status = 'CANCELLED'  # Not a full team any more; the captain sends a new request.
+                from app.services.notification_service import notify
+                notify(ctx, [post.creator_id], 'POST_EXPIRED', 'Đã dừng tìm đối',
+                       'Một thành viên rời đội nên đội không còn đủ người. Hãy gửi lại yêu cầu khi đủ quân số.')
     return {'team_id': team_id, 'user_id': user_id, 'status': membership.status}
 
-def accept_member_proposal(ctx, *, proposal_id):
-    from app.models import MatchProposal, ProposalConfirmation
-    from app.use_cases.respond_proposal import accept_member_proposal as apply_membership
-    proposal = ctx.session.get(MatchProposal, proposal_id)
-    if not proposal or proposal.proposal_type != 'TEAM_MEMBER' or proposal.expires_at <= ctx.now():
-        raise DomainError('STATE_CONFLICT', 'Đề xuất thành viên không hợp lệ.')
-    confirmations = list(ctx.session.scalars(select(ProposalConfirmation).where(ProposalConfirmation.proposal_id == proposal_id)))
-    if len(confirmations) != 2 or any(c.decision != 'ACCEPTED' for c in confirmations):
-        raise DomainError('STATE_CONFLICT', 'Cần đủ hai xác nhận.')
-    posts = [ctx.session.get(MatchPost, pid) for pid in (proposal.source_post_id, proposal.target_post_id) if pid]
-    return apply_membership(ctx, proposal, posts)
+def add_member(ctx, team_id, actor, contact):
+    """The captain adds a player by the exact email or phone they registered with."""
+    contact = text(contact, 'contact', 150).strip()
+    ctx.locks.users([actor.user_id])
+    ctx.locks.lock(Team, [team_id])
+    team = captain(ctx, team_id, actor)
+    lookup = User.email == contact.lower() if '@' in contact else User.phone == contact.replace(' ', '')
+    user = ctx.session.scalar(select(User).where(lookup))
+    if user is None or user.status != 'ACTIVE' or user.role != 'PLAYER' or user.email.endswith('@walkin.invalid'):
+        raise DomainError('NOT_FOUND', 'Không tìm thấy người chơi với email hoặc số điện thoại này.', 404, {'contact': 'Kiểm tra lại email hoặc số điện thoại họ đã đăng ký.'})
+    membership = ctx.session.scalar(select(TeamMember).where(TeamMember.team_id == team_id, TeamMember.user_id == user.user_id))
+    if membership and membership.status == 'ACTIVE':
+        raise DomainError('STATE_CONFLICT', 'Người này đã ở trong đội.')
+    if membership:
+        membership.status, membership.role = 'ACTIVE', 'MEMBER'
+    else:
+        ctx.session.add(TeamMember(team_id=team_id, user_id=user.user_id, role='MEMBER'))
+    from app.services.notification_service import notify
+    notify(ctx, [user.user_id], 'TEAM_JOINED', 'Bạn được thêm vào đội', f'Đội trưởng đã thêm bạn vào đội “{team.team_name}”.')
+    ctx.session.flush()
+    return team_data(ctx, team, detail=True)

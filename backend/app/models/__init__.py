@@ -63,6 +63,12 @@ class MatchPost(Timestamped, db.Model):
     expiry_time = db.Column(UTCDateTime(), nullable=False)
     is_fallback_scanned = db.Column(db.Boolean, nullable=False, default=False)
     status = db.Column(db.String(32), nullable=False, default='OPEN')
+    # Request criteria (migration 006). A request tied to a booking has a fixed match_time instead.
+    preferred_dates = db.Column(db.JSON, nullable=True)
+    window_start = db.Column(db.String(5))
+    window_end = db.Column(db.String(5))
+    skill_tolerance = db.Column(db.Integer)
+    matched_post_id = db.Column(db.Integer)
 
 class MatchParticipant(db.Model):
     __tablename__ = 'match_participants'

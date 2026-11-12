@@ -5,7 +5,7 @@ import { getAdminDashboard } from '../../services/huyApi';
 import { useNow } from '../field-management/ui';
 import '../../styles/admin.css';
 
-export type AdminRoute = '/dashboard' | '/admin/bookings' | '/admin/balance' | '/admin/revenue' | '/admin/statistics' | '/admin/pitches' | '/profile';
+export type AdminRoute = '/dashboard' | '/admin/bookings' | '/admin/balance' | '/admin/match-requests' | '/admin/revenue' | '/admin/statistics' | '/admin/pitches' | '/profile';
 type Counts = { holds: number; refunds: number; unpaid: number };
 type Badge = { n: number; tone: 'amber' | 'red'; title: string } | null;
 type Item = { path: AdminRoute; label: string; icon: ReactNode; badge?: (c: Counts) => Badge };
@@ -20,6 +20,7 @@ const icons = {
   stats: icon('M6 19V11M12 19V5M18 19v-6'),
   pitch: icon('M3 5h18v14H3zM12 5v14M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5M3 9h3v6H3M21 9h-3v6h3'),
   user: icon('M12 12a4 4 0 100-8 4 4 0 000 8M4 21a8 8 0 0116 0'),
+  pair: icon('M4 8h12l-3-3M20 16H8l3 3'),
 };
 
 /** Grouped by the job the counter staff is doing, not by the module that implements it. */
@@ -30,6 +31,7 @@ const groups: { title: string; items: Item[] }[] = [
       badge: c => c.refunds ? { n: c.refunds, tone: 'red', title: 'Khoản cần hoàn cho khách' } : c.holds ? { n: c.holds, tone: 'amber', title: 'Booking online đang chờ cọc' } : null },
     { path: '/admin/balance', label: 'Thu tiền', icon: icons.cash,
       badge: c => c.unpaid ? { n: c.unpaid, tone: 'amber', title: 'Trận đá xong chưa thu đủ' } : null },
+    { path: '/admin/match-requests', label: 'Kèo ghép', icon: icons.pair },
   ] },
   { title: 'Báo cáo', items: [{ path: '/admin/revenue', label: 'Doanh thu', icon: icons.revenue }, { path: '/admin/statistics', label: 'Thống kê', icon: icons.stats }] },
   { title: 'Thiết lập', items: [{ path: '/admin/pitches', label: 'Sân bóng', icon: icons.pitch }, { path: '/profile', label: 'Tài khoản của tôi', icon: icons.user }] },

@@ -42,7 +42,7 @@ Hai lệnh trên chạy một lượt. Để tự quét bài, mở terminal riê
 
 Quét ngay lần đầu, mặc định mỗi 15 giây; chỉ chạy tuần tự, không chồng lượt nếu DB chậm. `--interval` nhận 1–300 giây. Lỗi một lượt không làm worker dừng; Ctrl+C để thoát. Web server không tự khởi động worker. Chỉ vận hành một worker quét, không đồng thời đặt scheduler quét trùng.
 Worker dùng `scan_open_posts` hiện có, tái kiểm tra bài/khóa trước tạo đề xuất. Hai bên phải tự chấp nhận; không tự tạo booking/cọc. Không thay schema/Google/SMTP; email mới được gửi bởi email-worker riêng nếu đã bật.
-Worker này chỉ quét bài, không chạy `expire-proposals`, job hết hold hoặc hoàn tiền. Các job hết hạn/đối soát vẫn do scheduler riêng gọi. Không tự chạy thread worker trong web server.
+Worker này chỉ quét yêu cầu tìm kèo, không đóng yêu cầu quá hạn, không chạy job hết hold hoặc hoàn tiền. Nên dùng `scheduler --with-matchmaking` thay cho worker này. Các job hết hạn/đối soát vẫn do scheduler riêng gọi. Không tự chạy thread worker trong web server.
 Quét mỗi cặp trong transaction riêng, lọc điều kiện cứng rồi chấm 40/20/40, ngưỡng 80.
 Thông báo IN_APP ghi cùng transaction; khi `EMAIL_ENABLED=true`, thêm EMAIL/PENDING trong cùng transaction. Chạy `email-worker` riêng để gửi SMTP sau commit; xem phần Google Login và email bên dưới.
 
@@ -125,7 +125,7 @@ python -m flask --app app:create_app reconcile-payments
 python -m flask --app app:create_app scheduler --with-matchmaking --with-email
 ```
 
-`scheduler` chạy mỗi 15 giây: hết hạn đề xuất/bài, hết hạn giữ sân, đối soát thanh toán + dọn mã QR SePay, hoàn tiền qua cổng, chuyển trận đã đá xong sang `COMPLETED`. `--with-matchmaking` thay `matchmaking-worker`, `--with-email` thay `email-worker` (không chạy song song các worker cũ). `--once` chạy một lượt rồi thoát. Chỉ chạy **một** scheduler, vì `process-refunds` chưa có outbox/lease.
+`scheduler` chạy mỗi 15 giây: đóng yêu cầu tìm kèo quá hạn (24 giờ trước giờ đá), hết hạn giữ sân, đối soát thanh toán + dọn mã QR SePay, hoàn tiền qua cổng, chuyển trận đã đá xong sang `COMPLETED`. `--with-matchmaking` thay `matchmaking-worker`, `--with-email` thay `email-worker` (không chạy song song các worker cũ). `--once` chạy một lượt rồi thoát. Chỉ chạy **một** scheduler, vì `process-refunds` chưa có outbox/lease.
 
 Hoàn tiền mặt/chuyển khoản (kể cả QR SePay) không tự chạy: Admin xem mục **Khoản cần hoàn** ở trang Quản lý lịch đặt, trả tiền cho khách rồi bấm "Đã trả tiền" (`GET /admin/refunds/pending`, `POST /admin/payments/{id gốc}/refund`).
 

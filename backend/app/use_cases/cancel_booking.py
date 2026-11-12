@@ -16,6 +16,8 @@ def close_booking(ctx, booking, *, status, cause, actor_id, reason, cancelling_u
     plan = payment_service.plan_refunds(ctx, booking_id=booking.booking_id, cause=cause, cancelling_user_id=cancelling_user_id)
     payment_service.execute_refund_plan(ctx, plan, note=cause)
     match_service.cancel_for_booking(ctx, booking_id=booking.booking_id, cause=cause, actor_id=actor_id)
+    from app.services.match_request_service import booking_closed
+    booking_closed(ctx, booking.booking_id)
     payers = {p['user_id'] for p in booking.payer_plan or []} | {booking.user_id}
     if status == 'EXPIRED':
         notification_service.notify(ctx, payers, 'BOOKING_EXPIRED', 'Hết hạn giữ sân', 'Lượt giữ sân đã hết hạn do chưa đủ cọc.')
