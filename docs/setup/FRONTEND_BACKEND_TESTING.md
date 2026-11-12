@@ -66,7 +66,6 @@ Mở **frontend/.env.local**, đặt đúng hai dòng sau và lưu Ctrl+S:
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1
-VITE_USE_MOCKS=false
 ```
 
 Tệp nằm cùng cấp package.json, không ở src và không mang tên `.env.local.txt`. Nếu đã có `.env.local`, phải sửa tệp đó, vì lệnh Copy có điều kiện không ghi đè cấu hình hiện có. Các tệp `.env.development.local` hoặc biến môi trường đã đặt ở Terminal có thể ghi đè giá trị; cần kiểm tra nếu vẫn thấy demo.
@@ -78,15 +77,13 @@ npm run dev
 
 Nếu frontend đang chạy, Ctrl+C rồi `npm run dev` lại sau khi sửa env. Mở đúng URL terminal hiện ra, thường là http://127.0.0.1:5173 hoặc http://localhost:5173. Máy thành viên phải chạy Flask của chính máy đó; 127.0.0.1 không trỏ tới máy Đức từ máy người khác.
 
-## 5. Xác nhận đã tắt mock
+## 5. Xác nhận frontend gọi đúng backend
 
-1. Tải lại trang, có thể dùng Ctrl+Shift+R.
-2. Không còn dòng “Chế độ demo · Chưa cần kết nối backend” và nút đăng nhập nhanh bằng mock.
-3. F12 → Network → Fetch/XHR, gửi form đăng nhập.
-4. Phải thấy POST http://127.0.0.1:5000/api/v1/auth/login. Không thấy request API trong chế độ mock là bình thường, nhưng không phải đang test backend thật.
-5. Login hợp lệ trả 200, data có access_token, expires_in=3600 và user. Không chụp/chia sẻ token ở ảnh kết quả.
+1. F12 → Network → Fetch/XHR, gửi form đăng nhập.
+2. Phải thấy POST http://127.0.0.1:5000/api/v1/auth/login. Không thấy request nào thì kiểm tra lại `VITE_API_BASE_URL` và khởi động lại Vite.
+3. Login hợp lệ trả 200, data có access_token, expires_in=3600 và user. Không chụp/chia sẻ token ở ảnh kết quả.
 
-Tài khoản mock `demo@example.test` / `mock-only` không dùng để đăng nhập TiDB. Tài khoản test database và mật khẩu được cấp riêng. Không đưa tài khoản quản trị/mật khẩu vào tài liệu công khai.
+Tài khoản test database và mật khẩu được cấp riêng. Không đưa tài khoản quản trị/mật khẩu thật vào ảnh chụp hay tài liệu.
 
 ## 6. Checklist test tích hợp Auth
 
@@ -115,7 +112,7 @@ Test tự động không thay thế việc thử frontend thật. Booking/thanh 
 | Dấu hiệu | Kiểm tra |
 | --- | --- |
 | Vẫn hiện demo | Có đúng frontend/.env.local chưa, đã Ctrl+S/restart chưa; có chạy nhầm thư mục/cổng hoặc env ưu tiên cao hơn không |
-| Sai mật khẩu nhưng backend trực tiếp đăng nhập được | Frontend có còn mock không; Network có gọi đúng cổng 5000 không |
+| Sai mật khẩu nhưng backend trực tiếp đăng nhập được | `VITE_API_BASE_URL` có đúng không; Network có gọi đúng cổng 5000 không |
 | ERR_CONNECTION_REFUSED | Backend chưa chạy, sai cổng hoặc backend đã thoát; xem Terminal backend |
 | CORS error | CORS_ORIGINS có đúng scheme/host/port trang đang mở; restart backend sau khi đổi |
 | 503 DATABASE_UNAVAILABLE | Kiểm tra kết nối TLS, IP allowlist, credential, database và mạng; không tắt xác minh TLS để chữa lỗi |
@@ -130,8 +127,6 @@ Khi báo lỗi, gửi nhánh/commit, URL trang, HTTP status và error.code, nộ
 
 Giữ các file local trên máy. Khi pull có đổi package-lock, chạy npm ci; khi requirements đổi thì cài lại thư viện backend. Khởi động backend và frontend ở hai Terminal như trên. Chuyển nhánh không có nghĩa cấu hình local tự đổi theo: kiểm tra lại mock/API URL nếu chuyển giữa nhánh demo và nhánh tích hợp.
 
-## 8. Demo quân số theo buổi đá
+## 9. Demo quân số theo buổi đá
 
-Làm theo [hướng dẫn từng chức năng](../api/SESSION_ATTENDANCE_GUIDE.md#demo-từng-bước). Để người demo thực hiện một bước rồi xác nhận kết quả trước khi chuyển bước kế tiếp. Dùng backend thật, tắt mock; mock hiện trả 501 cho payload quân số mới. Không chỉ nhìn số thành viên ở trang đội để kết luận một buổi đá đã đủ người.
-
-Đã xác minh trên giao diện ngày 06/11: chọn đại diện + 4 người ngoài ứng dụng cho sân 7 hiển thị 5/7 và thiếu 2. Luồng nhận thêm hai người, chống cộng trùng và đủ 7 nhưng đội chỉ có 3 tài khoản đã kiểm thử trên SQLite cô lập. Chưa dùng dữ liệu nhóm để tạo booking/thu tiền thử cho ca này.
+Tạo đội ở trang Đội, rồi gửi yêu cầu tìm đối ở trang Tìm kèo với số người đi đá (ví dụ 7 cho sân 7). Lần gửi sau, ô số người được điền sẵn. Dùng backend thật, tắt mock.

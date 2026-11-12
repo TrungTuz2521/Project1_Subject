@@ -9,7 +9,6 @@ import { AdminRevenuePage } from '../../pages/admin/AdminRevenuePage';
 import { AdminDashboardPage } from '../../pages/admin/AdminDashboardPage';
 import { AdminStatisticsPage } from '../../pages/admin/AdminStatisticsPage';
 import { AdminMatchRequestsPage } from '../../pages/admin/AdminMatchRequestsPage';
-import { DemoNote } from './ui';
 import './field.css';
 
 type Tab = 'pitches' | 'bookings' | 'adminDashboard' | 'adminBookings' | 'adminPitches' | 'settlement' | 'revenue' | 'statistics' | 'matchRequests';
@@ -18,7 +17,7 @@ export function FieldApp({ tab, selectedBookingId = null }: { tab: Tab; selected
   const [bookingId, setBookingId] = useState<number | null>(null);
   const [balanceId, setBalanceId] = useState<number | null>(null);
   const openBalance = (id: number) => { setBalanceId(id); window.location.hash = '/admin/balance'; };
-  return <div className="huy-module"><DemoNote />
+  return <div className="huy-module">
     {tab === 'pitches' && <PitchesPage onBooked={(id) => { setBookingId(id); window.location.hash = `${bookingHash(id)}&pay=1`; }} />}
     {tab === 'bookings' && <BookingsPage selectedId={selectedBookingId ?? bookingId} />}
     {tab === 'adminDashboard' && <AdminDashboardPage settlement={openBalance} />}

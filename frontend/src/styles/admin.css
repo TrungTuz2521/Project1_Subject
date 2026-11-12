@@ -344,3 +344,7 @@ a.adm-board-cell:hover{border-color:var(--brand-line);box-shadow:0 2px 8px rgba(
   .adm-desk-row .adm-row-actions{justify-content:flex-start}
   .adm-dialog-actions .huy-btn{flex:1}
 }
+
+/* Scheduler not running: a plain, hard-to-miss strip above the scoreboard. */
+.adm-job-alert{display:flex;flex-direction:column;gap:4px;border:1px solid #e3b7a9;background:#fff3ee;color:#7d3424;border-radius:10px;padding:12px 14px;margin:0 0 14px;font-size:13px;line-height:1.55}
+.adm-job-alert code{font-size:12px;background:#fde6dd;padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}

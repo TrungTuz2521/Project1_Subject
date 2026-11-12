@@ -34,7 +34,7 @@ URL IPN được đăng ký phía VNPay; code hiện không có biến `VNPAY_IP
 
 ## 4. Thao tác trên app
 
-1. Dùng backend thật (`VITE_USE_MOCKS=false`), đăng nhập hai tài khoản ở hai cửa sổ/phiên riêng.
+1. Đăng nhập hai tài khoản ở hai cửa sổ/phiên riêng.
 2. Tạo hai bài tìm đối thủ hợp lệ, chạy quét ghép trận nếu chưa có worker; cả hai đại diện đồng ý đề xuất.
 3. Ngay khi bên thứ hai đồng ý và có sân, backend tạo booking PENDING_HOLD. **Hai đội dùng chung một hạn giữ sân 300 giây**, không phải mỗi đội 5 phút và không đợi cả hai cùng mở trang thanh toán.
 4. Trong thông báo **Đã giữ sân**, bấm **Thanh toán tiền cọc**. App đọc booking liên kết qua API, mở `#/my-bookings?booking_id=<id>` và chọn đúng đơn trong phần chi tiết. Bấm thông báo không tạo phiên thanh toán, không gia hạn hold.

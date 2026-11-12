@@ -25,8 +25,6 @@ def admin_create_booking(actor, *, pitch_id, start_time, end_time, note=None, us
     repeat_weeks > 1 books the same pitch and time every week for a regular customer: weeks already taken
     are skipped and reported, all created sessions share one series_id."""
     from app.models import Payment
-    from app.services import payment_service
-    from app.use_cases.process_payment import _booking_summary, _vnd
     with UnitOfWork() as ctx:
         auth_service.require_admin(ctx, actor)
         if guest is not None:
@@ -55,7 +53,7 @@ def admin_create_booking(actor, *, pitch_id, start_time, end_time, note=None, us
         booking = created[0]
         paid = Decimal(payment['amount']) if payment else Decimal('0')
         if paid > Decimal(booking.total_amount):
-            invalid('payment.amount', f'Không thu quá giá sân {_vnd(booking.total_amount)}.')
+            invalid('payment.amount', f'Không thu quá giá sân {policy.vnd(booking.total_amount)}.')
         now = ctx.now()
         rows = []
         deposit_part = min(paid, Decimal(booking.deposit_amount))
@@ -65,13 +63,13 @@ def admin_create_booking(actor, *, pitch_id, start_time, end_time, note=None, us
                 rows.append(Payment(user_id=customer.user_id, booking_id=booking.booking_id, amount=policy.money(amount), payment_type=kind,
                                     payment_method=payment['method'], transaction_code=f'CTR-{booking.booking_id}-{suffix}',
                                     recorded_by_admin_id=actor.user_id, status='SUCCESS', paid_at=now,
-                                    note=(f'Thu tai quay' + (f'; ref={reference}' if reference else ''))[:255]))
+                                    note=('Thu tai quay' + (f'; ref={reference}' if reference else ''))[:255]))
         ctx.session.add_all(rows)
         ctx.session.flush()
         owed = Decimal(booking.total_amount) - paid
         regular = f' Khách cố định: đã giữ {len(created)} buổi hằng tuần.' if series_id else ''
         notification_service.notify(ctx, [customer.user_id], 'BOOKING_CONFIRMED', 'Đặt sân thành công',
-            f'{_booking_summary(ctx, booking)} Đã thanh toán {_vnd(paid)}' + (f', còn {_vnd(owed)} trả khi đến sân.' if owed > 0 else ', đã trả đủ.') + regular)
+            f'{booking_service.summary_text(ctx, booking)} Đã thanh toán {policy.vnd(paid)}' + (f', còn {policy.vnd(owed)} trả khi đến sân.' if owed > 0 else ', đã trả đủ.') + regular)
         result = booking_service.booking_data(ctx, booking, admin=True, payments=rows)
         if series_id:
             result['series'] = {'series_id': series_id, 'requested_weeks': repeat_weeks,
@@ -96,7 +94,7 @@ def reschedule_booking(actor, *, booking_id, start_time, end_time, pitch_id=None
         from app.services.pricing import slot_price
         if slot_price(ctx, target, start_time)[0] != Decimal(booking.total_amount):
             raise DomainError('PRICE_CHANGE_REQUIRES_REBOOK', 'Lượt mới khác giá (giờ thường/cao điểm hoặc sân khác giá): cần hủy và đặt lại.')
-        policy.validate_slot(ctx.now(), start_time, end_time)
+        policy.validate_slot(ctx.now(), start_time, end_time, policy.ADMIN_MAX_ADVANCE_DAYS)
         if booking_service.find_conflict(ctx, target_id, start_time, end_time, exclude_booking_id=booking_id):
             raise SlotUnavailable()
         match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))

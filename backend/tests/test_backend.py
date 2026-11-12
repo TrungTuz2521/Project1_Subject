@@ -1,15 +1,14 @@
 import unittest
-from datetime import timedelta, timezone
+from datetime import timedelta
 from decimal import Decimal
 import bcrypt
 import jwt
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app import create_app
 from app.extensions import db
-from app.models import User, TeamMember, Notification, FieldComplex, Pitch
+from app.models import User, Notification, FieldComplex, Pitch
 from app.utils.time import utcnow, VIETNAM
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.services import match_service
 
 SECRET = 'test-only-secret-do-not-use-in-production-123456789'
 HASH = bcrypt.hashpw(b'Password123!', bcrypt.gensalt(rounds=4)).decode()
@@ -53,17 +52,10 @@ class BackendTests(unittest.TestCase):
                                     iss='football-field-api', aud='football-field-web'), SECRET, algorithm='HS256')
         return {'Authorization': 'Bearer ' + token}
 
-    def team(self, header, full=False):
+    def team(self, header):
         r = self.client.post('/api/v1/teams', headers=header, json={'team_name': 'FC Test'})
         self.assertEqual(r.status_code, 201, r.json)
         tid = r.json['data']['team_id']
-        if full:
-            with UnitOfWork() as ctx:
-                for i in range(4):
-                    u = User(full_name='Member', email=f'{tid}-{i}@example.test', password_hash=HASH)
-                    ctx.session.add(u)
-                    ctx.session.flush()
-                    ctx.session.add(TeamMember(team_id=tid, user_id=u.user_id))
         return tid
 
     def test_register_login_profile_contract_and_hash(self):
@@ -108,10 +100,10 @@ class BackendTests(unittest.TestCase):
         tid = self.team(self.a)
         r = self.client.get('/api/v1/teams?page=1&page_size=6', headers=self.a)
         self.assertEqual(r.json['meta']['total'], 1)
-        self.assertEqual(r.json['data'][0]['active_member_count'], 1)
+        self.assertIsNone(r.json['data'][0]['last_player_count'])
         self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.b).status_code, 404)
         self.assertEqual(self.client.patch(f'/api/v1/teams/{tid}', headers=self.b, json={'team_name': 'Hijack'}).status_code, 403)
-        self.assertEqual(self.client.delete(f'/api/v1/teams/{tid}/members/me', headers=self.a).json['error']['code'], 'CAPTAIN_TRANSFER_REQUIRED')
+        self.assertEqual(self.client.post(f'/api/v1/teams/{tid}/members', headers=self.a, json={'contact': 'u2@example.test'}).status_code, 404)
 
     def test_notifications_are_private(self):
         with UnitOfWork() as ctx:
@@ -137,10 +129,6 @@ class BackendTests(unittest.TestCase):
         r = self.client.options('/api/v1/users/me', headers={'Origin':'http://localhost:5173',
             'Access-Control-Request-Method':'PATCH', 'Access-Control-Request-Headers':'Authorization,Content-Type'})
         self.assertEqual(r.headers.get('Access-Control-Allow-Origin'), 'http://localhost:5173')
-
-    def test_direct_booking_has_no_artificial_match_parties(self):
-        with UnitOfWork() as ctx:
-            self.assertIsNone(match_service.get_booking_parties(ctx, booking_id=999))
 
     def test_booking_balance_dto_uses_one_total_for_both_rules(self):
         from app.contracts.dto import BookingBalance, ManualReceipt

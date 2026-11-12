@@ -20,4 +20,4 @@ Kiểm thử: SQLite trong bộ nhớ, không dùng TiDB để tạo/hủy booki
 
 Hoàn tác tính năng: quay lại code trước đó; để cột nullable tồn tại. Không DROP cột nếu đã có snapshot được ghi.
 
-Quy tắc và ví dụ API đầy đủ: [Quân số theo buổi đá](../../docs/api/SESSION_ATTENDANCE_GUIDE.md). Cập nhật tài liệu ngày 08/11/2026 không chạy thêm migration hoặc backfill nào.
+Hiện chỉ đội trưởng có trong `user_ids`; số người còn lại nằm ở `guest_players` (xem backend/README.md, mục Quân số buổi đá). Cập nhật tài liệu ngày 08/11/2026 không chạy thêm migration hoặc backfill nào.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSessionStore } from './session';
-import { demoUser } from '../mocks/fixtures';
+import { demoUser } from '../services/testUser';
 
 const memory = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); }, removeItem: (k: string) => { m.delete(k); }, size: () => m.size }; };
 const login = { access_token: 'tok', expires_in: 3600, user: demoUser };

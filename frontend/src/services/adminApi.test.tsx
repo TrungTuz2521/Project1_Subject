@@ -1,11 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 const { request, download } = vi.hoisted(() => ({ request: vi.fn(), download: vi.fn() }));
-vi.mock('./client', () => ({ useMocks: false, api: { request, download } }));
-import { getAdminBookingsPage, getTransactions, searchUsers, exportRevenue } from './huyApi';
+vi.mock('./client', () => ({ api: { request, download } }));
+import { getAdminBookingsPage, getTransactions, searchUsers, exportRevenue } from './fieldApi';
 import { createApiClient } from './api';
 import { createSessionStore } from '../stores/session';
-import { demoUser } from '../mocks/fixtures';
+import { demoUser } from './testUser';
 import { CustomerPicker } from '../pages/admin/CustomerPicker';
 import { Pager } from '../pages/admin/Pager';
 
@@ -55,7 +55,7 @@ it('shows the picked customer and a pager only when needed', () => {
 });
 
 it('books a walk-in with only a name and phone, or an account by id', async () => {
-  const { addAdminBooking } = await import('./huyApi');
+  const { addAdminBooking } = await import('./fieldApi');
   request.mockResolvedValue({ data: { booking_id: 1 }, meta });
   const slot = { pitch_id: 1, start_time: 'a', end_time: 'b', note: 'Tại quầy' };
   await addAdminBooking({ ...slot, guest: { full_name: 'Anh Minh', phone: '0912345678' } });

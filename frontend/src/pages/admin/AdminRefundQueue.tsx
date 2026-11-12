@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PendingRefund } from '../../types/api';
-import { completeManualRefund, dateVN, getPendingRefunds, moneyVN } from '../../services/huyApi';
+import { completeManualRefund, dateVN, getPendingRefunds, moneyVN } from '../../services/fieldApi';
 import { Banner, Card, Warning } from '../../features/field-management/ui';
 import { ReasonDialog } from './Dialog';
 
@@ -31,11 +31,14 @@ export function AdminRefundQueue({ revision = 0 }: { revision?: number }) {
   if (items.length === 0 && !error && !notice) return null;
   return <Card><h2>Khoản cần hoàn ({items.length})</h2>
     <Warning error={error} />{notice && <Banner tone="success">{notice}</Banner>}
-    <Banner>Khoản tiền mặt/chuyển khoản (kể cả QR SePay) không tự hoàn. Hãy liên hệ người nhận, chuyển trả, rồi bấm "Đã trả tiền".</Banner>
+    <Banner>Khoản tiền mặt/chuyển khoản (kể cả QR SePay) không tự hoàn. Chuyển vào tài khoản khách đã khai (hoặc trả tiền mặt khi khách đến quầy), rồi bấm "Đã trả tiền".</Banner>
     {items.length > 0 && <div className="huy-table-wrap"><table><thead><tr><th>Booking</th><th>Người nhận</th><th>Số tiền</th><th>Khoản gốc</th><th>Thao tác</th></tr></thead><tbody>
       {items.map(item => <tr key={item.payment_id}>
         <td><strong>#{item.booking_id ?? '—'}</strong><small className="huy-block">{item.note ?? ''}</small></td>
-        <td><strong>{item.payer.full_name ?? `#${item.payer.user_id}`}</strong><small className="huy-block">{item.payer.phone ?? 'Không có SĐT'}</small><small className="huy-block">{item.payer.email ?? ''}</small></td>
+        <td><strong>{item.payer.full_name ?? `#${item.payer.user_id}`}</strong><small className="huy-block">{item.payer.phone ?? 'Không có SĐT'}</small><small className="huy-block">{item.payer.email ?? ''}</small>
+          {item.payer.refund_account
+            ? <small className="huy-block"><b>Hoàn vào: {item.payer.refund_account.bank_name} {item.payer.refund_account.account_no}</b> ({item.payer.refund_account.account_name})</small>
+            : <small className="huy-block">Chưa khai tài khoản nhận hoàn, gọi khách hoặc trả tiền mặt.</small>}</td>
         <td><strong>{moneyVN(item.amount)}</strong><small className="huy-block">{item.payment_method}</small></td>
         <td><small className="huy-block">{item.original?.transaction_code ?? '—'}</small><small className="huy-block">{item.original?.paid_at ? dateVN(item.original.paid_at) : ''}</small></td>
         <td><div className="huy-table-actions">{item.manual

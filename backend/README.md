@@ -16,7 +16,7 @@ Kết nối TiDB xác minh TLS và đặt session SQL sang UTC. Server local: `h
 Transaction dùng READ COMMITTED để đọc lại roster sau khi chờ khóa; conflict/deadlock đã xác định retry tối đa 3 lần
 ở ranh giới command, không retry callback/gateway mạng. Auth giới hạn 20 yêu cầu/phút/IP trong process local;
 khi chạy nhiều process, cấu hình limiter dùng chung tại reverse proxy.
-Frontend: `VITE_API_BASE_URL=http://localhost:5000/api/v1`, `VITE_USE_MOCKS=false`; restart Vite.
+Frontend: `VITE_API_BASE_URL=http://localhost:5000/api/v1`; restart Vite.
 
 ## Kiểm thử riêng, không ghi TiDB
 
@@ -27,24 +27,16 @@ python -m unittest discover -s tests -v
 Tests dùng SQLite tạm, tạo schema riêng chỉ trong fixture. SQLite không chứng minh được khóa cạnh tranh TiDB;
 cần kiểm thử hai request đồng thời trên database staging trước khi merge tích hợp booking.
 
-## Worker
+## Việc chạy nền
+
+Mọi việc định kỳ (đóng yêu cầu tìm kèo quá hạn, hết hạn giữ sân, đối soát thanh toán, hoàn tiền, quét ghép kèo, gửi email) do **một** tiến trình scheduler chạy, xem mục scheduler bên dưới. Chạy riêng từng việc một lượt để thử:
 
 ```powershell
-python -m flask --app app:create_app scan-matchmaking
-python -m flask --app app:create_app expire-proposals
+python -m flask --app app:create_app scan-requests     # quét ghép kèo một lượt
+python -m flask --app app:create_app close-requests    # đóng yêu cầu đã quá hạn (24 giờ trước giờ đá)
 ```
 
-Hai lệnh trên chạy một lượt. Để tự quét bài, mở terminal riêng tại `backend`:
-
-```powershell
-.\.venv\Scripts\python.exe -m flask --app app:create_app matchmaking-worker
-```
-
-Quét ngay lần đầu, mặc định mỗi 15 giây; chỉ chạy tuần tự, không chồng lượt nếu DB chậm. `--interval` nhận 1–300 giây. Lỗi một lượt không làm worker dừng; Ctrl+C để thoát. Web server không tự khởi động worker. Chỉ vận hành một worker quét, không đồng thời đặt scheduler quét trùng.
-Worker dùng `scan_open_posts` hiện có, tái kiểm tra bài/khóa trước tạo đề xuất. Hai bên phải tự chấp nhận; không tự tạo booking/cọc. Không thay schema/Google/SMTP; email mới được gửi bởi email-worker riêng nếu đã bật.
-Worker này chỉ quét yêu cầu tìm kèo, không đóng yêu cầu quá hạn, không chạy job hết hold hoặc hoàn tiền. Nên dùng `scheduler --with-matchmaking` thay cho worker này. Các job hết hạn/đối soát vẫn do scheduler riêng gọi. Không tự chạy thread worker trong web server.
-Quét mỗi cặp trong transaction riêng, lọc điều kiện cứng rồi chấm 40/20/40, ngưỡng 80.
-Thông báo IN_APP ghi cùng transaction; khi `EMAIL_ENABLED=true`, thêm EMAIL/PENDING trong cùng transaction. Chạy `email-worker` riêng để gửi SMTP sau commit; xem phần Google Login và email bên dưới.
+Mỗi yêu cầu mới cũng được quét ngay lúc gửi. Mỗi cặp được ghép trong transaction riêng; thông báo IN_APP và EMAIL/PENDING ghi cùng transaction, email gửi sau bởi scheduler `--with-email`. Trang Hôm nay của admin cảnh báo khi việc nền bị trễ (scheduler không chạy).
 
 ## Ghép với Tú
 
@@ -125,7 +117,7 @@ python -m flask --app app:create_app reconcile-payments
 python -m flask --app app:create_app scheduler --with-matchmaking --with-email
 ```
 
-`scheduler` chạy mỗi 15 giây: đóng yêu cầu tìm kèo quá hạn (24 giờ trước giờ đá), hết hạn giữ sân, đối soát thanh toán + dọn mã QR SePay, hoàn tiền qua cổng, chuyển trận đã đá xong sang `COMPLETED`. `--with-matchmaking` thay `matchmaking-worker`, `--with-email` thay `email-worker` (không chạy song song các worker cũ). `--once` chạy một lượt rồi thoát. Chỉ chạy **một** scheduler, vì `process-refunds` chưa có outbox/lease.
+`scheduler` chạy mỗi 15 giây: đóng yêu cầu tìm kèo quá hạn (24 giờ trước giờ đá), hết hạn giữ sân, đối soát thanh toán + dọn mã QR SePay, hoàn tiền qua cổng, chuyển trận đã đá xong sang `COMPLETED`. `--with-matchmaking` quét ghép kèo, `--with-email` gửi email (không chạy thêm `email-worker` song song). `--once` chạy một lượt rồi thoát. Chỉ chạy **một** scheduler, vì `process-refunds` chưa có outbox/lease.
 
 Hoàn tiền mặt/chuyển khoản (kể cả QR SePay) không tự chạy: Admin xem mục **Khoản cần hoàn** ở trang Quản lý lịch đặt, trả tiền cho khách rồi bấm "Đã trả tiền" (`GET /admin/refunds/pending`, `POST /admin/payments/{id gốc}/refund`).
 
@@ -156,9 +148,7 @@ Test **tạo và xóa toàn bộ bảng**, nên chỉ chạy khi host là local 
 
 ## Quân số buổi đá
 
-`MatchPost.attendance_plan` lưu `{user_ids, guest_players}` cho từng bài. `Team.active_member_count` vẫn đếm tài khoản ACTIVE lâu dài. `PostService.party_users` lấy tài khoản của snapshot để kiểm tra lịch; ghép đối thủ xét tài khoản + khách. Nhận ứng viên sau đủ hai xác nhận chỉ cộng một lần, không tạo booking/cọc.
-
-Xem [hợp đồng và các tình huống demo](../docs/api/SESSION_ATTENDANCE_GUIDE.md). Kiểm thử riêng cho tính năng: `python -m unittest discover -s tests -p test_attendance.py -v` trên SQLite trong bộ nhớ. Không dùng TiDB nhóm để tạo dữ liệu kiểm thử tự động.
+Đội chỉ có tên và đội trưởng (người đại diện đặt sân, nhận thông báo); không lưu danh sách thành viên. Mỗi yêu cầu tìm đối khai báo `player_count` (tính cả đội trưởng, tối thiểu 5 với sân 5, 7 với sân 7); form điền sẵn số của lần trước (`last_player_count` của đội). `MatchPost.attendance_plan` vẫn lưu `{user_ids: [đội trưởng], guest_players: số còn lại}` để dùng chung cột của migration 004.
 
 Hướng dẫn điền env, đăng ký IPN và thử cọc: [VNPay sandbox](../docs/setup/VNPAY_SANDBOX.md).
 
@@ -205,6 +195,6 @@ Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi 
 Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
 Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
 
-Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true`.
 Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
 Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../docs/setup/DEMO_DEPOSIT.md).

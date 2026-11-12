@@ -17,6 +17,10 @@ DEPOSIT_PERCENT = 20
 def money(value):
     return Decimal(str(value)).quantize(Decimal('0.01'))
 
+def vnd(value):
+    """Money in customer messages: 120.000 ₫"""
+    return f'{int(Decimal(str(value))):,}'.replace(',', '.') + ' ₫'
+
 def deposit_total(total_amount):
     return money((Decimal(total_amount) * DEPOSIT_PERCENT / 100).to_integral_value(ROUND_CEILING))
 
@@ -57,9 +61,20 @@ def validate_slot(now, start, end, max_days=MAX_ADVANCE_DAYS):
     if (local, end.astimezone(VIETNAM)) not in list(day_slots(local.date())):
         invalid('start_time', 'Giờ phải theo lưới 90 phút từ 06:00 đến 23:00 giờ Việt Nam.')
 
+NOTE_LIMIT = 255
+# Markers the code reads back from a note (consolidated receipt, forfeited deposit, bank transaction id,
+# merged deposit, demo money). Shortening a note must never drop one of them.
+NOTE_MARKERS = ('THU_GOP', 'MAT_COC', 'gw=', 'MERGED_FROM', 'DEMO_ONLY')
+
 def add_note(current, text):
-    """payments.note and bookings.note are VARCHAR(255); keep the newest evidence within it."""
+    """payments.note and bookings.note are VARCHAR(255). When full, the oldest plain remarks go first;
+    marker segments and the newest remark stay, in order."""
     if current and text in current:
         return current
-    combined = f'{current} | {text}' if current else text
-    return combined if len(combined) <= 255 else combined[-255:]
+    parts = (current.split(' | ') if current else []) + [text]
+    while len(' | '.join(parts)) > NOTE_LIMIT:
+        plain = next((i for i, part in enumerate(parts[:-1]) if not any(m in part for m in NOTE_MARKERS)), None)
+        if plain is None:
+            break
+        del parts[plain]
+    return ' | '.join(parts)[:NOTE_LIMIT]

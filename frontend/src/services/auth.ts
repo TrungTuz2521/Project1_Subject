@@ -77,4 +77,16 @@ export async function changePassword(input: ChangePasswordRequest): Promise<{ ch
   return result.data;
 }
 
+export async function requestPasswordReset(email: string): Promise<{ sent: boolean; message: string }> {
+  const result = await api.request<ApiResponse<{ sent: boolean; message: string }>>('/auth/password/forgot', { method: 'POST', auth: false, body: { email } });
+  return result.data;
+}
+
+export async function resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<{ changed: boolean }> {
+  const result = await api.request<ApiResponse<{ changed: boolean }>>('/auth/password/reset', {
+    method: 'POST', auth: false, body: { token, new_password: newPassword, confirm_password: confirmPassword },
+  });
+  return result.data;
+}
+
 export const logout = () => session.clear();

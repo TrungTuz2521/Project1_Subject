@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from app.services.match_request_service import MATCH_HOLD_SECONDS
+from app.services.match_requests import MATCH_HOLD_SECONDS
 from datetime import timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -11,7 +11,7 @@ from booking_fixtures import BookingCase
 from app.contracts.dto import GatewayResult
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.jobs.booking_jobs import expire_holds, process_refunds, reconcile_payments
-from app.jobs.commands import scan_open_posts
+from app.jobs.commands import scan_requests
 from app.models import Booking, Match, MatchPost, Notification, Payment
 from app.services import booking_policy as policy
 from app.services.booking_balance_service import bank_qr_payload, crc16
@@ -368,7 +368,7 @@ class MatchFlowWithRealServices(BookingCase):
         self.assertEqual((booking.user_id, booking.payment_rule, booking.pitch_id), (self.ua, 'SPLIT_EQUAL', 1))
         # Two teams that never booked get six hours to pay their halves.
         self.assertEqual(booking.hold_expires_at, self.now + timedelta(seconds=MATCH_HOLD_SECONDS))
-        self.assertEqual(scan_open_posts()['matches'], [])
+        self.assertEqual(scan_requests()['matches'], [])
         with UnitOfWork() as ctx:
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Booking)), 1)
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Match)), 1)
@@ -657,8 +657,8 @@ class BalanceAndConfirmPaid(BookingCase):
         data = self.balance(booking_id).json['data']
         self.assertEqual((data['total_amount'], data['deposit_collected_amount'], data['remaining_collected_amount'], data['collected_amount'], data['outstanding_amount'], data['payment_status']),
                          ('600000.00', '120000.00', '0.00', '120000.00', '480000.00', 'PARTIAL'))
-        self.assertEqual(data['transfer_reference'], f'BOOKING-{booking_id}')
-        self.assertIn('BOOKING-', data['qr_payload'])
+        self.assertEqual(data['transfer_reference'], f'SAN{booking_id}TT')
+        self.assertIn(f'SAN{booking_id}TT', data['qr_payload'])
         self.assertIsNone(data['qr_unavailable_reason'])
 
     def test_viewing_qr_records_nothing(self):

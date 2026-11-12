@@ -4,7 +4,7 @@ Phiên bản 1.9 — cập nhật tài liệu ngày 08/11/2026; bổ sung quân 
 
 ## 1. Cơ sở và quyết định thống nhất
 
-Đã đối chiếu báo cáo `bài tập lớn Project1(updated diagrams).docx`, schema gốc, migration TiDB V2 và khung `Project1_Subject-main.zip` do chủ dự án cung cấp. ZIP gốc tại thời điểm đối chiếu chỉ là khung thư mục. Trạng thái hiện tại của code tích hợp nằm ở [BACKEND_IMPLEMENTATION_STATUS.md](BACKEND_IMPLEMENTATION_STATUS.md), không suy từ nội dung ZIP cũ. Không suy ra database đang chạy thực tế chỉ từ ZIP hoặc hai tệp SQL.
+Đã đối chiếu báo cáo `bài tập lớn Project1(updated diagrams).docx`, schema gốc, migration TiDB V2 và khung `Project1_Subject-main.zip` do chủ dự án cung cấp. ZIP gốc tại thời điểm đối chiếu chỉ là khung thư mục. Trạng thái hiện tại của code tích hợp nằm ở [REMAINING_WORK.md](REMAINING_WORK.md), không suy từ nội dung ZIP cũ. Không suy ra database đang chạy thực tế chỉ từ ZIP hoặc hai tệp SQL.
 
 Thứ tự áp dụng: yêu cầu trực tiếp của chủ dự án → quyết định nghiệp vụ trong tài liệu này → tên bảng/cột của schema sau migration. Điểm lệch được liệt kê tại mục 13; cần cập nhật migration và sơ đồ tương ứng trước khi tích hợp.
 
@@ -210,14 +210,12 @@ UserSelf: user_id, full_name, email, phone, role, skill_level, status. Email chu
 
 | Method và path | Quyền | Request hoặc query | data trả về |
 | --- | --- | --- | --- |
-| GET /teams | Player | my=true mặc định | Team[] |
+| GET /teams | Player | my=true mặc định | Team[] của các đội mình làm đội trưởng; Team có last_player_count (số người đi đá lần tìm đối gần nhất, null nếu chưa có) |
 | POST /teams | Player | team_name | Team; tạo người lập làm CAPTAIN; 201 |
-| GET /teams/{team_id} | Thành viên/Admin | — | Team + members |
+| GET /teams/{team_id} | Captain/Admin | — | Team (không có danh sách thành viên) |
 | PATCH /teams/{team_id} | Captain | team_name | Team |
 | POST /teams/{team_id}/join-requests | Player | — | TeamJoinRequest; 201 |
 | PATCH /teams/{team_id}/join-requests/{post_id}/respond | Captain | decision: ACCEPTED/DECLINED | TeamJoinRequest |
-| DELETE /teams/{team_id}/members/me | Thành viên | — | team_id, status:LEFT |
-| DELETE /teams/{team_id}/members/{user_id} | Captain | reason | team_id, user_id, status:REMOVED |
 | GET /match-posts | Public | post_type?, pitch_type?, skill_level?, from?, to?, page? | PostSummary[] |
 | GET /match-posts/my | Player | status?, page? | MatchPost[] |
 | POST /match-posts | Player/Captain | PostCreate | MatchPost; 201 |
@@ -489,7 +487,7 @@ SD06 phải thể hiện đủ: hai ACCEPTED → tạo một Booking PENDING_HOL
 
 Đặt tài liệu tại `docs/api/API_MODELS_CONTRACT_PROJECT1.md`. Mọi người dùng chung prefix, ENUM, DTO và service đã phân công. Thay đổi tên trường/endpoint hoặc nghiệp vụ phải sửa tài liệu và frontend/backend liên quan trong cùng PR. Chỉ một migration được review cho mỗi thay đổi schema. Không tự chạy SQL cleanup hay migration cũ lên database chung.
 
-Migration V3 đã được áp dụng và xác minh trên TiDB dùng chung. Tài liệu này không chứng nhận gateway hoặc thu phần còn lại đã triển khai; phần Đức đã có được ghi riêng trong BACKEND_IMPLEMENTATION_STATUS.md. Điều kiện bắt đầu ghép code là kiểm tra mục 3.2, triển khai các endpoint theo phân công và vượt qua các kịch bản mục 10.
+Migration V3 đã được áp dụng và xác minh trên TiDB dùng chung. Tài liệu này không chứng nhận gateway hoặc thu phần còn lại đã triển khai; phần còn lại được ghi trong REMAINING_WORK.md. Điều kiện bắt đầu ghép code là kiểm tra mục 3.2, triển khai các endpoint theo phân công và vượt qua các kịch bản mục 10.
 
 ## Phụ lục A Từ điển cột sau migration V2
 
@@ -781,7 +779,7 @@ PostSummary thêm registered_players, guest_players, attendance_mode SESSION/LEG
 
 DDL và chi tiết triển khai: [Migration 004](../../database/schema/004_session_attendance_README.md). **TiDB test dùng chung đã áp dụng 004 ngày 06/11/2026; thành viên chỉ pull code và cấu hình kết nối, không chạy lại V1/V2/V3/004.** Môi trường khác chưa có cột phải được cập nhật trước khi khởi động code mới. Mock frontend chưa hỗ trợ quân số buổi đá: trả 501 thay vì báo thành công với số người sai; dùng backend thật khi demo tính năng này.
 
-Chi tiết điều kiện đầu vào, các DTO, xử lý legacy và checklist demo: [Quân số theo buổi đá](SESSION_ATTENDANCE_GUIDE.md). Nếu API client bỏ cả attendance_user_ids và guest_players, backend giữ cách xử lý legacy để tương thích; frontend hiện tại luôn gửi snapshot quân số. Không nhầm việc tạo bài với việc giữ sân hoặc đặt cọc.
+Hiện tại yêu cầu tìm đối chỉ gửi `player_count`; đội không có danh sách thành viên. Không nhầm việc tạo bài với việc giữ sân hoặc đặt cọc.
 
 
 ## Bổ sung email notification — 10/11/2026
@@ -821,6 +819,6 @@ Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi 
 Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
 Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
 
-Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true`.
 Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
 Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../setup/DEMO_DEPOSIT.md).

@@ -130,6 +130,19 @@ def confirm_if_deposit_complete(ctx, *, booking_id):
     ctx.session.flush()
     return True
 
+def required_share(booking, user_id):
+    """The deposit this payer owes for the booking, or None when they are not a payer."""
+    item = next((p for p in booking.payer_plan or [] if p['user_id'] == user_id), None)
+    return Decimal(item['amount']) if item else None
+
+def summary_text(ctx, booking):
+    """One line that names the booking in messages: number, pitch, time and day."""
+    from app.utils.time import VIETNAM
+    pitch = ctx.session.get(Pitch, booking.pitch_id)
+    start, end = booking.start_time.astimezone(VIETNAM), booking.end_time.astimezone(VIETNAM)
+    return (f'Booking #{booking.booking_id} - {pitch.pitch_name if pitch else f"sân #{booking.pitch_id}"}, '
+            f'{start:%H:%M}-{end:%H:%M} ngày {start:%d/%m/%Y}.')
+
 def is_party(booking, user_id):
     return booking.user_id == user_id or any(p['user_id'] == user_id for p in booking.payer_plan or [])
 
@@ -146,7 +159,8 @@ def booking_data(ctx, booking, admin=False, payments=None, pitch_names=None):
                      and p.status in ('SUCCESS', 'REFUNDED')), Decimal('0'))
     collected -= sum((Decimal(p.amount) for p in rows if p.payment_type == 'REFUND' and p.status == 'SUCCESS'), Decimal('0'))
     result['paid_amount'] = policy.money(collected)
-    result['outstanding_amount'] = policy.money(max(Decimal(booking.total_amount) - collected, Decimal('0')))
+    owed = Decimal(booking.total_amount) - collected if booking.status in ('CONFIRMED', 'PENDING_HOLD') else Decimal('0')
+    result['outstanding_amount'] = policy.money(max(owed, Decimal('0')))
     if pitch_names is not None and booking.pitch_id in pitch_names:
         result['pitch_name'] = pitch_names[booking.pitch_id]
     else:
@@ -158,7 +172,7 @@ def booking_data(ctx, booking, admin=False, payments=None, pitch_names=None):
     return result
 
 def read_for_actor(ctx, *, booking_id, actor):
-    """booking_reader for match details: the route has already checked the viewer may see this match."""
+    """Booking view inside match details: the route has already checked the viewer may see this match."""
     booking = ctx.session.get(Booking, booking_id)
     if booking is None:
         return None

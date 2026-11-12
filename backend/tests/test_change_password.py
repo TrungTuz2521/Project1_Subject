@@ -1,5 +1,4 @@
 import unittest
-from sqlalchemy import select
 import bcrypt
 import test_backend
 from app.models import User

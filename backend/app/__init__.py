@@ -22,8 +22,14 @@ def create_app(config=None):
         app.config['DEMO_PAYMENT_ENABLED'] = (config or {}).get('DEMO_PAYMENT_ENABLED', False)
         # A developer's real SePay key in backend/.env must not switch legacy tests to QR auto-confirmation.
         app.config['SEPAY_WEBHOOK_KEY'] = (config or {}).get('SEPAY_WEBHOOK_KEY', '')
+    hops = int(app.config.get('TRUSTED_PROXY_HOPS') or 0)
+    if hops:
+        # Behind a load balancer the socket address is the proxy: read the client IP and https from its headers,
+        # so rate limits apply per customer. Only as many hops as there really are, or a client could forge them.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops, x_proto=hops, x_host=hops)
     db.init_app(app)
-    from app import models
+    from app import models  # noqa: F401  (registers every table on the metadata)
     from app.routes.api import api
     app.register_blueprint(api, url_prefix='/api/v1')
     from app.booking_module import install as install_booking
@@ -32,7 +38,7 @@ def create_app(config=None):
     install_auth_limit(app)
     from app.infrastructure.retry import retry_conflicts
     # These endpoints perform only database work; never wrap external payment orchestration.
-    for endpoint in ('register', 'me', 'team_collection', 'team_item', 'remove_member', 'add_member', 'create_request',
+    for endpoint in ('register', 'me', 'team_collection', 'team_item', 'create_request',
                      'request_item', 'read_notification'):
         key = 'api.' + endpoint
         app.view_functions[key] = retry_conflicts(app.view_functions[key])

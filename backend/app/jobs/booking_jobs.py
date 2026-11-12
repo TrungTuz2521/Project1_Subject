@@ -3,7 +3,6 @@ and no lock is ever held across a gateway call."""
 from dataclasses import replace
 from flask import current_app
 from sqlalchemy import select
-from app.contracts.dto import GatewayResult
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.models import Booking, Payment
 from app.services import booking_service, payment_service

@@ -1,5 +1,5 @@
 import type { BankDepositInstructions, DemoDepositResult } from '../../types/api';
-import { moneyVN, dateVN } from '../../services/huyApi';
+import { moneyVN, dateVN } from '../../services/fieldApi';
 import { BankQR } from './BankQR';
 import { DemoDepositConfirmation, demoDepositEnabled } from './DemoDepositConfirmation';
 import { QrPaymentPanel } from './QrPaymentPanel';

@@ -52,8 +52,9 @@ export function RequestComposer({ options, me, initialType, onDone, onClose }: {
 }) {
   const [type, setType] = useState<RequestType>(initialType ?? 'FIND_OPPONENT');
   const [teamId, setTeamId] = useState<number | null>(options.teams[0]?.team_id ?? null);
-  // Only the captain is on record and gets the emails; they tell their own players.
-  const [players, setPlayers] = useState(7);
+  // Only the captain is on record and gets the emails; the squad is a head count, filled in from last time.
+  const lastCount = (id: number | null) => options.teams.find(t => t.team_id === id)?.last_player_count ?? 7;
+  const [players, setPlayers] = useState(() => lastCount(options.teams[0]?.team_id ?? null));
   const [booked, setBooked] = useState(false);
   const [bookingId, setBookingId] = useState<number | null>(null);
   const [pitchType, setPitchType] = useState<GamePitchType>('PITCH_7');
@@ -95,6 +96,7 @@ export function RequestComposer({ options, me, initialType, onDone, onClose }: {
     if (type === 'FIND_OPPONENT') {
       if (!team) return 'Bạn cần là đội trưởng của một đội để tìm đối.';
       if (players < size) return `Đội cần ít nhất ${size} người đi đá.`;
+      if (players > size * 2) return `Sân ${size} người nhận tối đa ${size * 2} người mỗi đội.`;
       if (booked && !game) return 'Chọn lượt sân đã đặt.';
     }
     if (type === 'RECRUIT_MEMBERS' && !game) return 'Chọn lượt đá cần thêm người.';
@@ -111,7 +113,7 @@ export function RequestComposer({ options, me, initialType, onDone, onClose }: {
     if (message) return;
     const body: RequestCreate = { post_type: type, skill_level: skill, skill_tolerance: tolerance, ...(note.trim() ? { note: note.trim() } : {}) };
     if (type === 'FIND_OPPONENT') {
-      Object.assign(body, { team_id: team!.team_id, guest_players: players - 1, payment_rule: rule });
+      Object.assign(body, { team_id: team!.team_id, player_count: players, payment_rule: rule });
       if (booked) body.booking_id = game!.booking_id;
       else Object.assign(body, { pitch_type: pitchType, preferred_dates: dates, window_start: start, window_end: end });
     } else if (type === 'RECRUIT_MEMBERS') {
@@ -135,10 +137,10 @@ export function RequestComposer({ options, me, initialType, onDone, onClose }: {
 
       {type === 'FIND_OPPONENT' && <>
         {options.teams.length === 0 ? <p className="mf-hint">Bạn chưa làm đội trưởng đội nào. <a href="#/teams">Tạo đội</a> trước, rồi quay lại tìm đối.</p> : <>
-          <label className="mf-field"><span>Đội</span><select value={teamId ?? ''} onChange={e => setTeamId(Number(e.target.value))}>
+          <label className="mf-field"><span>Đội</span><select value={teamId ?? ''} onChange={e => { const id = Number(e.target.value); setTeamId(id); setPlayers(lastCount(id)); }}>
             {options.teams.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}</select></label>
           <label className="mf-field"><span>Số người đi đá <small>tính cả bạn, sân {size} người cần ít nhất {size}</small></span>
-            <input type="number" min={size} max={11} value={players} onChange={e => setPlayers(Math.max(1, Math.min(11, Number(e.target.value) || 1)))} /></label>
+            <input type="number" min={size} max={size * 2} value={players} onChange={e => setPlayers(Math.max(1, Math.min(size * 2, Number(e.target.value) || 1)))} /></label>
           <Segmented label="Sân" value={booked ? 'yes' : 'no'} onChange={v => { setBooked(v === 'yes'); setBookingId(null); }}
             options={[{ value: 'no', label: 'Chưa đặt sân' }, { value: 'yes', label: 'Đã đặt sân' }]} />
         </>}

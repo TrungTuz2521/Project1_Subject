@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AdminBooking, BookingBalance, ConfirmBookingPaid, ManualReceipt } from '../../types/api';
-import { confirmBookingPaid, getAdminBookingsPage, getBooking, getBookingBalance, huyDemo, moneyVN, dateVN } from '../../services/huyApi';
+import { confirmBookingPaid, getAdminBookingsPage, getBooking, getBookingBalance, moneyVN, dateVN } from '../../services/fieldApi';
 import { Banner, Button, Card, Empty, Field, Head, Status, Warning } from '../../features/field-management/ui';
 import { BankQR } from '../../features/payments/BankQR';
 
@@ -83,7 +83,7 @@ function BalancePanel({ id, booking, onBusy }: { id: number; booking?: AdminBook
     try {
       setBalance(await confirmBookingPaid(id, pending.current));
       pending.current = null; setUncertain(false);
-      setSuccess(huyDemo ? 'Đã ghi nhận trong dữ liệu demo; không có giao dịch thật.' : 'Đã ghi nhận các khoản thực thu.');
+      setSuccess('Đã ghi nhận các khoản thực thu.');
     } catch (e) { setError(e); setUncertain(true); }
     finally { setBusy(false); onBusy(false); }
   }
@@ -100,10 +100,10 @@ function BalancePanel({ id, booking, onBusy }: { id: number; booking?: AdminBook
           <div><small>Thể thức hai đội tự chia</small><strong>{balance.payment_rule === 'LOSER_PAYS_REMAINDER' ? 'Đội thua trả phần còn lại' : balance.payment_rule === 'SPLIT_EQUAL' ? 'Chia 50–50' : balance.payment_rule === 'DIRECT_BOOKING' ? 'Đặt sân trực tiếp' : 'Chưa xác định (dữ liệu cũ)'}</strong></div>
         </div>
         {booking?.teams && <p>{booking.teams.source.team_name} — {booking.teams.opponent.team_name}</p>}
-        {balance.qr_payload && !huyDemo && <BankQR payload={balance.qr_payload} />}
+        {balance.qr_payload && <BankQR payload={balance.qr_payload} />}
         {balance.transfer_reference && <p>Nội dung chuyển khoản: <strong>{balance.transfer_reference}</strong></p>}
         {balance.qr_unavailable_reason && <Banner>{balance.qr_unavailable_reason}</Banner>}
-        <Banner>QR chung gợi ý số còn thiếu. Hai đội có thể chuyển nhiều khoản hoặc trả tiền mặt. Quét QR không xác nhận đã thanh toán.</Banner>
+        <Banner>Khách quét QR này và giữ nguyên nội dung chuyển khoản: khi tiền vào, hệ thống tự ghi nhận (cần bật SePay), chuyển dư sẽ vào "Khoản cần hoàn". Tiền mặt hoặc chuyển khoản khác thì xác nhận tay bên dưới.</Banner>
       </Card>
       <Card><h2>Xác nhận tiền thực nhận</h2>
         {balance.payment_status === 'PAID' ? <Banner tone="success">Booking đã thu đủ.</Banner> : !canCollect ? <Banner>Booking này không còn ở trạng thái đã xác nhận nên không thu thêm.</Banner> : <>

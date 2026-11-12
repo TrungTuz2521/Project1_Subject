@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AdminUser } from '../../types/api';
-import { searchUsers } from '../../services/huyApi';
+import { searchUsers } from '../../services/fieldApi';
 import { Button, Field } from '../../features/field-management/ui';
 
 /** Search a customer by name, email or phone and pick one; the parent only ever receives a real user. */

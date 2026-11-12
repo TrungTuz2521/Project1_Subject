@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import patch
-from datetime import timedelta
 import bcrypt
 import jwt
 from sqlalchemy import select, func
@@ -9,7 +8,6 @@ from app import create_app
 from app.extensions import db
 from app.models import User
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.utils.time import utcnow
 
 CLIENT = 'test.apps.googleusercontent.com'
 SECRET = 'google-tests-only-secret-at-least-32-bytes'

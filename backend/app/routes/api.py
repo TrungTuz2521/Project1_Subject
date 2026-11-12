@@ -1,10 +1,10 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from sqlalchemy import select, func, or_
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.middleware import authenticated, optional_actor
+from app.middleware import authenticated
 from app.contracts.errors import DomainError, invalid
-from app.models import User, Team, TeamMember, MatchPost, Match, Notification
-from app.services import auth_service as auth, team_service as teams, match_service, match_request_service as requests_service
+from app.models import User, Team, MatchPost, Match, Notification
+from app.services import auth_service as auth, team_service as teams, match_service, match_requests as requests_service
 from app.utils import validation as v
 from app.utils.serialization import encode, user_self, columns
 from app.utils.time import utcnow
@@ -68,6 +68,32 @@ def login():
         result = auth.login(ctx, **data)
     return response(result)
 
+@api.post('/auth/password/forgot')
+def forgot_password():
+    """Always the same answer, so the form never reveals which emails have an account."""
+    data = body(('email',), ('email',))
+    with UnitOfWork() as ctx:
+        user = auth.reset_candidate(ctx, data['email'])
+        mail = (user.email, user.full_name, auth.password_reset_token(ctx, user)) if user else None
+    if mail and current_app.config.get('EMAIL_ENABLED'):
+        from urllib.parse import quote
+        from app.services.email_service import send_password_reset
+        link = f"{current_app.config['PUBLIC_WEB_URL'].rstrip('/')}/#/reset-password?token={quote(mail[2])}"
+        try:
+            send_password_reset(mail[0], mail[1], link, auth.RESET_MINUTES)
+        except Exception as error:  # Never reveal the account through a different answer.
+            current_app.logger.error('Password reset email failed (%s)', type(error).__name__)
+    elif mail:
+        current_app.logger.warning('Password reset requested but EMAIL_ENABLED is off')
+    return response({'sent': True, 'message': 'Nếu email đã đăng ký, bạn sẽ nhận được link đặt lại mật khẩu trong vài phút.'})
+
+@api.post('/auth/password/reset')
+def reset_password():
+    data = body(('token', 'new_password', 'confirm_password'), ('token', 'new_password', 'confirm_password'))
+    with UnitOfWork() as ctx:
+        result = auth.reset_password(ctx, data['token'], data['new_password'], data['confirm_password'])
+    return response(result)
+
 @api.post('/auth/refresh')
 @authenticated
 def refresh_session():
@@ -122,8 +148,7 @@ def team_collection():
         else:
             if request.args.get('my', 'true') != 'true':
                 invalid('my', 'Endpoint danh sách chỉ trả các đội của bạn.')
-            query = select(Team).join(TeamMember, TeamMember.team_id == Team.team_id).where(
-                TeamMember.user_id == g.actor.user_id, TeamMember.status == 'ACTIVE', Team.status == 'ACTIVE').order_by(Team.team_id)
+            query = teams.captained(g.actor.user_id).order_by(Team.team_id)
             return paginated(ctx, query, lambda t: teams.team_data(ctx, t))
     return response(result, 201)
 
@@ -138,27 +163,9 @@ def team_item(team_id):
             team.team_name = v.text(body(('team_name',), ('team_name',))['team_name'], 'team_name', 100)
         else:
             team = found(ctx, Team, team_id)
-            if not teams.member(ctx, team_id, g.actor.user_id) and g.actor.role != 'ADMIN':
+            if g.actor.role != 'ADMIN' and ctx.session.scalar(teams.captained(g.actor.user_id).where(Team.team_id == team_id)) is None:
                 raise DomainError('NOT_FOUND', 'Không tìm thấy đội.', 404)
-        result = teams.team_data(ctx, team, detail=True)
-    return response(result)
-
-@api.post('/teams/<int:team_id>/members')
-@authenticated
-def add_member(team_id):
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        result = teams.add_member(ctx, team_id, g.actor, body(('contact',), ('contact',))['contact'])
-    return response(result, 201)
-
-@api.delete('/teams/<int:team_id>/members/me')
-@api.delete('/teams/<int:team_id>/members/<int:user_id>')
-@authenticated
-def remove_member(team_id, user_id=None):
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        reason = body(('reason',), ('reason',))['reason'] if user_id is not None else None
-        result = teams.remove_member(ctx, team_id, g.actor, user_id or g.actor.user_id, reason)
+        result = teams.team_data(ctx, team)
     return response(result)
 
 # ---- Match requests: players state when and how they can play; the system pairs them ----
@@ -258,9 +265,8 @@ def scan():
 def matches():
     with UnitOfWork() as ctx:
         auth.require_active_actor(ctx, g.actor)
-        # Membership filter is applied before pagination, without exposing strangers' matches.
-        post_ids = select(MatchPost.post_id).where(or_(MatchPost.creator_id == g.actor.user_id,
-            MatchPost.team_id.in_(select(TeamMember.team_id).where(TeamMember.user_id == g.actor.user_id, TeamMember.status == 'ACTIVE'))))
+        # Only the representatives' own games, filtered before pagination.
+        post_ids = select(MatchPost.post_id).where(MatchPost.creator_id == g.actor.user_id)
         query = select(Match).where(or_(Match.post_id.in_(post_ids), Match.opponent_post_id.in_(post_ids)))
         status = status_arg(MATCH_STATUSES)
         if status:
@@ -284,9 +290,9 @@ def match_item(match_id):
         result = match_service.match_data(match)
         result['end_time'] = match_posts[0].end_time
         result['teams'] = [teams.team_data(ctx, ctx.session.get(Team, p.team_id)) for p in match_posts if p.team_id]
-        # Tú supplies a privacy-filtered booking view in the same context.
-        reader = current_app.extensions.get('booking_reader')
-        result['booking'] = reader(ctx, booking_id=match.booking_id, actor=g.actor) if reader and match.booking_id else None
+        # Privacy-filtered: a representative sees the other side's deposit progress, not the amount they paid.
+        from app.services.booking_service import read_for_actor
+        result['booking'] = read_for_actor(ctx, booking_id=match.booking_id, actor=g.actor) if match.booking_id else None
         return response(result)
 
 @api.post('/matches/<int:match_id>/cancel')
@@ -299,9 +305,7 @@ def cancel_match(match_id):
         parties = [ctx.session.get(MatchPost, pid).creator_id for pid in (match.post_id, match.opponent_post_id) if pid]
         if g.actor.role != 'ADMIN' and g.actor.user_id not in parties:
             raise DomainError('NOT_FOUND', 'Không tìm thấy trận.', 404)
-    cancel = current_app.extensions.get('cancel_match')
-    if not cancel:
-        raise DomainError('BOOKING_SERVICE_UNAVAILABLE', 'Chưa tích hợp luồng hủy/hoàn của Tú.', 503)
+    from app.use_cases.cancel_booking import cancel_match as cancel
     return response(cancel(g.actor, match_id=match_id, reason=reason))
 
 @api.get('/notifications')

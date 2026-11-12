@@ -30,7 +30,7 @@ export interface MatchRequest {
 }
 export interface GameSlot { booking_id: number; pitch_name: string; pitch_type: GamePitchType; start_time: ISODateTime; end_time: ISODateTime }
 export interface RequestOptions {
-  teams: { team_id: number; team_name: string; members: { user_id: number; full_name: string }[] }[];
+  teams: { team_id: number; team_name: string; last_player_count: number | null }[];
   opponent_bookings: GameSlot[]; recruit_games: GameSlot[]; today: string;
   rules: { opponent_lead_days: number; cutoff_hours: number; max_days: number; deposit_hold_hours: number; max_open_requests: number };
 }
@@ -38,7 +38,7 @@ export interface RequestCreate {
   post_type: RequestType; skill_level: SkillLevel; skill_tolerance?: number; note?: string;
   team_id?: number; booking_id?: number; pitch_type?: GamePitchType; preferred_dates?: string[];
   window_start?: string; window_end?: string; payment_rule?: TeamPaymentRule | 'ANY';
-  attendance_user_ids?: number[]; guest_players?: number; required_players?: number; party_size?: number; fee_per_player?: string;
+  player_count?: number; required_players?: number; party_size?: number; fee_per_player?: string;
 }
 export type RequestEdit = Partial<Pick<RequestCreate, 'preferred_dates' | 'window_start' | 'window_end' | 'skill_tolerance' | 'required_players' | 'fee_per_player' | 'note'>>;
 
@@ -60,7 +60,7 @@ export const toleranceNames: Record<number, string> = { 0: 'Ngang trình độ',
 export const typeNames: Record<RequestType, string> = { FIND_OPPONENT: 'Tìm đối', RECRUIT_MEMBERS: 'Tìm thêm người', LOOK_FOR_TEAM: 'Đá ké' };
 export const pitchNames: Record<GamePitchType, string> = { PITCH_5: 'Sân 5', PITCH_7: 'Sân 7' };
 export const ruleNames: Record<TeamPaymentRule, string> = { SPLIT_EQUAL: 'Chia đều tiền sân', LOSER_PAYS_REMAINDER: 'Đội thua trả phần còn lại' };
-/** Kick-off times of the 90-minute grid, 06:00 to 21:30. */
+/** Kick-off times of the 90-minute grid, 06:00 to 21:00. */
 export const slotStarts = Array.from({ length: 11 }, (_, i) => {
   const minutes = 360 + i * 90;
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;

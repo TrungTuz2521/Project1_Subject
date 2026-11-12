@@ -89,7 +89,13 @@ class EmailTests(unittest.TestCase):
 
     @patch('app.services.email_service.send_email')
     def test_stale_proposal_and_disabled_recipient_are_not_emailed(self, smtp):
-        nid = self.enqueue('MATCH_PROPOSAL')
+        # An email left in the queue by the removed proposal flow is never sent.
+        with UnitOfWork() as ctx:
+            row = Notification(user_id=self.uid, notification_type='MATCH_PROPOSAL', title='Cũ', content='Đề xuất cũ',
+                               delivery_channel='EMAIL', delivery_status='PENDING', sent_at=None)
+            ctx.session.add(row)
+            ctx.session.flush()
+            nid = row.notification_id
         self.assertEqual(process_emails()['skipped'], 1)
         self.assertEqual(self.row(nid).delivery_status, 'FAILED')
         self.enqueue()

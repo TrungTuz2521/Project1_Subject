@@ -21,7 +21,6 @@ GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 # frontend/.env.local
 VITE_GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1
-VITE_USE_MOCKS=false
 ```
 
 Không commit hai file env local. Các file `.env.example` chỉ chứa placeholder.
@@ -48,7 +47,7 @@ Nếu Google Console yêu cầu Test users khi đang Testing, thêm email thành
 - JWT của ứng dụng có hạn 60 phút, giữ trong bộ nhớ; không refresh token, reload cần đăng nhập lại.
 - Google verification qua mạng diễn ra trước transaction DB; timeout 10 giây, rate limit chung auth.
 - Không chạy migration: schema hiện có đã có `google_id` và nullable `password_hash`.
-- Trong mock mode ẩn Google button; chỉ kiểm thử Google bằng backend thật.
+- Không đặt `VITE_GOOGLE_CLIENT_ID` thì nút Google bị ẩn.
 
 ## Kiểm thử thủ công
 

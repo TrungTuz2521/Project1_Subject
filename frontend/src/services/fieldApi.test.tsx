@@ -4,8 +4,8 @@ import { session } from '../stores/session';
 import type { BookingBalance, ConfirmBookingPaid, UserSelf } from '../types/api';
 
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('./client', () => ({ useMocks: false, api: { request } }));
-import { confirmBookingPaid, getBookingBalance, getAdminBookings } from './huyApi';
+vi.mock('./client', () => ({ api: { request } }));
+import { confirmBookingPaid, getBookingBalance, getAdminBookingsPage } from './fieldApi';
 import App from '../App';
 
 const balance: BookingBalance = { booking_id: 21, payment_rule: 'LOSER_PAYS_REMAINDER',
@@ -20,7 +20,7 @@ function signedIn(role: 'ADMIN' | 'PLAYER') {
 beforeEach(() => { request.mockReset(); vi.stubGlobal('window', { location: { hash: '#/bookings' } }); });
 afterEach(() => { session.clear(); vi.unstubAllGlobals(); });
 
-describe('Huy frontend and Tu booking contract', () => {
+describe('field pages and the booking money contract', () => {
   it('reads one booking-wide balance and sends mixed receipts without outcome or payer allocation', async () => {
     request.mockResolvedValueOnce(envelope(balance));
     expect(await getBookingBalance(21)).toEqual(balance);
@@ -36,8 +36,8 @@ describe('Huy frontend and Tu booking contract', () => {
   });
   it('passes server-side booking phase for the paid/unpaid admin lists', async () => {
     request.mockResolvedValue(envelope([]));
-    await getAdminBookings('ENDED_UNPAID');
-    expect(request).toHaveBeenCalledWith('/admin/bookings', { query: { page: 1, page_size: 100, phase: 'ENDED_UNPAID' } });
+    await getAdminBookingsPage({ phase: 'ENDED_UNPAID' });
+    expect(request).toHaveBeenCalledWith('/admin/bookings', { query: { page: 1, page_size: 20, phase: 'ENDED_UNPAID' } });
   });
   it('blocks a direct admin URL for players and does not call admin APIs', () => {
     signedIn('PLAYER'); window.location.hash = '#/admin/balance';

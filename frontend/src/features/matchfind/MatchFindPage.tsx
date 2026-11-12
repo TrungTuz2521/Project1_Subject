@@ -52,7 +52,7 @@ export function MatchFindPage({ user }: { user: UserSelf }) {
     {notice && <Banner tone="success">{notice}</Banner>}
     <Warning error={error} />
 
-    {composer && options && <RequestComposer options={options} me={user} initialType={composer.type} onDone={created} onClose={() => setComposer(null)} />}
+    {composer && options && <RequestComposer key={composer.type ?? 'any'} options={options} me={user} initialType={composer.type} onDone={created} onClose={() => setComposer(null)} />}
 
     <div className="mf-tabs" role="tablist">{tabs.map(t =>
       <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'is-on' : ''} onClick={() => setTab(t.key)}>

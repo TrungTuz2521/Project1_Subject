@@ -5,7 +5,7 @@ from booking_fixtures import BookingCase, SECRET
 from app.extensions import db
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.jobs.scheduler import run_once
-from app.models import Match, MatchPost
+from app.models import Match
 from app.services.match_service import complete_finished_matches
 from app.utils.time import utcnow
 

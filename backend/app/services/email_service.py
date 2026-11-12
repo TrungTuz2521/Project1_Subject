@@ -8,10 +8,10 @@ from flask import current_app
 from sqlalchemy import select, update
 from app.contracts.errors import DomainError
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Notification, User, Match, MatchProposal, Booking
+from app.models import Notification, User, Match, Booking
 
+LEGACY_TYPES = frozenset({'MATCH_PROPOSAL', 'PROPOSAL_ACCEPTED', 'PROPOSAL_REJECTED', 'PROPOSAL_EXPIRED'})
 EMAIL_TYPES = frozenset({
-    'MATCH_PROPOSAL', 'PROPOSAL_ACCEPTED', 'PROPOSAL_REJECTED', 'PROPOSAL_EXPIRED',
     'BOOKING_HOLD', 'BOOKING_CONFIRMED', 'BOOKING_EXPIRED', 'PAYMENT_SUCCESS',
     'MATCH_CONFIRMED', 'MATCH_CANCELLED', 'TEAM_JOINED', 'POST_EXPIRED',
     'REFUND_PROCESSING', 'REFUND_SUCCESS', 'REFUND_FAILED',
@@ -76,6 +76,23 @@ def send_email(recipient, title, content, notification_id, link):
         client.close()
 
 
+def send_password_reset(recipient, full_name, link, minutes):
+    """Sent at once (not through the notification outbox): the link is short-lived and must not be stored."""
+    username, _ = smtp_settings()
+    message = EmailMessage()
+    message['From'] = formataddr(('Football Booking', username))
+    message['To'] = recipient
+    message['Subject'] = '[Football Booking] Đặt lại mật khẩu'
+    message.set_content(f'Xin chào {full_name},\n\nBạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu. Mở link sau trong {minutes} phút '
+                        f'để đặt mật khẩu mới:\n{link}\n\nLink chỉ dùng được một lần. Nếu bạn không yêu cầu, hãy bỏ qua email này, '
+                        'mật khẩu hiện tại vẫn giữ nguyên.\n\nEmail tự động từ Football Booking.')
+    client = smtp_connection()
+    try:
+        if client.send_message(message):
+            raise RuntimeError('SMTP recipient refused')
+    finally:
+        client.close()
+
 def claim_email(notification_id):
     """Conservative claim with the existing enum: reserve as FAILED before SMTP.
 
@@ -97,10 +114,8 @@ def claim_email(notification_id):
         if row.notification_type == 'BOOKING_HOLD' and (not booking or booking.status != 'PENDING_HOLD'
                 or not booking.hold_expires_at or booking.hold_expires_at <= ctx.now()):
             return None  # Never send an obsolete request to pay a deposit.
-        if row.notification_type == 'MATCH_PROPOSAL':
-            proposal = ctx.session.get(MatchProposal, row.proposal_id) if row.proposal_id else None
-            if not proposal or proposal.status != 'PENDING_CONFIRMATION' or proposal.expires_at <= ctx.now():
-                return None
+        if row.notification_type in LEGACY_TYPES:
+            return None  # Queued by the old proposal flow, which no longer exists.
         base = current_app.config['PUBLIC_WEB_URL'].rstrip('/')
         parsed = urlsplit(base)
         if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.fragment or parsed.query:

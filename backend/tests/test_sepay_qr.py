@@ -94,7 +94,7 @@ class SepayQrTests(BookingCase):
         self.assertIn(('PAYMENT_SUCCESS', 'PENDING'), types)
         self.assertIn(('BOOKING_CONFIRMED', 'PENDING'), types)
         mail = next(n for n in self.emails(self.ua) if n.notification_type == 'PAYMENT_SUCCESS')
-        self.assertIn('120.000 VND', mail.content)
+        self.assertIn('120.000 ₫', mail.content)
         self.assertIn(f'#{bid}', mail.content)
         # SePay retries the same notification: nothing changes, no second email.
         self.assertEqual(self.webhook(code, 120000).json['outcome'], 'DUPLICATE')
@@ -112,12 +112,101 @@ class SepayQrTests(BookingCase):
         self.assertEqual(self.webhook(code, 120000, account='999999').json['outcome'], 'OTHER_ACCOUNT')
         self.assertEqual(self.webhook(code, 120000, transfer_type='out').json['outcome'], 'NOT_INCOMING')
         self.assertEqual(self.webhook('SPFFFFFFFFFF', 120000).json['outcome'], 'NO_REFERENCE')
-        r = self.webhook(code, 100000, sepay_id=2)
-        self.assertEqual(r.json['outcome'], 'AMOUNT_MISMATCH')
         [payment] = self.payments(bid)
         self.assertEqual(payment.status, 'PENDING')
-        self.assertIn('sai so tien', payment.note)
         self.assertEqual(self.booking(bid).status, 'PENDING_HOLD')
+
+    # ---- whatever amount really arrives is recorded
+
+    def notices(self, uid, kind):
+        with UnitOfWork() as ctx:
+            return [n.content for n in ctx.session.scalars(select(Notification).where(
+                Notification.user_id == uid, Notification.notification_type == kind, Notification.delivery_channel == 'IN_APP'))]
+
+    def refunds(self, bid):
+        return [p for p in self.payments(bid) if p.payment_type == 'REFUND']
+
+    def test_short_transfer_is_a_partial_deposit_and_a_new_code_asks_for_the_rest(self):
+        bid = self.hold()['booking_id']
+        code = self.open_qr(bid).json['data']['transfer_reference']
+        self.assertEqual(self.webhook(code, 100000).json['outcome'], 'OK')
+        [payment] = self.payments(bid)
+        self.assertEqual((payment.status, str(payment.amount)), ('SUCCESS', '100000.00'))
+        self.assertEqual(self.booking(bid).status, 'PENDING_HOLD')
+        self.assertTrue(any('còn thiếu 20.000 ₫' in n for n in self.notices(self.ua, 'PAYMENT_SUCCESS')))
+        rest = self.open_qr(bid).json['data']
+        self.assertEqual(rest['amount'], '20000.00')
+        self.assertEqual(self.webhook(rest['transfer_reference'], 20000, sepay_id=2).json['outcome'], 'OK')
+        self.assertEqual(self.booking(bid).status, 'CONFIRMED')
+
+    def test_short_transfer_never_completed_is_refunded_when_the_hold_ends(self):
+        from app.jobs.booking_jobs import expire_holds
+        bid = self.hold()['booking_id']
+        self.webhook(self.open_qr(bid).json['data']['transfer_reference'], 50000)
+        self.advance(seconds=600)
+        self.assertEqual(expire_holds(), 1)
+        [refund] = self.refunds(bid)
+        self.assertEqual((refund.status, str(refund.amount)), ('REFUND_PROCESSING', '50000.00'))
+
+    def test_extra_money_pays_the_pitch_fee_and_only_the_part_above_it_is_refunded(self):
+        bid = self.hold()['booking_id']  # pitch fee 600.000, deposit 120.000
+        code = self.open_qr(bid).json['data']['transfer_reference']
+        self.assertEqual(self.webhook(code, 700000).json['outcome'], 'OK')
+        self.assertEqual(self.booking(bid).status, 'CONFIRMED')
+        kinds = sorted((p.payment_type, str(p.amount), p.status) for p in self.payments(bid))
+        self.assertEqual(kinds, [('BOOKING_DEPOSIT', '120000.00', 'SUCCESS'), ('BOOKING_REMAINING_PAYMENT', '100000.00', 'SUCCESS'),
+                                 ('BOOKING_REMAINING_PAYMENT', '480000.00', 'SUCCESS'), ('REFUND', '100000.00', 'REFUND_PROCESSING')])
+        data = self.client.get(f'/api/v1/bookings/{bid}', headers=self.a).json['data']
+        self.assertEqual(data['outstanding_amount'], '0.00')
+        self.assertTrue(any('Hồ sơ' in n for n in self.notices(self.ua, 'REFUND_PROCESSING')))
+
+    def test_second_transfer_for_a_paid_code_goes_towards_the_pitch_fee(self):
+        bid = self.hold()['booking_id']
+        code = self.open_qr(bid).json['data']['transfer_reference']
+        self.webhook(code, 120000, sepay_id=1)
+        self.assertEqual(self.webhook(code, 120000, sepay_id=2).json['outcome'], 'EXTRA_RECORDED')
+        # SePay retries both notifications: nothing is recorded twice.
+        self.assertEqual(self.webhook(code, 120000, sepay_id=2).json['outcome'], 'DUPLICATE')
+        self.assertEqual(self.webhook(code, 120000, sepay_id=1).json['outcome'], 'DUPLICATE')
+        self.assertEqual(len(self.payments(bid)), 2)
+        self.assertEqual(self.refunds(bid), [])
+        data = self.client.get(f'/api/v1/bookings/{bid}', headers=self.a).json['data']
+        self.assertEqual((data['paid_amount'], data['outstanding_amount']), ('240000.00', '360000.00'))
+
+    def test_money_for_a_booking_that_is_no_longer_held_is_refunded_in_full(self):
+        bid = self.hold()['booking_id']
+        code = self.open_qr(bid).json['data']['transfer_reference']
+        self.webhook(code, 120000, sepay_id=1)
+        self.client.post(f'/api/v1/bookings/{bid}/cancel', headers=self.a, json={'reason': 'Ban viec'})
+        self.assertEqual(self.webhook(code, 120000, sepay_id=2).json['outcome'], 'EXTRA_RECORDED')
+        [refund] = self.refunds(bid)
+        self.assertEqual(str(refund.amount), '120000.00')  # the forfeited deposit stays, the second transfer goes back
+
+    def test_refund_account_is_shown_to_the_customer_and_the_admin(self):
+        r = self.client.patch('/api/v1/users/me', headers=self.a, json={'refund_bank_name': 'MB', 'refund_account_no': '12 3456 789',
+                                                                        'refund_account_name': 'Nguyen Van A'})
+        self.assertEqual(r.status_code, 200, r.json)
+        self.assertEqual((r.json['data']['refund_account_no'], r.json['data']['refund_account_name']), ('123456789', 'NGUYEN VAN A'))
+        bad = self.client.patch('/api/v1/users/me', headers=self.a, json={'refund_bank_name': 'MB', 'refund_account_no': 'abc12',
+                                                                          'refund_account_name': 'A B'})
+        self.assertEqual(list(bad.json['error']['fields']), ['refund_account_no'])
+        bid = self.hold()['booking_id']
+        self.webhook(self.open_qr(bid).json['data']['transfer_reference'], 700000)
+        self.assertTrue(any('MB 123456789 (NGUYEN VAN A)' in n for n in self.notices(self.ua, 'REFUND_PROCESSING')))
+        rows = self.client.get('/api/v1/admin/refunds/pending', headers=self.admin).json['data']
+        self.assertEqual(rows[0]['payer']['refund_account'], {'bank_name': 'MB', 'account_no': '123456789', 'account_name': 'NGUYEN VAN A'})
+        cleared = self.client.patch('/api/v1/users/me', headers=self.a, json={'refund_bank_name': '', 'refund_account_no': '', 'refund_account_name': ''})
+        self.assertIsNone(cleared.json['data']['refund_account_no'])
+
+    def test_demo_confirmation_is_off_next_to_real_payments_and_behind_a_proxy(self):
+        self.app.config['DEMO_PAYMENT_ENABLED'] = True
+        bid = self.hold()['booking_id']
+        r = self.client.post('/api/v1/payments/deposit/demo-confirm', headers=self.a, json={'booking_id': bid})
+        self.assertEqual(r.status_code, 403)
+        self.app.config['SEPAY_WEBHOOK_KEY'] = ''
+        tunnelled = dict(self.a, **{'CF-Connecting-IP': '203.0.113.9'})
+        self.assertEqual(self.client.post('/api/v1/payments/deposit/demo-confirm', headers=tunnelled, json={'booking_id': bid}).status_code, 403)
+        self.assertEqual(self.client.post('/api/v1/payments/deposit/demo-confirm', headers=self.a, json={'booking_id': bid}).status_code, 200)
 
     def test_money_for_an_expired_code_inside_the_grace_still_confirms(self):
         bid = self.hold()['booking_id']
@@ -133,13 +222,6 @@ class SepayQrTests(BookingCase):
         self.advance(seconds=181)
         self.assertEqual(reconcile_payments()['expired_qr_sessions'], 1)
         self.assertEqual(self.payments(bid)[0].status, 'FAILED')
-
-    def test_second_transfer_for_paid_code_is_flagged_for_refund(self):
-        bid = self.hold()['booking_id']
-        code = self.open_qr(bid).json['data']['transfer_reference']
-        self.webhook(code, 120000, sepay_id=1)
-        self.assertEqual(self.webhook(code, 120000, sepay_id=2).json['outcome'], 'DUPLICATE')
-        self.assertIn('Nhan them sepay:2', self.payments(bid)[0].note)
 
     def test_two_teams_each_scan_their_own_share(self):
         bid, mid = self.match_booking()

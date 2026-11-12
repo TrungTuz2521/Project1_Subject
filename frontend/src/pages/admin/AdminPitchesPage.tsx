@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PeakHours, Pitch } from '../../types/api';
-import { addPitch, changePitch, getPeakHours, getPitches, moneyVN, setPeakHours } from '../../services/huyApi';
+import { addPitch, changePitch, getPeakHours, getPitches, moneyVN, setPeakHours } from '../../services/fieldApi';
 import { ApiError } from '../../services/api';
 import { Banner, Button, Card, Field, Head, Status, Warning } from '../../features/field-management/ui';
 import { Dialog } from './Dialog';

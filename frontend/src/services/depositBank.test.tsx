@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 const { request } = vi.hoisted(()=>({request:vi.fn()}));
-vi.mock('./client',()=>({useMocks:false,api:{request}}));
+vi.mock('./client',()=>({api:{request}}));
 import { confirmDemoDeposit, getDepositInstructions } from './depositBank';
 import { BankDepositBox } from '../features/payments/BankDepositBox';
 import type { BankDepositInstructions } from '../types/api';

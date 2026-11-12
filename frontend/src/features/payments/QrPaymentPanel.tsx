@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { BankDepositPayer, QrPaymentSession } from '../../types/api';
 import { getPaymentStatus, openQrPayment } from '../../services/depositBank';
 import { formErrorMessage } from '../../services/formErrors';
-import { moneyVN, serverNow } from '../../services/huyApi';
+import { moneyVN, serverNow } from '../../services/fieldApi';
 import { Banner, Button, countdown, useNow } from '../field-management/ui';
 import { BankQR } from './BankQR';
 

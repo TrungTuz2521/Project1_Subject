@@ -136,26 +136,23 @@ npm run dev
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1
-VITE_USE_MOCKS=false
 VITE_GOOGLE_CLIENT_ID=<Google OAuth Web Client ID dùng chung với backend>
 ```
 
 Khởi động lại Vite sau khi sửa env. Mở [http://localhost:5173](http://localhost:5173) khi dùng Google Login, khớp Authorized JavaScript origins đã đăng ký. Nếu cần, chạy `npm run dev -- --host localhost`.
-
-Chỉ dùng mock để dựng giao diện: đặt `VITE_USE_MOCKS=true`, đăng nhập bằng tài khoản mẫu. Mock không gửi email, không đăng nhập Google và không chứng minh luồng giữ sân/thanh toán thật.
 
 ```powershell
 npm test
 npm run build
 ```
 
-Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO; `mocks` cho dữ liệu tổng hợp và handler; `features/matchmaking/TeamsPage.tsx` cho luồng tải danh sách/gửi form/báo lỗi.
+Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO.
 
-Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [trạng thái triển khai và kiểm thử](docs/api/BACKEND_IMPLEMENTATION_STATUS.md) cho phạm vi đã xác minh.
+Frontend luôn gọi backend: tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [những phần còn cần hoàn thiện](docs/api/REMAINING_WORK.md).
 
-Build production luôn tắt mock. Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
+Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
 
-Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để thêm service, DTO, mock và xử lý lỗi theo mẫu.
+Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để thêm service, DTO và xử lý lỗi theo mẫu.
 
 ### Google Login
 
@@ -251,10 +248,7 @@ Kết quả kiểm tra sau V3: còn 1 bài đăng thiếu thông tin phục vụ
 
 ### Migration 004: quân số từng buổi — đã áp dụng
 
-- Một đội có thể có 3 tài khoản nhưng buổi đá đủ 7 người: 3 tài khoản tham gia + 4 người ngoài ứng dụng.
-- Đội trưởng khai báo quân số trong bài đăng, không phải thay danh sách đội mỗi ngày. Nhận thêm người chỉ được cộng sau đủ hai xác nhận.
-- Đội thường tuyển đủ có nút **Tạo bài tìm đối thủ với quân số này**; AI_RANDOM giữ luồng tự tạo bài tìm đối thủ khi đủ người.
-- [Quy tắc, API và hướng dẫn demo](docs/api/SESSION_ATTENDANCE_GUIDE.md).
+- Đội chỉ có tên và đội trưởng (người đại diện đặt sân, nhận thông báo); không lưu danh sách thành viên. Mỗi yêu cầu tìm đối khai báo `player_count` (tính cả đội trưởng, tối thiểu 5 với sân 5, 7 với sân 7); form điền sẵn số của lần trước (`last_player_count` của đội).
 - [SQL 004](database/schema/004_session_attendance.sql) và [trạng thái/hướng dẫn migration](database/schema/004_session_attendance_README.md). File SQL phục vụ môi trường khác chưa cập nhật; thành viên dùng TiDB nhóm không chạy lại.
 
 Các tệp V3 trong repository:
@@ -367,6 +361,8 @@ python -m flask --app app:create_app scheduler --with-matchmaking --with-email
 Mỗi yêu cầu mới cũng được quét ngay khi gửi. Admin xem mọi yêu cầu và bấm "Quét ngay" ở trang **Kèo ghép**. Trước khi chạy code này trên TiDB phải chạy migration `database/schema/006_match_requests.sql` (chỉ thêm cột).
 
 
+Thanh toán QR SePay: [cài đặt](docs/setup/SEPAY_QR.md), [đưa lên cloud](docs/setup/DEPLOY_CLOUD.md) (chạy migration `007_refund_account.sql`).
+
 Danh sách việc còn lại, ưu tiên demo và giới hạn thực tế: [Những phần cần hoàn thiện](docs/api/REMAINING_WORK.md).
 
 
@@ -396,6 +392,6 @@ Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi 
 Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
 Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
 
-Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true`.
 Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
 Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](docs/setup/DEMO_DEPOSIT.md).

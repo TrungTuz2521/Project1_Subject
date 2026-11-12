@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AdminBooking, Availability, Pitch } from '../../types/api';
-import { getAdminBookingsPage, getAvailability, moneyVN } from '../../services/huyApi';
+import { getAdminBookingsPage, getAvailability, moneyVN } from '../../services/fieldApi';
 import { Card, Field, dateAfter } from '../../features/field-management/ui';
 import { slotTime } from './SlotPicker';
 

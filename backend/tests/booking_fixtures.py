@@ -9,7 +9,7 @@ from app import create_app
 from app.contracts.dto import GatewayResult
 from app.extensions import db
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Booking, FieldComplex, Payment, Pitch, TeamMember, User
+from app.models import Booking, FieldComplex, Payment, Pitch, User
 from app.services.booking_policy import day_slots
 from app.use_cases.process_payment import process_gateway_callback
 from app.utils.time import VIETNAM, utcnow
@@ -133,19 +133,12 @@ class BookingCase(unittest.TestCase):
     def team(self, header):
         r = self.client.post('/api/v1/teams', headers=header, json={'team_name': 'FC Test'})
         self.assertEqual(r.status_code, 201, r.json)
-        tid = r.json['data']['team_id']
-        with UnitOfWork() as ctx:
-            for i in range(4):
-                user = User(full_name='Member', email=f'{tid}-{i}@example.test', password_hash=HASH)
-                ctx.session.add(user)
-                ctx.session.flush()
-                ctx.session.add(TeamMember(team_id=tid, user_id=user.user_id))
-        return tid
+        return r.json['data']['team_id']
 
     def request_opponent(self, header, rule='SPLIT_EQUAL', days=2, index=8, booking_id=None, skill='INTERMEDIATE', tolerance=1):
-        """A full team (captain + 4 guests) asks for an opponent; returns the request id."""
+        """A full team of 5 asks for an opponent; returns the request id."""
         data = dict(post_type='FIND_OPPONENT', team_id=self.team(header), skill_level=skill, skill_tolerance=tolerance,
-                    payment_rule=rule, guest_players=4)
+                    payment_rule=rule, player_count=5)
         if booking_id:
             data['booking_id'] = booking_id
         else:

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AdminBooking, AdminDashboard } from '../../types/api';
-import { getAdminDashboard, dateVN, moneyVN } from '../../services/huyApi';
+import { getAdminDashboard, dateVN, moneyVN } from '../../services/fieldApi';
 import { Button, Card, Empty, Head, Warning, countdown, useNow } from '../../features/field-management/ui';
 import { CheckInDesk } from './CheckInDesk';
 
@@ -27,6 +27,13 @@ export function AdminDashboardPage({ settlement }: { settlement: (id: number) =>
     <Head title="Hôm nay" description="Đón khách, thu tiền và các việc đang chờ trong ngày. Trang tự cập nhật mỗi 30 giây."
       aside={<Button variant="outline" onClick={() => setRevision(n => n + 1)}>Làm mới</Button>} />
     <Warning error={error} />
+    {data?.background_jobs?.lagging && <div className="adm-job-alert" role="alert">
+      <strong>Tiến trình nền (scheduler) có vẻ chưa chạy.</strong>
+      <span>Đang tồn {[data.background_jobs.expired_holds && `${data.background_jobs.expired_holds} lượt giữ sân quá hạn`,
+        data.background_jobs.expired_requests && `${data.background_jobs.expired_requests} yêu cầu tìm kèo quá hạn`,
+        data.background_jobs.unsent_emails && `${data.background_jobs.unsent_emails} email chưa gửi`].filter(Boolean).join(', ')}.
+        Khi scheduler không chạy thì sân giữ quá hạn không được mở lại, không hoàn tiền tự động và không gửi email. Chạy: <code>python -m flask --app app:create_app scheduler --with-matchmaking --with-email</code></span>
+    </div>}
     {!data ? <Empty>{error ? 'Chưa tải được dữ liệu. Bấm Làm mới để thử lại.' : 'Đang tải…'}</Empty> : <>
       <section className="adm-board" aria-label="Tóm tắt hôm nay">
         <div className="adm-board-cell">

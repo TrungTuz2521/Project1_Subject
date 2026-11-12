@@ -154,10 +154,10 @@ class Races(BookingCase):
 
     def test_two_scans_racing_create_one_match_and_one_hold(self):
         from unittest import mock
-        from app.services.match_request_service import scan
+        from app.services.match_requests import scan
         self.request_opponent(self.a)
         # Second request without its immediate scan, so two scheduler passes can race for the pair.
-        with mock.patch('app.services.match_request_service.scan', return_value={}):
+        with mock.patch('app.services.match_requests.scan', return_value={}):
             self.request_opponent(self.b)
         self.race(lambda: scan(), lambda: scan())
         self.assertEqual(self.count(Match), 1)

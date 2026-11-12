@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Booking, UserSelf } from '../../types/api';
-import { getMyBookings, moneyVN, timeVN } from '../../services/huyApi';
+import { getMyBookings, moneyVN, timeVN } from '../../services/fieldApi';
 import { dayLabel } from '../pitches/PitchesPage';
 import { bookingHash } from '../../services/bookingNavigation';
 import { VenueContact, useVenue } from './venue';

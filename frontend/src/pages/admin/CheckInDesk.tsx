@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AdminBooking, ArrivalStatus } from '../../types/api';
-import { markArrival, moneyVN, timeVN } from '../../services/huyApi';
+import { markArrival, moneyVN, timeVN } from '../../services/fieldApi';
 import { Button, Card, Empty, Status, Warning, useNow } from '../../features/field-management/ui';
 
 const EARLY_MS = 2 * 3600_000;
