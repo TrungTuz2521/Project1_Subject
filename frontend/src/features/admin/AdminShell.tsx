@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { UserSelf } from '../../types/api';
-import { getAdminDashboard } from '../../services/huyApi';
+import { getAdminDashboard } from '../../services/fieldApi';
 import { useNow } from '../field-management/ui';
 import '../../styles/admin.css';
 

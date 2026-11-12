@@ -819,6 +819,6 @@ Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi 
 Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
 Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
 
-Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true`.
 Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
 Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../setup/DEMO_DEPOSIT.md).

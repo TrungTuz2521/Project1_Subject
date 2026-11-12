@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
-import { api, useMocks } from '../../services/client';
+import { api } from '../../services/client';
 import type { ApiResponse, FieldComplex } from '../../types/api';
 
-export type Venue = Pick<FieldComplex, 'name' | 'phone' | 'address'> & { opening_time?: string; closing_time?: string };
+type Venue = Pick<FieldComplex, 'name' | 'phone' | 'address'> & { opening_time?: string; closing_time?: string };
 
-const DEMO_VENUE: Venue = { name: 'Cụm sân bóng (demo)', phone: '0900 000 000', address: 'Địa chỉ demo', opening_time: '06:00', closing_time: '23:00' };
 let cached: Promise<Venue | null> | null = null;
 
 /** Name, address and phone of the complex: public, loaded once per page load. */
-export function loadVenue(): Promise<Venue | null> {
-  if (useMocks) return Promise.resolve(DEMO_VENUE);
+function loadVenue(): Promise<Venue | null> {
   cached ??= api.request<ApiResponse<FieldComplex>>('/field-complex', { auth: false })
     .then(r => ({ name: r.data.name, phone: r.data.phone, address: r.data.address, opening_time: r.data.policy.opening_time, closing_time: r.data.policy.closing_time }))
     .catch(() => { cached = null; return null; });

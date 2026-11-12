@@ -16,7 +16,7 @@ Kết nối TiDB xác minh TLS và đặt session SQL sang UTC. Server local: `h
 Transaction dùng READ COMMITTED để đọc lại roster sau khi chờ khóa; conflict/deadlock đã xác định retry tối đa 3 lần
 ở ranh giới command, không retry callback/gateway mạng. Auth giới hạn 20 yêu cầu/phút/IP trong process local;
 khi chạy nhiều process, cấu hình limiter dùng chung tại reverse proxy.
-Frontend: `VITE_API_BASE_URL=http://localhost:5000/api/v1`, `VITE_USE_MOCKS=false`; restart Vite.
+Frontend: `VITE_API_BASE_URL=http://localhost:5000/api/v1`; restart Vite.
 
 ## Kiểm thử riêng, không ghi TiDB
 
@@ -195,6 +195,6 @@ Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi 
 Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
 Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
 
-Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true`.
 Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
 Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](../docs/setup/DEMO_DEPOSIT.md).

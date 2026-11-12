@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { Booking, BankDepositInstructions } from '../../types/api';
-import { cancelMyBooking, getBooking, getMyBookings, huyDemo, moneyVN, dateVN } from '../../services/huyApi';
+import { cancelMyBooking, getBooking, getMyBookings, moneyVN, dateVN, serverNow } from '../../services/fieldApi';
 import { Banner, Button, Card, Empty, Head, Status, Warning, countdown, useNow } from '../field-management/ui';
 import { BankDepositBox } from '../payments/BankDepositBox';
 import { getDepositInstructions } from '../../services/depositBank';
 import { bookingHash } from '../../services/bookingNavigation';
 import { VenueContact, useVenue } from '../player/venue';
 
-const isUpcoming = (b: Booking) => ['PENDING_HOLD', 'CONFIRMED'].includes(b.status) && Date.parse(b.end_time) > Date.now();
+const isUpcoming = (b: Booking) => ['PENDING_HOLD', 'CONFIRMED'].includes(b.status) && Date.parse(b.end_time) > serverNow();
 
 export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | null; onRefresh?: () => void }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -69,7 +69,7 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
   async function cancel() {
     if (!active || busy || !window.confirm('Hủy booking này? Nếu đã đặt cọc, bạn sẽ mất tiền cọc; khoản trả thêm ngoài cọc (nếu có) được hoàn lại.')) return;
     setBusy(true); setError(null);
-    try { await cancelMyBooking(active.booking_id, 'Người dùng chủ động hủy'); setNotice('Đã xử lý yêu cầu hủy' + (huyDemo ? ' (demo)' : '') + '.'); await reload(); }
+    try { await cancelMyBooking(active.booking_id, 'Người dùng chủ động hủy'); setNotice('Đã xử lý yêu cầu hủy.'); await reload(); }
     catch (e) { setError(e); } finally { setBusy(false); }
   }
   return <>
@@ -94,10 +94,9 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
         {transfer && active && transfer.booking_id===active.booking_id && <BankDepositBox instructions={transfer} validHold={validHold} autoStart={autoPay} onConfirmed={result=>{setBookings(old=>old.map(b=>b.booking_id===result.booking.booking_id?result.booking:b));setNotice('Đã lưu cọc DEMO vào database.');void getDepositInstructions(result.booking.booking_id).then(setTransfer).catch(setError);}}
           onPaid={()=>{const id=active.booking_id;setNotice('Đã nhận tiền cọc từ ngân hàng. Email xác nhận đặt sân sẽ được gửi tới bạn.');
             void Promise.all([getBooking(id),getDepositInstructions(id)]).then(([booking,instructions])=>{setBookings(old=>old.map(b=>b.booking_id===id?booking:b));setTransfer(instructions);}).catch(setError);}} />}
-        {(active.status === 'PENDING_HOLD' || active.status === 'CONFIRMED') && <div className="huy-actions"><Button variant="danger" disabled={busy} onClick={() => void cancel()}>Hủy booking</Button></div>}
+        {(active.status === 'PENDING_HOLD' || active.status === 'CONFIRMED') && Date.parse(active.start_time) > now && <div className="huy-actions"><Button variant="danger" disabled={busy} onClick={() => void cancel()}>Hủy booking</Button></div>}
         {active.status === 'PENDING_HOLD' && !validHold && <Button variant="outline" onClick={() => void reload()}>Kiểm tra trạng thái với server</Button>}
         <VenueContact venue={venue} />
       </> : <Empty>Chọn một lịch ở cột bên trái để xem chi tiết.</Empty>}</Card></div>
-    {huyDemo && <Banner>Phiên demo chỉ minh họa giữ chỗ, không xác nhận giao dịch online. Booking mẫu đã xác nhận là dữ liệu giả lập ban đầu.</Banner>}
   </>;
 }

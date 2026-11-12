@@ -96,6 +96,7 @@ export function RequestComposer({ options, me, initialType, onDone, onClose }: {
     if (type === 'FIND_OPPONENT') {
       if (!team) return 'Bạn cần là đội trưởng của một đội để tìm đối.';
       if (players < size) return `Đội cần ít nhất ${size} người đi đá.`;
+      if (players > size * 2) return `Sân ${size} người nhận tối đa ${size * 2} người mỗi đội.`;
       if (booked && !game) return 'Chọn lượt sân đã đặt.';
     }
     if (type === 'RECRUIT_MEMBERS' && !game) return 'Chọn lượt đá cần thêm người.';
@@ -139,7 +140,7 @@ export function RequestComposer({ options, me, initialType, onDone, onClose }: {
           <label className="mf-field"><span>Đội</span><select value={teamId ?? ''} onChange={e => { const id = Number(e.target.value); setTeamId(id); setPlayers(lastCount(id)); }}>
             {options.teams.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}</select></label>
           <label className="mf-field"><span>Số người đi đá <small>tính cả bạn, sân {size} người cần ít nhất {size}</small></span>
-            <input type="number" min={size} max={11} value={players} onChange={e => setPlayers(Math.max(1, Math.min(11, Number(e.target.value) || 1)))} /></label>
+            <input type="number" min={size} max={size * 2} value={players} onChange={e => setPlayers(Math.max(1, Math.min(size * 2, Number(e.target.value) || 1)))} /></label>
           <Segmented label="Sân" value={booked ? 'yes' : 'no'} onChange={v => { setBooked(v === 'yes'); setBookingId(null); }}
             options={[{ value: 'no', label: 'Chưa đặt sân' }, { value: 'yes', label: 'Đã đặt sân' }]} />
         </>}

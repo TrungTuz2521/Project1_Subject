@@ -1,5 +1,5 @@
 import { api } from './client';
-import { syncClock } from './huyApi';
+import { syncClock } from './fieldApi';
 import type { ApiResponse, DemoDepositResult, BankDepositInstructions, Payment, QrPaymentSession } from '../types/api';
 
 export async function getDepositInstructions(bookingId: number, signal?: AbortSignal) {

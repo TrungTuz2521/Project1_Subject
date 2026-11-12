@@ -60,7 +60,7 @@ export const toleranceNames: Record<number, string> = { 0: 'Ngang trình độ',
 export const typeNames: Record<RequestType, string> = { FIND_OPPONENT: 'Tìm đối', RECRUIT_MEMBERS: 'Tìm thêm người', LOOK_FOR_TEAM: 'Đá ké' };
 export const pitchNames: Record<GamePitchType, string> = { PITCH_5: 'Sân 5', PITCH_7: 'Sân 7' };
 export const ruleNames: Record<TeamPaymentRule, string> = { SPLIT_EQUAL: 'Chia đều tiền sân', LOSER_PAYS_REMAINDER: 'Đội thua trả phần còn lại' };
-/** Kick-off times of the 90-minute grid, 06:00 to 21:30. */
+/** Kick-off times of the 90-minute grid, 06:00 to 21:00. */
 export const slotStarts = Array.from({ length: 11 }, (_, i) => {
   const minutes = 360 + i * 90;
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;

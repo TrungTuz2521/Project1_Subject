@@ -136,26 +136,23 @@ npm run dev
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1
-VITE_USE_MOCKS=false
 VITE_GOOGLE_CLIENT_ID=<Google OAuth Web Client ID dùng chung với backend>
 ```
 
 Khởi động lại Vite sau khi sửa env. Mở [http://localhost:5173](http://localhost:5173) khi dùng Google Login, khớp Authorized JavaScript origins đã đăng ký. Nếu cần, chạy `npm run dev -- --host localhost`.
-
-Chỉ dùng mock để dựng giao diện: đặt `VITE_USE_MOCKS=true`, đăng nhập bằng tài khoản mẫu. Mock không gửi email, không đăng nhập Google và không chứng minh luồng giữ sân/thanh toán thật.
 
 ```powershell
 npm test
 npm run build
 ```
 
-Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO; `mocks` cho dữ liệu tổng hợp và handler; `features/matchmaking/TeamsPage.tsx` cho luồng tải danh sách/gửi form/báo lỗi.
+Bộ dùng chung gồm `services/api.ts` xử lý JSON, Bearer token, lỗi, timeout/abort; `types/api.ts` cho DTO.
 
-Để gọi Flask thật, tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_USE_MOCKS=false` và `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Token giữ trong bộ nhớ, hết hạn sau tối đa 60 phút hoặc reload thì cần đăng nhập lại; không refresh token. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [những phần còn cần hoàn thiện](docs/api/REMAINING_WORK.md).
+Frontend luôn gọi backend: tạo `frontend/.env.local` theo `frontend/.env.example`, đặt `VITE_API_BASE_URL` đúng backend rồi khởi động lại Vite. Auth và backend nghiệp vụ đã được tích hợp trên nhánh `integration/team`; xem [những phần còn cần hoàn thiện](docs/api/REMAINING_WORK.md).
 
-Build production luôn tắt mock. Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
+Không đưa credential TiDB/gateway vào frontend hoặc VITE_*.
 
-Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để thêm service, DTO, mock và xử lý lỗi theo mẫu.
+Xem [hướng dẫn frontend và cách chia việc](frontend/README.md) để thêm service, DTO và xử lý lỗi theo mẫu.
 
 ### Google Login
 
@@ -395,6 +392,6 @@ Nút demo gọi backend ghi Payment SUCCESS có mã/ghi chú DEMO, rồi đổi 
 Đây là mô phỏng, không chứng minh chuyển khoản ngân hàng. Khoản DEMO không tính doanh thu API, không hoàn/thu tiền thật.
 Giữ nguyên hạn 5 phút; không trộn với phiên thanh toán/giao dịch thật. Khi demo xong cần hủy booking nếu muốn nhả slot.
 
-Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true` và `VITE_USE_MOCKS=false`.
+Backend bật `DEMO_PAYMENT_ENABLED=true`; frontend dev bật `VITE_DEMO_DEPOSIT=true`.
 Sau pull code phải cấu hình env local, khởi động lại backend/Vite. Mặc định env.example tắt demo; production phải tắt cả hai flag.
 Chi tiết cách chạy, API, flag và giới hạn dữ liệu: [Demo cọc lưu DB](docs/setup/DEMO_DEPOSIT.md).

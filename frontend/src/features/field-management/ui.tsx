@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ApiError, errorMessage } from '../../services/api';
-import { huyDemo, serverNow, todayVN } from '../../services/huyApi';
+import { serverNow, todayVN } from '../../services/fieldApi';
 
 export function Banner({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' | 'danger' | 'success' }) {
   return <div className={`huy-banner huy-banner-${tone}`} role={tone === 'danger' ? 'alert' : undefined}>{children}</div>;
@@ -35,7 +35,6 @@ export function Status({ state }: { state: string }) {
     PENDING_HOLD: 'Chờ cọc', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn', SUCCESS: 'Đã thu', PENDING: 'Đang chờ', FAILED: 'Thất bại', REFUND_PROCESSING: 'Đang hoàn', REFUNDED: 'Đã hoàn', UNPAID: 'Chưa thu', PARTIAL: 'Chưa thu đủ', PAID: 'Đã thu đủ' };
   return <span className={`huy-pill huy-pill-${state.toLowerCase()}`}>{labels[state] ?? state}</span>;
 }
-export const showDate = (date: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(`${date}T00:00:00+07:00`));
 export function dateAfter(days: number): string {
   const d = new Date(`${todayVN()}T00:00:00+07:00`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -53,6 +52,5 @@ export function countdown(expires: string | null, now: number) {
   const seconds = Math.max(0, Math.ceil((Date.parse(expires) - now) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
-export function DemoNote() { return huyDemo ? <Banner><strong>CHẾ ĐỘ DEMO:</strong> dữ liệu thử trên trình duyệt, không đặt sân/thu tiền thật. QR ở đây chỉ là bản minh họa.</Banner> : null; }
 export function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="huy-field"><span>{label}</span>{children}</label>; }
 export function Empty({ children }: { children: ReactNode }) { return <div className="huy-empty">{children}</div>; }

@@ -35,7 +35,7 @@ Khai trong phần Environment của nền tảng, **không** commit file `.env`:
 | `DEMO_PAYMENT_ENABLED` | `false` |
 | `EMAIL_ENABLED`, `SMTP_*` | Như bản local nếu muốn gửi email |
 
-Frontend: `VITE_API_BASE_URL=https://<tên miền backend>/api/v1`, `VITE_USE_MOCKS=false`, `VITE_DEMO_DEPOSIT=false`.
+Frontend: `VITE_API_BASE_URL=https://<tên miền backend>/api/v1`, `VITE_DEMO_DEPOSIT=false`.
 
 ## 4. Cấu hình webhook trên SePay
 

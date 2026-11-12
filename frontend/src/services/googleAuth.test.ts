@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { session } from '../stores/session';
-import { demoUser } from '../mocks/fixtures';
+import { demoUser } from './testUser';
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('./client', () => ({ api: { request } }));
 import { googleChallenge, loginWithGoogle } from './auth';

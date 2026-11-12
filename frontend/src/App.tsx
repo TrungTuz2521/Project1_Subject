@@ -14,7 +14,6 @@ import { ForgotPasswordPage, ResetPasswordPage } from './features/auth/PasswordR
 import type { AdminRoute } from './features/admin/AdminShell';
 import { getCurrentUser, keepSessionAlive, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
-import { useMocks } from './services/client';
 import { session } from './stores/session';
 import { selectedBookingFromHash } from './services/bookingNavigation';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
@@ -73,7 +72,7 @@ export default function App() {
 
   // Renew the token while someone is signed in, so a shift is not interrupted every hour.
   const signedIn = Boolean(current);
-  useEffect(() => (signedIn && !useMocks ? keepSessionAlive() : undefined), [signedIn]);
+  useEffect(() => (signedIn ? keepSessionAlive() : undefined), [signedIn]);
 
   // Admin accounts cannot use player features (the API answers 403), so they never land on them.
   const isAdmin = current?.user.role === 'ADMIN';
@@ -190,19 +189,6 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
     } finally { setBusy(false); }
   }
 
-  async function demoLogin() {
-    setEmail('demo@example.test'); setPassword('mock-only'); setError(''); setBusy(true);
-    try { await login({ email: 'demo@example.test', password: 'mock-only' }); onLogin(); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
-  }
-  async function demoCaptainLogin() {
-    setEmail('captain@example.test'); setPassword('mock-only'); setError(''); setBusy(true);
-    try { await login({ email: 'captain@example.test', password: 'mock-only' }); onLogin(); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
-  }
-
   return <div className="auth-screen">
     <aside className="auth-visual">
       <a className="auth-brand" href="#/login"><span className="auth-brand-mark">F</span><span>FOOTBALL<small>FIELD MANAGEMENT</small></span></a>
@@ -215,7 +201,6 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
       <section className="auth-card">
         <div className="auth-card-title"><span className="auth-icon">{isRegister ? '＋' : '↗'}</span><div><h2>{isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}</h2><p>{isRegister ? 'Tham gia cộng đồng bóng đá phong trào.' : 'Đăng nhập để tiếp tục hành trình trên sân cỏ.'}</p></div></div>
         {notice && <div className="notice-success" role="status">{notice}<button type="button" aria-label="Đóng thông báo" onClick={clearNotice}>×</button></div>}
-        {useMocks && <div className="demo-hint"><span className="status-dot" /> Chế độ demo · Chưa cần kết nối backend</div>}
         <form className="auth-form" onSubmit={submit} noValidate>
           {isRegister && <div className="form-field"><label htmlFor="auth-name">Họ và tên <span>*</span></label><input id="auth-name" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nguyễn Văn An" aria-invalid={!!errors.full_name} />{errors.full_name && <small className="field-error">{errors.full_name}</small>}</div>}
           <div className="form-field"><label htmlFor="auth-email">Email <span>*</span></label><input id="auth-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ban@example.com" aria-invalid={!!errors.email} />{errors.email && <small className="field-error">{errors.email}</small>}</div>
@@ -230,8 +215,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
           {error && <div className="notice-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">↗</span></button>
         </form>
-        {!useMocks && !isRegister && <GoogleSignIn password={password} disabled={busy} onSuccess={onLogin} />}
-        {useMocks && !isRegister && <><button type="button" className="demo-login-button" disabled={busy} onClick={demoLogin}>Đăng nhập nhanh bằng tài khoản mẫu</button><button type="button" className="demo-login-button" disabled={busy} onClick={demoCaptainLogin}>Thử tài khoản đội trưởng mẫu</button></>}
+        {!isRegister && <GoogleSignIn password={password} disabled={busy} onSuccess={onLogin} />}
         <p className="auth-switch"><a href="#/bookings">Xem sân, giá và giờ trống không cần đăng nhập →</a></p>
         <p className="auth-switch">{isRegister ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'} <button type="button" onClick={() => { clearNotice(); setError(''); onNavigate(isRegister ? '/login' : '/register'); }}>{isRegister ? 'Đăng nhập' : 'Đăng ký ngay'}</button></p>
         <p className="auth-terms">Bằng việc tiếp tục, bạn đồng ý tuân thủ các quy định sử dụng của hệ thống.</p>

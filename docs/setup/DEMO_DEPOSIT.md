@@ -20,7 +20,6 @@ Trong `frontend/.env.local` riêng:
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1
-VITE_USE_MOCKS=false
 VITE_DEMO_DEPOSIT=true
 ```
 
