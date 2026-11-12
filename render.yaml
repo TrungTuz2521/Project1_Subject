@@ -1,0 +1,59 @@
+# Render Blueprint (docs/setup/DEPLOY_CLOUD.md, mục 3). Free plan: one web service, no paid worker.
+# The scheduler runs inside the web process, so gunicorn must keep exactly one worker (WEB_CONCURRENCY=1).
+services:
+  - type: web
+    name: football-field-api
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: RUN_SCHEDULER_IN_WEB
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: GUNICORN_THREADS
+        value: "4"
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: DEMO_PAYMENT_ENABLED
+        value: "false"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      # sync: false = Render asks for the value on first deploy; it is never stored in this file.
+      - key: TIDB_HOST
+        sync: false
+      - key: TIDB_PORT
+        value: "4000"
+      - key: TIDB_DATABASE
+        sync: false
+      - key: TIDB_USERNAME
+        sync: false
+      - key: TIDB_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PUBLIC_WEB_URL
+        sync: false
+      - key: BANK_BIN
+        sync: false
+      - key: BANK_ACCOUNT_NO
+        sync: false
+      - key: BANK_ACCOUNT_NAME
+        sync: false
+      - key: BANK_NAME
+        sync: false
+      - key: SEPAY_WEBHOOK_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: EMAIL_ENABLED
+        value: "false"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
