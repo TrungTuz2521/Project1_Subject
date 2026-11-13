@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Notification } from '../../types/api';
-import { notificationsService } from '../../services/notifications';
+import { NOTIFICATIONS_CHANGED, notificationsService } from '../../services/notifications';
 import { Warning } from '../field-management/ui';
 import '../../styles/matchfind.css';
 
@@ -23,7 +23,7 @@ export function NotificationsPage() {
   async function open(n: Notification) {
     if (!n.is_read) {
       setRows(list => list?.map(x => x.notification_id === n.notification_id ? { ...x, is_read: true } : x) ?? null);
-      try { await notificationsService.markRead(n.notification_id); } catch { /* reading is best effort */ }
+      try { await notificationsService.markRead(n.notification_id); window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED)); } catch { /* reading is best effort */ }
     }
     window.location.hash = target(n).slice(1);
   }
