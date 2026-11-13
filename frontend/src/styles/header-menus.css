@@ -1,0 +1,36 @@
+/* Header bell and account menu, shared by the player and admin shells. Colours follow the green identity. */
+.hm-wrap{position:relative;display:inline-flex}
+
+.hm-bell{position:relative;display:inline-grid;place-items:center;width:38px;height:38px;padding:0;border-radius:50%;flex-shrink:0;text-decoration:none;color:#21513e;border:1px solid #dfe7da;background:#fff;cursor:pointer;transition:background .15s,border-color .15s}
+.hm-bell svg{width:19px;height:19px}
+.hm-bell:hover{background:#eaf3e4;border-color:#c8d8c0}
+.hm-bell.is-active{background:#eaf3e4;border-color:#21513e}
+.hm-badge{position:absolute;top:-5px;right:-6px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:#c2410c;color:#fff;font-size:11px;font-weight:700;line-height:19px;text-align:center;box-shadow:0 0 0 2px #fbfcf8;font-variant-numeric:tabular-nums}
+
+.hm-account{display:inline-flex;align-items:center;gap:9px;height:40px;padding:3px 10px 3px 3px;border:1px solid transparent;border-radius:999px;background:transparent;color:#20372e;cursor:pointer;transition:background .15s,border-color .15s}
+.hm-account:hover,.hm-account.is-open{background:#fff;border-color:#dfe7da}
+.hm-avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#e2e9d9;color:#345440;font-size:12px;font-weight:700;flex-shrink:0}
+.hm-name{font-size:14px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hm-chevron{width:16px;height:16px;color:#6b7a6f;transition:transform .15s}
+.hm-account.is-open .hm-chevron{transform:rotate(180deg)}
+
+.hm-bell:focus-visible,.hm-account:focus-visible,.hm-item:focus-visible{outline:3px solid #90c59a;outline-offset:2px}
+
+.hm-panel{position:absolute;top:calc(100% + 8px);right:0;z-index:50;min-width:210px;padding:6px;background:#fff;border:1px solid #dfe7da;border-radius:12px;box-shadow:0 12px 32px rgba(18,62,51,.14);animation:hm-in .12s ease-out}
+.hm-panel-wide{min-width:280px}
+.hm-panel-title{margin:6px 10px 6px;font-size:12px;font-weight:600;color:#6b7a6f}
+.hm-panel-name{font-size:14px;color:#20372e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}
+.hm-item{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:#20372e;font:inherit;font-size:14px;text-align:left;text-decoration:none;cursor:pointer}
+.hm-item:hover{background:#f1f6ec}
+.hm-item strong{margin-left:auto;font-variant-numeric:tabular-nums}
+.hm-danger{color:#b42318}
+.hm-danger:hover{background:#fdecea}
+.hm-sep{height:1px;background:#edf0e8;margin:4px 6px}
+.hm-empty{margin:4px 10px 10px;font-size:14px;color:#55645a}
+.hm-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.hm-dot.amber{background:#d97706}
+.hm-dot.red{background:#dc2626}
+
+@keyframes hm-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.hm-panel{animation:none}.hm-chevron{transition:none}}
+@media(max-width:760px){.hm-name,.hm-chevron{display:none}.hm-account{padding:3px}}

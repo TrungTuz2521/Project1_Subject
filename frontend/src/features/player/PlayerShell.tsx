@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { UserSelf } from '../../types/api';
+import { NOTIFICATIONS_CHANGED, notificationsService } from '../../services/notifications';
+import { AccountMenu, BellLink, badgeText } from '../shell/HeaderMenus';
 import { VenueContact, useVenue } from './venue';
 import '../../styles/player.css';
 
@@ -23,6 +26,20 @@ const all = groups.flatMap(g => g.items);
 const tabs = ['/dashboard', '/bookings', '/my-bookings', '/matchmaking', '/profile'].map(p => all.find(i => i.path === p)!);
 const teamPaths = ['/teams', '/matchmaking'];
 
+/** Unread in-app notices, refreshed on navigation, every 30 s while the tab is visible, and right after one is read. */
+function useUnreadCount(route: string) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = () => notificationsService.unreadCount(controller.signal).then(setCount).catch(() => { /* a hint only */ });
+    void load();
+    const timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') void load(); }, 30_000);
+    window.addEventListener(NOTIFICATIONS_CHANGED, load);
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener(NOTIFICATIONS_CHANGED, load); };
+  }, [route]);
+  return count;
+}
+
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(-2).map(part => part[0]?.toLocaleUpperCase() ?? '').join('') || 'U';
 }
@@ -39,13 +56,15 @@ export function PlayerShell({ current, route, onLogout, children }: { current: U
   const venue = useVenue();
   const title = all.find(item => item.path === route)?.label ?? 'Trang chủ';
   const activeTab = (path: string) => route === path || (path === '/matchmaking' && teamPaths.includes(route));
+  const unread = useUnreadCount(route);
   return <div className="account-shell player-shell">
     <aside className="account-sidebar">
       <a href="#/dashboard" className="account-brand"><span className="account-brand-mark">F</span><span>{venue?.name ?? 'FOOTBALL'}<small>ĐẶT SÂN TRỰC TUYẾN</small></span></a>
       <nav className="account-nav player-nav" aria-label="Điều hướng chính">{groups.map(group => <div key={group.title} className="player-nav-group">
         <p className="player-nav-title">{group.title}</p>
         {group.items.map(item => <a key={item.path} href={`#${item.path}`} className={route === item.path ? 'account-nav-item active' : 'account-nav-item'} aria-current={route === item.path ? 'page' : undefined}>
-          <span className="account-nav-icon">{item.icon}</span><span>{item.label}</span></a>)}
+          <span className="account-nav-icon">{item.icon}</span><span>{item.label}</span>
+          {item.path === '/notifications' && unread > 0 && <span className="player-nav-badge" aria-label={`${unread} chưa đọc`}>{badgeText(unread)}</span>}</a>)}
       </div>)}</nav>
       <div className="player-side-contact"><VenueContact venue={venue} compact /></div>
     </aside>
@@ -54,9 +73,8 @@ export function PlayerShell({ current, route, onLogout, children }: { current: U
         <div className="account-breadcrumb"><strong>{title}</strong></div>
         <div className="account-user">
           <VenueContact venue={venue} compact />
-          <a className="player-bell" href="#/notifications" aria-label="Thông báo">◔</a>
-          <span className="account-avatar">{initials(current.full_name)}</span><span className="account-user-name">{current.full_name}</span>
-          <button onClick={onLogout}>Đăng xuất</button>
+          <BellLink href="#/notifications" count={unread} active={route === '/notifications'} label="Thông báo" />
+          <AccountMenu name={current.full_name} avatar={initials(current.full_name)} profileHref="#/profile" onLogout={onLogout} />
         </div>
       </header>
       <main className="account-main">{children}<Footer /></main>

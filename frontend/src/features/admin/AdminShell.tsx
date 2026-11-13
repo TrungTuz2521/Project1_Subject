@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { UserSelf } from '../../types/api';
 import { getAdminDashboard } from '../../services/fieldApi';
 import { useNow } from '../field-management/ui';
+import { AccountMenu, BellMenu } from '../shell/HeaderMenus';
 import '../../styles/admin.css';
 
 export type AdminRoute = '/dashboard' | '/admin/bookings' | '/admin/balance' | '/admin/match-requests' | '/admin/revenue' | '/admin/statistics' | '/admin/pitches' | '/profile';
@@ -77,8 +78,14 @@ export function AdminShell({ current, route, onLogout, children }: { current: Us
       <header className="adm-top">
         <div className="adm-crumb"><span>Quản trị</span><strong>{title}</strong></div>
         <div className="adm-clock" aria-label="Giờ hiện tại"><span className="adm-score">{clock.format(now)}</span><small>{day.format(now)}</small></div>
-        <div className="adm-user"><span className="adm-avatar" aria-hidden="true">{current.full_name.trim().charAt(0).toLocaleUpperCase()}</span>
-          <span className="adm-user-name">{current.full_name}</span><button type="button" onClick={onLogout}>Đăng xuất</button></div>
+        <div className="adm-user">
+          <BellMenu label="Việc cần xử lý" empty="Không có việc nào đang chờ." items={[
+            { href: '#/admin/bookings', text: 'Khoản cần hoàn cho khách', count: counts.refunds, tone: 'red' },
+            { href: '#/admin/bookings', text: 'Booking online chờ cọc', count: counts.holds, tone: 'amber' },
+            { href: '#/admin/balance', text: 'Trận đã đá chưa thu đủ', count: counts.unpaid, tone: 'amber' },
+          ]} />
+          <AccountMenu name={current.full_name} avatar={current.full_name.trim().charAt(0).toLocaleUpperCase()} profileHref="#/profile" onLogout={onLogout} />
+        </div>
       </header>
       <main className="adm-main">{children}</main>
     </div>

@@ -1,0 +1,12 @@
+# Secrets live in the platform's settings, never in the image.
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+tests/
+postman/

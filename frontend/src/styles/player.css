@@ -9,7 +9,11 @@
 .player-side-contact .venue-call{color:#eaf3d9;border-color:#3b6655}
 .venue-call{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--pl-line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--pl-green);text-decoration:none;white-space:nowrap}
 .venue-call:hover{background:var(--pl-mint)}
-.player-bell{display:none;width:36px;height:36px;border-radius:50%;place-items:center;text-decoration:none;color:var(--pl-green);border:1px solid var(--pl-line);font-size:16px}
+.player-nav-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#c2410c;color:#fff;font-size:11px;font-weight:700;line-height:20px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* Desktop: sidebar and top bar stay put, only the page content scrolls (the window still scrolls, as in admin). */
+.player-shell .account-sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:flex-start;scrollbar-width:thin;scrollbar-color:#3b6655 transparent}
+.player-shell .account-topbar{position:sticky;top:0;z-index:20;background:rgba(251,252,248,.94);backdrop-filter:blur(6px)}
 .player-footer{margin-top:40px;border-top:1px solid var(--pl-line);padding-top:16px;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--pl-muted)}
 .player-footer strong{color:var(--pl-text)}
 .player-footer a{color:var(--pl-green);font-weight:600}
@@ -19,9 +23,7 @@
 @media(max-width:760px){
   .player-shell .account-sidebar{display:none}
   .player-shell .account-main{padding-bottom:90px}
-  .player-shell .account-topbar{position:sticky;top:0;z-index:20}
   .player-shell .account-user .venue-call span:last-child{display:none}
-  .player-bell{display:inline-grid}
   .player-tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-top:1px solid var(--pl-line);padding:6px 4px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(18,62,51,.06)}
   .player-tabbar a{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;color:#6b7a6f;padding:4px 2px;border-radius:10px;min-height:48px;justify-content:center}
   .player-tabbar a span{font-size:18px;line-height:1}

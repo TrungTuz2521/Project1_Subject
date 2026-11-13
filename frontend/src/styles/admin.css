@@ -50,10 +50,6 @@
 .adm-score{font-family:var(--score);font-weight:600;font-size:24px;letter-spacing:.5px;color:var(--text);font-variant-numeric:tabular-nums}
 .adm-clock small{font-size:13px}
 .adm-user{display:flex;align-items:center;gap:10px}
-.adm-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-strong);font-weight:700;font-size:14px}
-.adm-user-name{font-size:14px;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.adm-user button{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:7px 12px;font-size:13px}
-.adm-user button:hover{background:var(--line-soft)}
 .adm-main{width:100%;max-width:1440px;margin:0 auto;padding:clamp(18px,2.6vw,30px) clamp(16px,3vw,36px) 40px}
 
 /* ---- Shared page pieces (huy-* components rendered inside the console) ---- */
@@ -226,7 +222,6 @@ a.adm-board-cell:hover{border-color:var(--brand-line);box-shadow:0 2px 8px rgba(
   .adm-group{margin:0;display:flex;gap:4px}
   .adm-link{white-space:nowrap}
   .adm-top{position:static;height:auto;min-height:56px;flex-wrap:wrap;padding:10px 16px}
-  .adm-user-name{display:none}
   .adm-create-grid{grid-template-columns:1fr}
   .adm-create-grid .adm-step+.adm-step{border-left:0;border-top:1px solid var(--line-soft)}
 }
