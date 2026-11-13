@@ -39,7 +39,7 @@ def create_app(config=None):
     from app.infrastructure.retry import retry_conflicts
     # These endpoints perform only database work; never wrap external payment orchestration.
     for endpoint in ('register', 'me', 'team_collection', 'team_item', 'create_request',
-                     'request_item', 'read_notification'):
+                     'request_item', 'read_notification', 'read_all_notifications'):
         key = 'api.' + endpoint
         app.view_functions[key] = retry_conflicts(app.view_functions[key])
     CORS(app, resources={r'/api/v1/*': {'origins': app.config['CORS_ORIGINS']}},

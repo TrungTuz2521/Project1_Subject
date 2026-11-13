@@ -12,6 +12,7 @@ const target = (n: Notification) => MATCH_TYPES.has(n.notification_type) && (n.m
 export function NotificationsPage() {
   const [rows, setRows] = useState<Notification[] | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     const load = () => notificationsService.list(1, undefined, controller.signal).then(r => { setRows(r.data); setError(null); })
@@ -27,9 +28,19 @@ export function NotificationsPage() {
     }
     window.location.hash = target(n).slice(1);
   }
+  async function readAll() {
+    if (busy) return;
+    setBusy(true); setError(null);
+    try {
+      await notificationsService.markAllRead();
+      setRows(list => list?.map(x => (x.is_read ? x : { ...x, is_read: true })) ?? null);
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  }
   const unread = (rows ?? []).filter(n => !n.is_read).length;
   return <section className="mf-page">
-    <header className="mf-head"><div><h1>Thông báo</h1><p>{unread ? `${unread} thông báo chưa đọc.` : 'Bạn đã đọc hết thông báo.'} Các thông báo quan trọng cũng được gửi qua email.</p></div></header>
+    <header className="mf-head"><div><h1>Thông báo</h1><p>{unread ? `${unread} thông báo chưa đọc.` : 'Bạn đã đọc hết thông báo.'} Các thông báo quan trọng cũng được gửi qua email.</p></div>
+      {unread > 0 && <button type="button" className="mf-btn mf-btn-light" disabled={busy} onClick={() => void readAll()}>{busy ? 'Đang cập nhật…' : 'Đánh dấu đã đọc hết'}</button>}</header>
     <Warning error={error} />
     {rows === null ? <p className="mf-muted">Đang tải…</p> : rows.length === 0 ? <div className="mf-empty"><p>Chưa có thông báo nào.</p></div>
       : <ul className="mf-inbox">{rows.map(n => <li key={n.notification_id}>

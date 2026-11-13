@@ -268,6 +268,7 @@ pitch_id có thể null để AI chọn sân trong cụm, nhưng pitch_type và 
 | POST /matches/{match_id}/cancel | Đại diện/Admin | reason | Match + refund_summary |
 | GET /notifications | Me | is_read?, page? | Notification[] |
 | PATCH /notifications/{notification_id}/read | Chủ thông báo | — | Notification |
+| PATCH /notifications/read-all | Me | — | { updated: số thông báo IN_APP chưa đọc vừa được đánh dấu đã đọc } |
 
 Worker gọi service nội bộ để scan; không mở endpoint scan công khai. Response lặp cùng decision trả bản ghi hiện tại, không tạo thêm booking; đổi decision đã chốt trả 409 ALREADY_RESPONDED.
 

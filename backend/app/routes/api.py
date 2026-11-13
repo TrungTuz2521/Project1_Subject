@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.middleware import authenticated
 from app.contracts.errors import DomainError, invalid
@@ -320,6 +320,18 @@ def notifications():
 
 def notification_data(n):
     return columns(n, 'notification_id notification_type title content is_read created_at read_at proposal_id match_id')
+
+@api.patch('/notifications/read-all')
+@authenticated
+def read_all_notifications():
+    """Mark every unread in-app notice of the caller as read; answers how many changed."""
+    with UnitOfWork() as ctx:
+        auth.require_active_actor(ctx, g.actor)
+        result = ctx.session.execute(update(Notification).where(
+            Notification.user_id == g.actor.user_id, Notification.delivery_channel == 'IN_APP', Notification.is_read.is_(False))
+            .values(is_read=True, read_at=ctx.now()).execution_options(synchronize_session=False))
+        updated = result.rowcount
+    return response({'updated': updated})
 
 @api.patch('/notifications/<int:notification_id>/read')
 @authenticated

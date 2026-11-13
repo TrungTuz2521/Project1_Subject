@@ -112,6 +112,18 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.client.patch(f'/api/v1/notifications/{nid}/read', headers=self.b).status_code, 404)
         self.assertEqual(self.client.patch(f'/api/v1/notifications/{nid}/read', headers=self.a).status_code, 200)
 
+    def test_read_all_notifications_touches_only_own_unread(self):
+        with UnitOfWork() as ctx:
+            for _ in range(3):
+                ctx.session.add(Notification(user_id=self.users[0], notification_type='POST_EXPIRED', title='t', content='c'))
+            ctx.session.add(Notification(user_id=self.users[1], notification_type='POST_EXPIRED', title='t', content='c'))
+        unread = lambda h: self.client.get('/api/v1/notifications?is_read=false', headers=h).json['meta']['total']
+        r = self.client.patch('/api/v1/notifications/read-all', headers=self.a)
+        self.assertEqual((r.status_code, r.json['data']['updated']), (200, 3))
+        self.assertEqual((unread(self.a), unread(self.b)), (0, 1))
+        self.assertEqual(self.client.patch('/api/v1/notifications/read-all', headers=self.a).json['data']['updated'], 0)
+        self.assertEqual(self.client.patch('/api/v1/notifications/read-all').status_code, 401)
+
     def test_scan_requires_admin(self):
         self.assertEqual(self.client.post('/api/v1/matchmaking/scan', headers=self.a, json={}).status_code, 403)
 
