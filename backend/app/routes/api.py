@@ -1,12 +1,12 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.middleware import authenticated
 from app.contracts.errors import DomainError, invalid
-from app.models import User, Team, TeamMember, MatchPost, MatchParticipant, MatchProposal, ProposalConfirmation, Match, Notification
-from app.services import auth_service as auth, team_service as teams, post_service as posts, matchmaking_service as mm, match_service
+from app.models import User, Team, MatchPost, Match, Notification
+from app.services import auth_service as auth, team_service as teams, match_service, match_requests as requests_service
 from app.utils import validation as v
-from app.utils.serialization import encode, user_self, post_data, columns
+from app.utils.serialization import encode, user_self, columns
 from app.utils.time import utcnow
 
 api = Blueprint('api', __name__)
@@ -28,11 +28,21 @@ def page_args():
     except ValueError:
         invalid('page', 'page >= 1, page_size từ 1 đến 100.')
 
-def paginated(ctx, query, mapper):
+def paginated(ctx, query, mapper, preload=None):
+    """preload(rows) -> mapper lets a page fetch related rows in one query instead of one per item."""
     page, size = page_args()
     total = ctx.session.scalar(select(func.count()).select_from(query.subquery()))
     rows = ctx.session.scalars(query.offset((page-1)*size).limit(size)).all()
+    if preload is not None:
+        mapper = preload(rows)
     return response([mapper(row) for row in rows], page=page, page_size=size, total=total)
+
+MATCH_STATUSES = ('SUGGESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED')
+
+def status_arg(values):
+    """A mistyped filter is a 422, not a silently empty list."""
+    value = request.args.get('status')
+    return v.enum(value, 'status', values) if value else None
 
 def found(ctx, model, pk):
     result = ctx.session.get(model, pk)
@@ -58,12 +68,74 @@ def login():
         result = auth.login(ctx, **data)
     return response(result)
 
+@api.post('/auth/password/forgot')
+def forgot_password():
+    """Always the same answer, so the form never reveals which emails have an account."""
+    data = body(('email',), ('email',))
+    with UnitOfWork() as ctx:
+        user = auth.reset_candidate(ctx, data['email'])
+        mail = (user.email, user.full_name, auth.password_reset_token(ctx, user)) if user else None
+    if mail and current_app.config.get('EMAIL_ENABLED'):
+        from urllib.parse import quote
+        from app.services.email_service import send_password_reset
+        link = f"{current_app.config['PUBLIC_WEB_URL'].rstrip('/')}/#/reset-password?token={quote(mail[2])}"
+        try:
+            send_password_reset(mail[0], mail[1], link, auth.RESET_MINUTES)
+        except Exception as error:  # Never reveal the account through a different answer.
+            current_app.logger.error('Password reset email failed (%s)', type(error).__name__)
+    elif mail:
+        current_app.logger.warning('Password reset requested but EMAIL_ENABLED is off')
+    return response({'sent': True, 'message': 'Nếu email đã đăng ký, bạn sẽ nhận được link đặt lại mật khẩu trong vài phút.'})
+
+@api.post('/auth/password/reset')
+def reset_password():
+    data = body(('token', 'new_password', 'confirm_password'), ('token', 'new_password', 'confirm_password'))
+    with UnitOfWork() as ctx:
+        result = auth.reset_password(ctx, data['token'], data['new_password'], data['confirm_password'])
+    return response(result)
+
+@api.post('/auth/refresh')
+@authenticated
+def refresh_session():
+    """Keeps an active user signed in. Needs a still-valid token whose password fingerprint matches, so a
+    password change or a locked account ends the session here too."""
+    with UnitOfWork() as ctx:
+        user = auth.require_active_actor(ctx, g.actor)
+        result = auth.issue_session(ctx, user)
+    return response(result)
+
+@api.post('/auth/google/challenge')
+def google_challenge():
+    from app.services.google_auth_service import challenge, require_web_origin
+    require_web_origin()
+    return response(challenge())
+
+@api.post('/auth/google')
+def google_login():
+    from app.services.google_auth_service import require_web_origin, verify_credential, sign_in
+    require_web_origin()
+    data = body(('credential', 'challenge', 'password'), ('credential', 'challenge'))
+    # Fetch Google's signing certificates before opening a database transaction.
+    identity = verify_credential(data['credential'], data['challenge'])
+    with UnitOfWork() as ctx:
+        result = sign_in(ctx, identity, data.get('password'))
+    return response(result)
+
 @api.route('/users/me', methods=['GET', 'PATCH'])
 @authenticated
 def me():
     with UnitOfWork() as ctx:
         user = auth.require_active_actor(ctx, g.actor)
         result = user_self(user) if request.method == 'GET' else auth.update_profile(ctx, g.actor, body())
+    return response(result)
+
+@api.post('/users/me/password')
+@authenticated
+def change_password():
+    data = body(('current_password', 'new_password', 'confirm_password'),
+                ('current_password', 'new_password', 'confirm_password'))
+    with UnitOfWork() as ctx:
+        result = auth.change_password(ctx, g.actor, **data)
     return response(result)
 
 @api.route('/teams', methods=['GET', 'POST'])
@@ -76,8 +148,7 @@ def team_collection():
         else:
             if request.args.get('my', 'true') != 'true':
                 invalid('my', 'Endpoint danh sách chỉ trả các đội của bạn.')
-            query = select(Team).join(TeamMember, TeamMember.team_id == Team.team_id).where(
-                TeamMember.user_id == g.actor.user_id, TeamMember.status == 'ACTIVE', Team.status == 'ACTIVE').order_by(Team.team_id)
+            query = teams.captained(g.actor.user_id).order_by(Team.team_id)
             return paginated(ctx, query, lambda t: teams.team_data(ctx, t))
     return response(result, 201)
 
@@ -92,232 +163,92 @@ def team_item(team_id):
             team.team_name = v.text(body(('team_name',), ('team_name',))['team_name'], 'team_name', 100)
         else:
             team = found(ctx, Team, team_id)
-            if not teams.member(ctx, team_id, g.actor.user_id) and g.actor.role != 'ADMIN':
+            if g.actor.role != 'ADMIN' and ctx.session.scalar(teams.captained(g.actor.user_id).where(Team.team_id == team_id)) is None:
                 raise DomainError('NOT_FOUND', 'Không tìm thấy đội.', 404)
-        result = teams.team_data(ctx, team, detail=True)
+        result = teams.team_data(ctx, team)
     return response(result)
 
-@api.delete('/teams/<int:team_id>/members/me')
-@api.delete('/teams/<int:team_id>/members/<int:user_id>')
+# ---- Match requests: players state when and how they can play; the system pairs them ----
+
+REQUEST_STATUSES = ('OPEN', 'MATCHED', 'EXPIRED', 'CANCELLED')
+
+@api.get('/match-requests/options')
 @authenticated
-def remove_member(team_id, user_id=None):
+def request_options():
     with UnitOfWork() as ctx:
         auth.require_player(ctx, g.actor)
-        reason = body(('reason',), ('reason',))['reason'] if user_id is not None else None
-        result = teams.remove_member(ctx, team_id, g.actor, user_id or g.actor.user_id, reason)
-    return response(result)
+        return response(requests_service.options(ctx, g.actor))
 
-@api.route('/match-posts', methods=['GET', 'POST'])
-def post_collection():
-    if request.method == 'POST':
-        return create_post()
-    with UnitOfWork() as ctx:
-        query = select(MatchPost).where(MatchPost.status == 'OPEN', MatchPost.expiry_time > ctx.now())
-        for key, choices in [('post_type', ('FIND_OPPONENT', 'RECRUIT_MEMBERS', 'LOOK_FOR_TEAM', 'RANDOM_SQUAD')),
-                             ('pitch_type', ('PITCH_5', 'PITCH_7')), ('skill_level', ('BEGINNER', 'AMATEUR', 'INTERMEDIATE', 'SEMI_PRO', 'PRO'))]:
-            if key in request.args:
-                query = query.where(getattr(MatchPost, key) == v.enum(request.args[key], key, choices))
-        if request.args.get('from'):
-            query = query.where(MatchPost.match_time >= v.timestamp(request.args['from'], 'from'))
-        if request.args.get('to'):
-            query = query.where(MatchPost.match_time < v.timestamp(request.args['to'], 'to'))
-        return paginated(ctx, query.order_by(MatchPost.created_at, MatchPost.post_id), post_data)
-
+@api.route('/match-requests', methods=['POST'])
 @authenticated
-def create_post():
+def create_request():
     with UnitOfWork() as ctx:
         auth.require_player(ctx, g.actor)
-        post = posts.create_post(ctx, g.actor, body())
-        result = post_data(post, True)
-    return response(result, 201)
+        post = requests_service.create_request(ctx, g.actor, body())
+        post_id = post.post_id
+    # Look for a partner straight away; the scheduler keeps scanning afterwards.
+    try:
+        requests_service.scan(post_id)
+    except Exception as error:  # A failed scan never fails the request itself.
+        current_app.logger.warning('Immediate scan failed (%s)', type(error).__name__)
+    with UnitOfWork() as ctx:
+        return response(requests_service.request_data(ctx, ctx.session.get(MatchPost, post_id)), 201)
 
-@api.get('/match-posts/my')
+@api.get('/match-requests/my')
 @authenticated
-def my_posts():
+def my_requests():
     with UnitOfWork() as ctx:
         auth.require_active_actor(ctx, g.actor)
-        query = select(MatchPost).where(MatchPost.creator_id == g.actor.user_id)
-        if request.args.get('status'):
-            query = query.where(MatchPost.status == request.args['status'])
-        return paginated(ctx, query.order_by(MatchPost.post_id.desc()), lambda p: post_data(p, True))
+        query = select(MatchPost).where(MatchPost.creator_id == g.actor.user_id, MatchPost.post_type.in_(requests_service.TYPES))
+        status = status_arg(REQUEST_STATUSES)
+        if status:
+            query = query.where(MatchPost.status == status)
+        return paginated(ctx, query.order_by(MatchPost.post_id.desc()), lambda p: requests_service.request_data(ctx, p))
 
-@api.route('/match-posts/<int:post_id>', methods=['GET', 'PATCH'])
-def post_item(post_id):
+@api.route('/match-requests/<int:post_id>', methods=['GET', 'PATCH'])
+@authenticated
+def request_item(post_id):
+    with UnitOfWork() as ctx:
+        auth.require_player(ctx, g.actor) if request.method == 'PATCH' else auth.require_active_actor(ctx, g.actor)
+        post = ctx.session.get(MatchPost, post_id)
+        if post is None or post.post_type not in requests_service.TYPES or (post.creator_id != g.actor.user_id and g.actor.role != 'ADMIN'):
+            raise DomainError('NOT_FOUND', 'Không tìm thấy yêu cầu.', 404)
+        if request.method == 'PATCH':
+            ctx.locks.lock(Team, [post.team_id])
+            post = ctx.locks.lock(MatchPost, [post_id])[0]
+            requests_service.edit_request(ctx, g.actor, post, body())
+        result = requests_service.request_data(ctx, post)
     if request.method == 'PATCH':
-        return edit_post(post_id)
-    with UnitOfWork() as ctx:
-        post = found(ctx, MatchPost, post_id)
-        return response(post_data(post, True))
-
-@authenticated
-def edit_post(post_id):
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        post = found(ctx, MatchPost, post_id)
-        ctx.locks.users(posts.party_users(ctx, post) | {g.actor.user_id})
-        ctx.locks.lock(Team, [post.team_id])
-        ctx.locks.lock(MatchPost, [post_id])
-        result = post_data(posts.edit_post(ctx, g.actor, post, body()), True)
+        requests_service.scan(post_id)
+        with UnitOfWork() as ctx:
+            result = requests_service.request_data(ctx, ctx.session.get(MatchPost, post_id))
     return response(result)
 
-@api.post('/match-posts/<int:post_id>/cancel')
+@api.post('/match-requests/<int:post_id>/cancel')
 @authenticated
-def cancel_post(post_id):
-    v.text(body(('reason',), ('reason',))['reason'], 'reason', 255)
+def cancel_request(post_id):
     with UnitOfWork() as ctx:
         auth.require_player(ctx, g.actor)
-        post = found(ctx, MatchPost, post_id)
-        ctx.locks.lock(Team, [post.team_id])
-        ctx.locks.lock(MatchPost, [post_id])
-        if post.creator_id != g.actor.user_id:
-            raise DomainError('FORBIDDEN', 'Chỉ chủ bài được hủy.', 403)
-        if post.booking_id or post.status == 'MATCHED':
-            raise DomainError('STATE_CONFLICT', 'Kèo có booking phải đi qua luồng hủy trận.')
-        if post.status == 'LOCKED':
-            raise DomainError('STATE_CONFLICT', 'Hãy từ chối đề xuất trước khi hủy bài.')
-        post.status = 'CANCELLED'
-        result = post_data(post, True)
-    return response(result)
+    requests_service.cancel_request(g.actor, post_id)
+    with UnitOfWork() as ctx:
+        return response(requests_service.request_data(ctx, ctx.session.get(MatchPost, post_id)))
 
-@api.post('/teams/<int:team_id>/join-requests')
+@api.get('/admin/match-requests')
 @authenticated
-def request_team_join(team_id):
+def admin_requests():
     with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        options = list(ctx.session.scalars(select(MatchPost).where(MatchPost.team_id == team_id,
-            MatchPost.post_type == 'RECRUIT_MEMBERS', MatchPost.status == 'OPEN', MatchPost.expiry_time > ctx.now())))
-        if len(options) != 1:
-            raise DomainError('RECRUITMENT_NOT_OPEN', 'Cần đúng một bài tuyển mở; nếu nhiều bài hãy chọn bài cụ thể.')
-        post_id = options[0].post_id
-    return create_participant(post_id)
-
-@api.route('/match-posts/<int:post_id>/participants', methods=['GET', 'POST'])
-@authenticated
-def participants(post_id):
-    if request.method == 'POST':
-        return create_participant(post_id)
-    with UnitOfWork() as ctx:
-        auth.require_active_actor(ctx, g.actor)
-        post = found(ctx, MatchPost, post_id)
-        if post.creator_id != g.actor.user_id and g.actor.role != 'ADMIN':
-            raise DomainError('NOT_FOUND', 'Không tìm thấy bài.', 404)
-        return paginated(ctx, select(MatchParticipant).where(MatchParticipant.post_id == post_id).order_by(MatchParticipant.participant_id),
-            lambda p: columns(p, 'participant_id post_id user_id status joined_at'))
-
-def create_participant(post_id):
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        post = found(ctx, MatchPost, post_id)
-        ctx.locks.users(posts.party_users(ctx, post) | {g.actor.user_id})
-        ctx.locks.lock(Team, [post.team_id])
-        ctx.locks.lock(MatchPost, [post_id])
-        if post.post_type != 'RECRUIT_MEMBERS' or not post.team_id or not post.required_players:
-            raise DomainError('RECRUITMENT_NOT_OPEN', 'Bài không tuyển thành viên.')
-        if teams.member(ctx, post.team_id, g.actor.user_id):
-            raise DomainError('STATE_CONFLICT', 'Đã là thành viên đội.')
-        posts.assert_available(ctx, {g.actor.user_id}, post.match_time, post.end_time)
-        proposal = mm.create_proposal(ctx, post, candidate_user_id=g.actor.user_id)
-        participant = ctx.session.scalar(select(MatchParticipant).where(MatchParticipant.post_id == post_id, MatchParticipant.user_id == g.actor.user_id))
-        if not participant:
-            participant = MatchParticipant(post_id=post_id, user_id=g.actor.user_id)
-            ctx.session.add(participant)
-        participant.status = 'PENDING'
-        ctx.session.flush()
-        result = columns(participant, 'participant_id post_id user_id status joined_at')
-        result['proposal_id'] = proposal.proposal_id
-    return response(result, 201)
-
-@api.delete('/match-posts/<int:post_id>/participants/me')
-@authenticated
-def withdraw_participant(post_id):
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        participant = ctx.session.scalar(select(MatchParticipant).where(MatchParticipant.post_id == post_id,
-            MatchParticipant.user_id == g.actor.user_id))
-        if not participant:
-            raise DomainError('NOT_FOUND', 'Không tìm thấy đăng ký.', 404)
-        if participant.status == 'ACCEPTED':
-            raise DomainError('STATE_CONFLICT', 'Đã vào đội; dùng chức năng rời đội.')
-        proposal = ctx.session.scalar(select(MatchProposal).where(MatchProposal.source_post_id == post_id,
-            MatchProposal.candidate_user_id == g.actor.user_id, MatchProposal.status == 'PENDING_CONFIRMATION'))
-        pid = proposal.proposal_id if proposal else None
-    if pid:
-        result = respond_result(pid, 'DECLINED')
-        if result[1] != 200:
-            return result
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        participant = ctx.session.scalar(select(MatchParticipant).where(MatchParticipant.post_id == post_id,
-            MatchParticipant.user_id == g.actor.user_id).with_for_update())
-        if participant.status == 'ACCEPTED':
-            raise DomainError('STATE_CONFLICT', 'Đã vào đội; dùng chức năng rời đội.')
-        participant.status = 'CANCELLED'
-        result = columns(participant, 'participant_id post_id user_id status joined_at')
-    return response(result)
-
-@api.patch('/teams/<int:team_id>/join-requests/<int:post_id>/respond')
-@authenticated
-def respond_join(team_id, post_id):
-    data = body(('decision',), ('decision',))
-    decision = v.enum(data['decision'], 'decision', ('ACCEPTED', 'DECLINED'))
-    with UnitOfWork() as ctx:
-        auth.require_player(ctx, g.actor)
-        teams.captain(ctx, team_id, g.actor)
-        post = found(ctx, MatchPost, post_id)
-        if post.team_id != team_id:
-            raise DomainError('NOT_FOUND', 'Không tìm thấy bài.', 404)
-        proposal = ctx.session.scalar(select(MatchProposal).where(MatchProposal.source_post_id == post_id,
-            MatchProposal.candidate_user_id.is_not(None)).order_by(MatchProposal.proposal_id.desc()))
-        if not proposal:
-            raise DomainError('STATE_CONFLICT', 'Không có đề xuất đang chờ.')
-        pid = proposal.proposal_id
-    from app.use_cases.respond_proposal import respond_proposal
-    outcome = respond_proposal(pid, g.actor, decision)
-    if outcome.outcome != 'OK':
-        return jsonify(encode({'error': outcome.error})), outcome.http_status
-    with UnitOfWork() as ctx:
-        proposal = ctx.session.get(MatchProposal, pid)
-        participant = ctx.session.scalar(select(MatchParticipant).where(MatchParticipant.post_id == post_id,
-            MatchParticipant.user_id == proposal.candidate_user_id))
-        if not participant:
-            raise DomainError('STATE_CONFLICT', 'Đề xuất nhóm cần phản hồi qua endpoint proposal.')
-        result = columns(participant, 'participant_id post_id user_id status joined_at')
-        result['proposal_id'] = pid
-    return response(result)
-
-@api.post('/match-proposals/<int:proposal_id>/respond')
-@authenticated
-def proposal_respond(proposal_id):
-    decision = v.enum(body(('decision',), ('decision',))['decision'], 'decision', ('ACCEPTED', 'DECLINED'))
-    return respond_result(proposal_id, decision)
-
-def respond_result(proposal_id, decision):
-    from app.use_cases.respond_proposal import respond_proposal
-    result = respond_proposal(proposal_id, g.actor, decision)
-    if result.outcome != 'OK':
-        return jsonify(encode({'error': result.error})), result.http_status
-    return response(result.data)
-
-@api.get('/match-proposals')
-@authenticated
-def proposal_collection():
-    with UnitOfWork() as ctx:
-        auth.require_active_actor(ctx, g.actor)
-        query = select(MatchProposal).join(ProposalConfirmation).where(ProposalConfirmation.user_id == g.actor.user_id)
-        if request.args.get('status'):
-            query = query.where(MatchProposal.status == request.args['status'])
-        return paginated(ctx, query.order_by(MatchProposal.proposal_id.desc()), lambda p: mm.proposal_data(ctx, p))
-
-@api.get('/match-proposals/<int:proposal_id>')
-@authenticated
-def proposal_item(proposal_id):
-    with UnitOfWork() as ctx:
-        auth.require_active_actor(ctx, g.actor)
-        proposal = found(ctx, MatchProposal, proposal_id)
-        if not ctx.session.scalar(select(ProposalConfirmation.confirmation_id).where(
-            ProposalConfirmation.proposal_id == proposal_id, ProposalConfirmation.user_id == g.actor.user_id)):
-            raise DomainError('NOT_FOUND', 'Không tìm thấy đề xuất.', 404)
-        return response(mm.proposal_data(ctx, proposal))
+        auth.require_admin(ctx, g.actor)
+        query = select(MatchPost).where(MatchPost.post_type.in_(requests_service.TYPES))
+        status = status_arg(REQUEST_STATUSES)
+        if status:
+            query = query.where(MatchPost.status == status)
+        if request.args.get('request_type'):
+            query = query.where(MatchPost.post_type == v.enum(request.args['request_type'], 'request_type', requests_service.TYPES))
+        def row(post):
+            data = requests_service.request_data(ctx, post)
+            data['requester'] = columns(ctx.session.get(User, post.creator_id), 'user_id full_name phone')
+            return data
+        return paginated(ctx, query.order_by(MatchPost.post_id.desc()), row)
 
 @api.post('/matchmaking/scan')
 @authenticated
@@ -327,20 +258,19 @@ def scan():
         v.integer(data['post_id'], 'post_id')
     with UnitOfWork() as ctx:
         auth.require_admin(ctx, g.actor)
-    from app.jobs.commands import scan_open_posts
-    return response(scan_open_posts(data.get('post_id')))
+    return response(requests_service.scan(data.get('post_id')))
 
 @api.get('/matches')
 @authenticated
 def matches():
     with UnitOfWork() as ctx:
         auth.require_active_actor(ctx, g.actor)
-        # Membership filter is applied before pagination, without exposing strangers' matches.
-        post_ids = select(MatchPost.post_id).where(or_(MatchPost.creator_id == g.actor.user_id,
-            MatchPost.team_id.in_(select(TeamMember.team_id).where(TeamMember.user_id == g.actor.user_id, TeamMember.status == 'ACTIVE'))))
+        # Only the representatives' own games, filtered before pagination.
+        post_ids = select(MatchPost.post_id).where(MatchPost.creator_id == g.actor.user_id)
         query = select(Match).where(or_(Match.post_id.in_(post_ids), Match.opponent_post_id.in_(post_ids)))
-        if request.args.get('status'):
-            query = query.where(Match.status == request.args['status'])
+        status = status_arg(MATCH_STATUSES)
+        if status:
+            query = query.where(Match.status == status)
         return paginated(ctx, query.order_by(Match.match_id.desc()), match_service.match_data)
 
 @api.get('/matches/<int:match_id>')
@@ -354,16 +284,15 @@ def match_item(match_id):
             raise DomainError('NOT_FOUND', 'Không tìm thấy trận.', 404)
         match_posts = [ctx.session.get(MatchPost, pid) for pid in (match.post_id, match.opponent_post_id) if pid]
         if request.path.endswith('/contacts'):
-            if match.status != 'CONFIRMED' or g.actor.user_id not in {p.creator_id for p in match_posts}:
-                raise DomainError('FORBIDDEN', 'Chỉ đại diện được xem liên hệ khi trận CONFIRMED.', 403)
+            if match.status not in ('CONFIRMED', 'COMPLETED') or g.actor.user_id not in {p.creator_id for p in match_posts}:
+                raise DomainError('FORBIDDEN', 'Chỉ đại diện được xem liên hệ khi trận đã xác nhận.', 403)
             return response({'contacts': [columns(ctx.session.get(User, p.creator_id), 'user_id full_name phone email') for p in match_posts]})
         result = match_service.match_data(match)
         result['end_time'] = match_posts[0].end_time
         result['teams'] = [teams.team_data(ctx, ctx.session.get(Team, p.team_id)) for p in match_posts if p.team_id]
-        result['proposal'] = mm.proposal_data(ctx, ctx.session.get(MatchProposal, match.proposal_id)) if match.proposal_id else None
-        # Tú supplies a privacy-filtered booking view in the same context.
-        reader = current_app.extensions.get('booking_reader')
-        result['booking'] = reader(ctx, booking_id=match.booking_id, actor=g.actor) if reader and match.booking_id else None
+        # Privacy-filtered: a representative sees the other side's deposit progress, not the amount they paid.
+        from app.services.booking_service import read_for_actor
+        result['booking'] = read_for_actor(ctx, booking_id=match.booking_id, actor=g.actor) if match.booking_id else None
         return response(result)
 
 @api.post('/matches/<int:match_id>/cancel')
@@ -376,9 +305,7 @@ def cancel_match(match_id):
         parties = [ctx.session.get(MatchPost, pid).creator_id for pid in (match.post_id, match.opponent_post_id) if pid]
         if g.actor.role != 'ADMIN' and g.actor.user_id not in parties:
             raise DomainError('NOT_FOUND', 'Không tìm thấy trận.', 404)
-    cancel = current_app.extensions.get('cancel_match')
-    if not cancel:
-        raise DomainError('BOOKING_SERVICE_UNAVAILABLE', 'Chưa tích hợp luồng hủy/hoàn của Tú.', 503)
+    from app.use_cases.cancel_booking import cancel_match as cancel
     return response(cancel(g.actor, match_id=match_id, reason=reason))
 
 @api.get('/notifications')
@@ -393,6 +320,18 @@ def notifications():
 
 def notification_data(n):
     return columns(n, 'notification_id notification_type title content is_read created_at read_at proposal_id match_id')
+
+@api.patch('/notifications/read-all')
+@authenticated
+def read_all_notifications():
+    """Mark every unread in-app notice of the caller as read; answers how many changed."""
+    with UnitOfWork() as ctx:
+        auth.require_active_actor(ctx, g.actor)
+        result = ctx.session.execute(update(Notification).where(
+            Notification.user_id == g.actor.user_id, Notification.delivery_channel == 'IN_APP', Notification.is_read.is_(False))
+            .values(is_read=True, read_at=ctx.now()).execution_options(synchronize_session=False))
+        updated = result.rowcount
+    return response({'updated': updated})
 
 @api.patch('/notifications/<int:notification_id>/read')
 @authenticated

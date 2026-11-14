@@ -1,150 +1,89 @@
-# Bộ frontend dùng chung
+# Frontend
 
-React + TypeScript + Vite cho hệ thống đặt sân bóng, ghép đội và tìm trận. Đã tích hợp module **tài khoản và khung ứng dụng** theo `docs/api/API_MODELS_CONTRACT_PROJECT1.md`: đăng nhập/đăng ký, hồ sơ GET/PATCH, điều hướng theo hash, đăng xuất, phiên access token trong bộ nhớ tối đa 60 phút và trở về đăng nhập khi token hết hạn/được API trả 401. Phân hệ **Quản lý đội bóng & Ghép trận** được triển khai theo module: quản lý đội/thành viên, bài đăng, đề xuất, xác nhận hai phía, thông báo và lịch thi đấu. Giao diện kế thừa shell, CSS, API Client, session và DTO hiện tại.
+React + TypeScript + Vite cho hệ thống đặt sân bóng và tìm kèo. Frontend luôn gọi backend Flask; không có chế độ dữ liệu giả.
 
 ## Chạy trên máy
 
-Cần Node.js 24 LTS (hoặc bản Node tương thích với phiên bản Vite trong `package.json`) và npm. Mở Terminal trong thư mục `frontend`:
+Cần Node.js 24 và npm. Chạy backend trước (xem [backend/README.md](../backend/README.md)), rồi trong thư mục `frontend`:
 
 ```powershell
+copy .env.example .env.local   # lần đầu
 npm ci
 npm run dev
 ```
 
-Mở URL terminal hiển thị, thường là http://localhost:5173. Chế độ dev mặc định dùng mock, không cần backend hoặc TiDB. Tại màn hình đăng nhập, dùng **Đăng nhập nhanh bằng tài khoản mẫu** (`demo@example.test` / `mock-only`) hoặc **Thử tài khoản đội trưởng mẫu** (`captain@example.test` / `mock-only`). Có thể đăng ký tài khoản demo mới để thử vai trò ứng viên. Mock hỗ trợ nhiều session cùng lúc để kiểm tra xác nhận của hai người dùng. Dữ liệu mock chỉ lưu trong bộ nhớ, được đặt lại khi tải lại trang; cần đăng nhập lại sau reload.
+Mở http://localhost:5173. Sửa `.env.local` thì khởi động lại Vite.
+
+| Biến | Ý nghĩa |
+| --- | --- |
+| `VITE_API_BASE_URL` | Địa chỉ API, ví dụ `http://localhost:5000/api/v1` |
+| `VITE_GOOGLE_CLIENT_ID` | Client ID Google, trùng `GOOGLE_CLIENT_ID` của backend; để trống thì ẩn nút Google |
+| `VITE_DEMO_DEPOSIT` | `true` hiện nút xác nhận cọc demo (backend cũng phải bật `DEMO_PAYMENT_ENABLED`); production để `false` |
+
+Mọi biến `VITE_*` lộ ra trình duyệt: không đặt mật khẩu database, khóa SePay hay thông tin ngân hàng ở đây.
+
+Kiểm tra trước khi đẩy code (CI chạy cùng hai lệnh này):
 
 ```powershell
 npm test
 npm run build
 ```
 
-Build production luôn tắt mock, kể cả khi VITE_USE_MOCKS=true. `npm run preview` kiểm tra build production, vì vậy cần backend thật; dùng `npm run dev` để xem mẫu.
+## Màn hình
 
-## Chuyển sang Flask thật
+| Đường dẫn | Ai dùng | Nội dung |
+| --- | --- | --- |
+| `#/bookings` | Mọi người | Xem sân, giờ trống và giá; đăng nhập để giữ sân |
+| `#/my-bookings` | Người chơi | Lịch đã đặt, đóng cọc bằng QR (SePay), hủy |
+| `#/matchmaking` | Người chơi | Tìm kèo: gửi yêu cầu tìm đối / tìm thêm người / đá ké, xem kết quả ghép |
+| `#/teams` | Người chơi | Tạo và đổi tên đội. Đội chỉ có tên và đội trưởng; số người đi đá khai báo khi tìm đối |
+| `#/notifications` | Người chơi | Thông báo trong app |
+| `#/profile` | Mọi tài khoản | Hồ sơ, tài khoản nhận hoàn tiền, đổi mật khẩu |
+| `#/dashboard` | Admin | Hôm nay: giữ sân chờ cọc, trận hôm nay, chưa thu đủ, hoàn tiền, cảnh báo việc nền trễ |
+| `#/admin/bookings` | Admin | Lịch sân, đặt tại quầy, khách quen hằng tuần, bảo trì, check-in |
+| `#/admin/balance` | Admin | Thu phần còn lại sau trận |
+| `#/admin/pitches` | Admin | Sân, giá, giờ cao điểm |
+| `#/admin/revenue`, `#/admin/statistics` | Admin | Doanh thu, xuất Excel, thống kê |
+| `#/admin/match-requests` | Admin | Các yêu cầu tìm kèo |
 
-Xem [hướng dẫn test frontend/backend từng bước](../docs/setup/FRONTEND_BACKEND_TESTING.md), bao gồm tạo .env.local, chạy hai server, tài khoản test và cách xử lý lỗi.
+Tài khoản Admin chỉ thấy màn hình Admin. Ẩn menu không phải bảo mật: backend vẫn kiểm tra quyền mọi API.
 
+## Cấu trúc
 
-Tạo `frontend/.env.local` từ `.env.example`:
-
-```dotenv
-VITE_API_BASE_URL=http://localhost:5000/api/v1
-VITE_USE_MOCKS=false
-```
-
-Khởi động lại Vite sau khi đổi cấu hình. Backend cần cho phép CORS từ frontend và header Authorization/Content-Type. Không dùng cổng frontend làm API base nếu chưa có reverse proxy. Production dùng HTTPS hoặc đường dẫn `/api/v1` cùng origin.
-
-Frontend KHÔNG kết nối TiDB và không chứa mật khẩu database. Mọi VITE_* đều là cấu hình công khai trong trình duyệt. Không sao chép backend/.env vào frontend.
-
-## Các tệp cần dùng
-
-| Tệp | Cách dùng |
+| Thư mục / tệp | Nội dung |
 | --- | --- |
-| `src/services/api.ts` | `createApiClient`, `ApiError`, timeout, abort, query, envelope, token |
-| `src/services/client.ts` | Instance `api` chung; chọn mock/Flask bằng cấu hình |
-| `src/stores/session.ts` | Lưu phiên trong bộ nhớ, cập nhật user không gia hạn token, tự xóa khi hết hạn, không refresh token |
-| `src/services/auth.ts` | `register()`, `login()`, `getCurrentUser()`, `updateCurrentUser()`, `logout()` |
-| `src/services/teams.ts` | Đội, chi tiết/thành viên, yêu cầu tham gia, phản hồi, rời đội/xóa thành viên |
-| `src/services/matchPosts.ts` | Bảng tin, bài của tôi, tạo/sửa/hủy, đăng ký tham gia |
-| `src/services/proposals.ts` | Danh sách/chi tiết đề xuất và phản hồi ACCEPTED/DECLINED |
-| `src/services/matches.ts` | Danh sách và chi tiết trận đấu |
-| `src/services/notifications.ts` | Thông báo và đánh dấu đã đọc |
-| `src/types/api.ts` | DTO, ENUM, request/response của các module |
-| `src/mocks/fixtures.ts` | Dữ liệu tổng hợp: user, đội, sân, bài, đề xuất, booking, payment, thông báo, doanh thu |
-| `src/mocks/server.ts` | Mock handler theo DTO/envelope, session đa tài khoản, phân trang, phân quyền và lỗi 4xx/5xx |
-| `src/App.tsx` | Form đăng nhập/đăng ký, shell điều hướng, dashboard, hồ sơ, đội bóng, ghép trận, thông báo và lịch |
-| `src/features/matchmaking/TeamsPage.tsx` | Danh sách, chi tiết, tạo/sửa đội, roster, yêu cầu tuyển và thao tác Captain |
-| `src/features/matchmaking/MatchmakingPage.tsx` | 4 loại bài đăng, bộ lọc, CRUD bài, đề xuất, xác nhận, trận và thông báo |
-| `src/features/matchmaking/SchedulePage.tsx` | Lịch ngày/tuần/tháng; CONFIRMED và SUGGESTED được tách riêng |
+| `src/App.tsx` | Điều hướng theo hash, đăng nhập/đăng ký, hồ sơ, chọn shell Player/Admin |
+| `src/services/api.ts`, `client.ts` | API client: envelope `{data, meta}`, Bearer token, lỗi `ApiError`, timeout/abort |
+| `src/services/auth.ts`, `src/stores/session.ts` | Đăng nhập, gia hạn token khi app đang mở, phiên trong bộ nhớ |
+| `src/services/fieldApi.ts` | Sân, đặt sân, các API Admin (lịch, thu tiền, hoàn tiền, doanh thu) và định dạng giờ/tiền Việt Nam |
+| `src/services/depositBank.ts` | Hướng dẫn cọc, QR SePay, xác nhận cọc demo |
+| `src/services/matchRequests.ts`, `teams.ts`, `notifications.ts` | Tìm kèo, đội, thông báo |
+| `src/types/api.ts` | Kiểu dữ liệu dùng chung với backend |
+| `src/features/` | Màn hình người chơi: `pitches`, `bookings`, `payments`, `matchfind`, `matchmaking` (đội), `auth`, `player`, `admin` (khung Admin) |
+| `src/pages/admin/` | Màn hình Admin |
+| `src/styles/` | CSS |
 
 ## Quy ước gọi API
-
-Ví dụ service mới:
 
 ```ts
 import { api } from './client';
 import type { PaginatedResponse, Booking } from '../types/api';
 
 export function getMyBookings(signal?: AbortSignal) {
-  return api.request<PaginatedResponse<Booking>>('/bookings/my', {
-    query: { page: 1, page_size: 20 }, signal,
-  });
+  return api.request<PaginatedResponse<Booking>>('/bookings/my', { query: { page: 1, page_size: 20 }, signal });
 }
 ```
 
-- Truyền path `/teams`, không lặp `/api/v1`, không truyền URL ngoài. Client chỉ gửi token đến base API đã cấu hình, không theo redirect.
-- Mặc định cần đăng nhập. Endpoint công khai truyền `auth:false` và không gửi token.
-- Request JSON dùng `body:{...}`; không tự JSON.stringify ở màn hình.
-- Kết quả giữ nguyên envelope: dùng `result.data` và `result.meta`, không trả thẳng mảng từ mock.
-- Token giữ trong bộ nhớ: access token có hạn tối đa 60 phút; reload hoặc hết hạn cần đăng nhập lại. Không localStorage, không refresh token.
-- `logout()` chỉ xóa phiên trên máy; hợp đồng backend chưa có endpoint thu hồi JWT, token đã phát có thể còn hợp lệ đến exp. Backend luôn kiểm tra trạng thái tài khoản.
-- HTTP 401 ở API bảo vệ xóa đúng phiên đã gửi request; React quay lại trạng thái đăng nhập. HTTP 403/422/409 không tự xóa phiên.
-- AbortSignal hủy GET khi unmount/đổi trang để kết quả cũ không ghi đè. Không tự retry POST tạo đội/thanh toán, tránh tạo trùng dữ liệu.
-- Dùng `ApiError.fields` để hiển thị lỗi form; `errorMessage(error)` cho lỗi chung. Không ghi token hoặc payload nhạy cảm vào console.
-- TypeScript kiểm tra lúc build; client chỉ kiểm tra envelope cơ bản ở runtime, không phải bộ validator đầy đủ cho từng DTO. Backend vẫn phải xác thực mọi dữ liệu.
-- Tiền là chuỗi thập phân, không đổi sang float để tính cọc. Thời gian gửi ISO có offset; hiển thị dùng timeZone Asia/Ho_Chi_Minh.
+- Truyền path như `/teams`, không lặp `/api/v1`. Mặc định có gửi token; API công khai truyền `auth: false`.
+- Gửi JSON bằng `body: {...}`; đọc kết quả qua `result.data` và `result.meta`.
+- HTTP 401 xóa phiên và đưa về đăng nhập; 403/409/422 không xóa phiên. Hiện lỗi form bằng `ApiError.fields`, lỗi chung bằng `errorMessage(error)`.
+- Truyền `AbortSignal` cho GET để kết quả cũ không ghi đè khi đổi trang. Không tự gửi lại POST tạo đơn/thanh toán.
+- Tiền là chuỗi thập phân (`"120000.00"`), không tính bằng số thực. Giờ gửi dạng ISO có múi giờ, hiển thị theo `Asia/Ho_Chi_Minh`.
+- Phiên lưu trong `sessionStorage` (tải lại trang không mất), và cả `localStorage` khi chọn "Ghi nhớ đăng nhập"; app tự gia hạn token khi còn dưới 15 phút.
 
-## Dữ liệu mẫu và phạm vi mock
+## Tài liệu liên quan
 
-Mock hiện hỗ trợ các endpoint của phân hệ này:
-
-- Auth/profile: POST /auth/register, POST /auth/login, GET/PATCH /users/me.
-- Đội: GET/POST /teams, GET/PATCH /teams/{team_id}, POST/PATCH join-requests, DELETE members/me và members/{user_id}.
-- Bài đăng: GET /match-posts, GET /match-posts/my, POST/GET/PATCH /match-posts/{post_id}, POST cancel, GET/POST participants.
-- Ghép trận: GET /match-proposals, GET /match-proposals/{proposal_id}, POST respond, GET /matches, GET /matches/{match_id}.
-- Thông báo: GET /notifications, PATCH /notifications/{notification_id}/read.
-- Dữ liệu hỗ trợ demo: GET /pitches, GET /bookings/my.
-
-Mock kiểm tra Bearer/session, quyền thành viên/đội trưởng, party của proposal, chủ thông báo, response envelope, phân trang, validation và các xung đột nghiệp vụ cơ bản. Mock không lưu dữ liệu bền vững và không xác thực người dùng thật.
-
-**Giới hạn không giả lập:** không chạy thuật toán AI, không giữ sân thật, không gọi VNPay/MoMo, không thu/hoàn tiền, không tự tạo Booking đã thanh toán, không giả báo email gửi thành công. Khi hai bên đồng ý proposal OPPONENT, mock chỉ tạo Match SUGGESTED; không đổi sang CONFIRMED. Proposal TEAM_MEMBER chỉ thêm thành viên sau khi cả đội trưởng và ứng viên cùng xác nhận. Các chức năng booking/payment/hoàn tiền phụ thuộc Backend.
-
-Ngày trận fixture được tạo tương đối theo thời điểm khởi tạo. Dữ liệu và session mẫu chỉ tồn tại trong bộ nhớ; không dùng mock làm bằng chứng nghiệp vụ thanh toán/booking ở Backend đã đúng.
-
-Thanh tình huống lỗi chỉ xuất hiện trong dev mock. Chế độ danh sách trống luôn ẩn danh sách kể cả sau POST; chuyển về Bình thường để xem các đội đã tạo. Chế độ 422 cho phép thử lỗi do server trả về dù input hợp lệ. Nút thử 401 làm phiên mẫu bị server từ chối ở GET kế tiếp.
-
-Để thêm endpoint mock: tạo fixture theo DTO → thêm handler có method/path chính xác → kiểm tra quyền và dữ liệu đầu vào → trả đúng envelope và HTTP status → kiểm tra màn hình bằng cả mock lẫn API thật khi có.
-
-## Chia phần cho nhóm
-
-- **Duy Minh:** module tài khoản/khung ứng dụng đã được tích hợp tại `src/App.tsx`; tiếp tục đồng bộ giao diện với backend theo `services/auth.ts` và `stores/session.ts`. Không tự lưu token ở localStorage/sessionStorage hoặc tạo một luồng refresh token riêng.
-- **Quang:** phụ trách phân hệ frontend đội bóng/ghép trận/thông báo/lịch trên nhánh `feature/quang-team-matchmaking`; các thay đổi chờ review/PR, không commit vào `main`.
-- **Huy:** dùng fixtures sân/booking/doanh thu để dựng màn hình; không giả báo đã thanh toán thành công.
-- **Đức/Tú:** triển khai backend theo cùng hợp đồng, review service/DTO và nối API thật. Google Login chưa nằm trong bộ mẫu này.
-
-Đối chiếu nguồn chính tại [API và Models](../docs/api/API_MODELS_CONTRACT_PROJECT1.md). DTO BookingStatistics.by_pitch trong bản mẫu là cấu trúc đề xuất cho mảng thống kê hoạt động; hợp đồng hiện mới chốt tên trường, cần đồng bộ với backend khi triển khai. Không có báo cáo doanh thu theo mặt sân.
-
-
-## Module tài khoản — cách kiểm tra nhanh
-
-1. Mở `#/login`, thử tài khoản mẫu: `demo@example.test` / `mock-only`.
-2. Vào **Hồ sơ cá nhân**, cập nhật họ tên/số điện thoại/trình độ rồi lưu; UI gọi `GET /users/me` và `PATCH /users/me`.
-3. Đăng xuất, mở **Đăng ký ngay**, điền tên/email/mật khẩu (8–72 byte UTF-8), sau đó đăng nhập bằng tài khoản vừa đăng ký. Email trùng trả về lỗi 409.
-4. Để thử hết hạn phiên, trên trang Đội bóng của tôi chọn **Thử lỗi token 401** ở thanh tình huống; yêu cầu API tiếp theo bị từ chối và app đưa người dùng về đăng nhập.
-5. Mở `#/teams` để quản lý đội, `#/matchmaking` để tạo/lọc bài và xem proposal, `#/notifications` để xem thông báo, `#/schedule` để xem lịch ngày/tuần/tháng.
-6. Tài khoản đội trưởng mẫu: `captain@example.test` / `mock-only`. Tạo tài khoản mới (PLAYER) để thử luồng ứng viên, rồi dùng tài khoản đội trưởng để chấp thuận và quay lại ứng viên để xác nhận proposal.
-7. GitHub Actions workflow `Frontend checks` chạy `npm ci`, `npm test` và `npm run build` khi push lên nhánh tính năng hoặc pull request.
-
-**Bảo mật:** token chỉ ở bộ nhớ, bị xóa sau 60 phút hoặc khi API bảo vệ trả 401. Tải lại trang cần đăng nhập lại theo hợp đồng hiện tại; chưa có refresh token hoặc API thu hồi JWT. Chế độ mock chỉ để phát triển giao diện và không thay thế xác thực/kiểm tra quyền của backend.
-
-
-## Tích hợp frontend Huy vào ứng dụng chung
-
-Chạy `npm ci`, `npm run dev`; dùng `index.html` (địa chỉ gốc Vite). `san-bong.html` cũng dùng cùng App và đăng nhập, không có phiên Admin riêng.
-Trong `.env.local`: `VITE_API_BASE_URL=http://127.0.0.1:5000/api/v1` và `VITE_USE_MOCKS=false`; khởi động lại Vite sau khi đổi env. Không commit env riêng.
-
-- Sau đăng nhập: `#/bookings` tìm sân, `#/my-bookings` theo dõi hold/cọc. Tạo booking sẽ mở chi tiết trong cùng phiên; hold 300 giây từ server, không gia hạn do tải lại/tạo thanh toán.
-- Chỉ ADMIN thấy và mở được `#/admin/bookings`, `#/admin/pitches`, `#/admin/balance`, `#/admin/revenue`. Backend vẫn là nơi kiểm tra quyền; không coi ẩn menu là bảo mật API.
-- Lịch Admin lọc `UPCOMING`, `IN_PROGRESS`, `ENDED_UNPAID`, `PAID` qua API; đã thu đủ lấy từ balance, độc lập giờ đá. Danh sách Admin hiện lấy tối đa 100 mục/lần.
-- Thu tiền dùng `GET /admin/bookings/{id}/balance` và `POST /admin/bookings/{id}/confirm-paid`. Không gọi endpoint settlement/result hoặc tạo QR riêng từng đội. Thể thức chỉ để hai đội tự chia.
-- QR được tạo cục bộ từ payload server bằng thư viện qrcode. Không gửi dữ liệu ngân hàng ra dịch vụ tạo QR. Nếu backend chưa cấu hình BANK_BIN/BANK_ACCOUNT_NO thì hiển thị lý do thiếu QR.
-- Admin chọn một/nhiều khoản thực nhận CASH/BANK_TRANSFER, tổng đúng số còn thiếu; gửi expected_outstanding + idempotency_key. Retry sau lỗi giữ nguyên payload/key; form khóa đến khi thử lại hoặc tải lại số dư. Backend xử lý chống trùng và số dư thay đổi.
-- Cọc online hiện chỉ có nút VNPay phù hợp backend đang triển khai. Không tự xác nhận SUCCESS bằng frontend.
-
-Kiểm tra trên DB thử nghiệm: PLAYER đăng nhập, mở sân/giữ 90 phút, xem hạn giữ; PLAYER mở URL Admin phải bị chặn. ADMIN mở lịch, lọc giai đoạn, mở booking đã kết thúc và đối chiếu balance; nhập tổng receipts sai phải bị chặn, thu đủ một/multiple khoản phải về PAID, gọi lại cùng key không thêm Payment. Hai tab số dư cũ phải báo conflict. Không thử thu/hoàn tiền thật hoặc chạy migration trên DB nhóm.
-
-Mock chỉ là dữ liệu trong bộ nhớ riêng cho giao diện sân và không đại diện cho luồng ghép trận/tiền thật. Khi đánh giá tích hợp cần `VITE_USE_MOCKS=false`.
-
-### Cấu hình tài khoản nhận QR sau trận
-
-Trong `backend/.env` riêng của máy chạy server, điền `BANK_BIN` (mã BIN của ngân hàng nhận) và `BANK_ACCOUNT_NO` (số tài khoản nhận), rồi khởi động lại backend. Không đặt trong frontend, không commit `.env`, không cần tải ảnh QR cá nhân. Payload VietQR do backend tạo theo tài khoản đã cấu hình + outstanding_amount + BOOKING-{id}; frontend chỉ mã hóa payload thành ảnh QR. Kiểm tra tên người nhận, số tài khoản, số tiền và nội dung trên ứng dụng ngân hàng trước khi dùng. QR ngân hàng này dành cho phần còn lại sau trận; cọc VNPay dùng cấu hình gateway riêng. Không nhập mật khẩu ngân hàng hoặc OTP vào dự án.
+- [Hợp đồng API](../docs/api/API_MODELS_CONTRACT_PROJECT1.md)
+- [Test frontend với backend](../docs/setup/FRONTEND_BACKEND_TESTING.md)
+- [Cọc QR SePay](../docs/setup/SEPAY_QR.md), [Demo cọc](../docs/setup/DEMO_DEPOSIT.md)
+- [Đăng nhập Google](../docs/setup/GOOGLE_LOGIN.md), [Email thông báo](../docs/setup/EMAIL_NOTIFICATIONS.md)

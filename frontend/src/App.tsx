@@ -1,28 +1,37 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { ChangePasswordForm } from './features/auth/ChangePasswordForm';
+import { GoogleSignIn } from './features/auth/GoogleSignIn';
 import { TeamsPage } from './features/matchmaking/TeamsPage';
-import { MatchmakingPage } from './features/matchmaking/MatchmakingPage';
-import { SchedulePage } from './features/matchmaking/SchedulePage';
+import { MatchFindPage } from './features/matchfind/MatchFindPage';
+import { NotificationsPage } from './features/matchfind/NotificationsPage';
 import { FieldApp } from './features/field-management/FieldApp';
-import { getCurrentUser, login, logout, register, updateCurrentUser } from './services/auth';
+import { AdminShell } from './features/admin/AdminShell';
+import { PlayerShell, PublicShell } from './features/player/PlayerShell';
+import { PlayerHome } from './features/player/PlayerHome';
+import { PitchesPage } from './features/pitches/PitchesPage';
+import { ForgotPasswordPage, ResetPasswordPage } from './features/auth/PasswordReset';
+import type { AdminRoute } from './features/admin/AdminShell';
+import { getCurrentUser, keepSessionAlive, login, logout, register, updateCurrentUser } from './services/auth';
 import { errorMessage, ApiError } from './services/api';
-import { useMocks } from './services/client';
 import { session } from './stores/session';
+import { selectedBookingFromHash } from './services/bookingNavigation';
 import type { ProfileUpdate, RegisterRequest, SkillLevel, UserSelf } from './types/api';
 
-const routes = ['/login', '/register', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/matchmaking', '/notifications', '/schedule'] as const;
+const routes = ['/login', '/register', '/forgot-password', '/reset-password', '/dashboard', '/profile', '/teams', '/bookings', '/my-bookings', '/admin/bookings', '/admin/pitches', '/admin/balance', '/admin/revenue', '/admin/statistics', '/admin/match-requests', '/matchmaking', '/notifications'] as const;
 type Route = typeof routes[number];
 const skillLabels: Record<SkillLevel, string> = {
   BEGINNER: 'Mới chơi', AMATEUR: 'Phong trào', INTERMEDIATE: 'Trung bình', SEMI_PRO: 'Bán chuyên', PRO: 'Chuyên nghiệp',
 };
 function readRoute(): Route {
-  const value = window.location.hash.replace(/^#/, '') || '/login';
-  return routes.includes(value as Route) ? value as Route : '/login';
+  const value = window.location.hash.replace(/^#/, '').split('?')[0] || '/bookings';
+  return routes.includes(value as Route) ? value as Route : '/bookings';
 }
 function go(path: Route) {
   if (window.location.hash === `#${path}`) window.dispatchEvent(new HashChangeEvent('hashchange'));
   else window.location.hash = path;
 }
+function hasBookingIntent() { try { return Boolean(sessionStorage.getItem('ffm.booking-intent')); } catch { return false; } }
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(-2).map((part) => part[0]?.toLocaleUpperCase() ?? '').join('') || 'U';
 }
@@ -35,12 +44,13 @@ function fieldError(error: unknown, field: string) {
 export default function App() {
   const current = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const [route, setRoute] = useState<Route>(readRoute);
+  const [bookingTarget, setBookingTarget] = useState(() => selectedBookingFromHash(window.location.hash));
   const [notice, setNotice] = useState('');
   const previousSession = useRef(Boolean(session.getSnapshot()));
   const manualLogout = useRef(false);
 
   useEffect(() => {
-    const onHashChange = () => setRoute(readRoute());
+    const onHashChange = () => { setRoute(readRoute()); setBookingTarget(selectedBookingFromHash(window.location.hash)); };
     const onManualLogout = () => { manualLogout.current = true; setNotice('Bạn đã đăng xuất khỏi hệ thống.'); };
     window.addEventListener('hashchange', onHashChange);
     window.addEventListener('app:manual-logout', onManualLogout);
@@ -60,6 +70,16 @@ export default function App() {
     previousSession.current = Boolean(current);
   }, [current]);
 
+  // Renew the token while someone is signed in, so a shift is not interrupted every hour.
+  const signedIn = Boolean(current);
+  useEffect(() => (signedIn ? keepSessionAlive() : undefined), [signedIn]);
+
+  // Admin accounts cannot use player features (the API answers 403), so they never land on them.
+  const isAdmin = current?.user.role === 'ADMIN';
+  useEffect(() => {
+    if (isAdmin && !(route === '/dashboard' || route === '/profile' || route.startsWith('/admin/') || route === '/login' || route === '/register')) go('/dashboard');
+  }, [isAdmin, route]);
+
   const onLogout = () => {
     manualLogout.current = true;
     setNotice('Bạn đã đăng xuất khỏi hệ thống.');
@@ -67,30 +87,54 @@ export default function App() {
     go('/login');
   };
 
+  // Password recovery works signed in or not: the email link may be opened anywhere.
+  if (route === '/forgot-password') return <ForgotPasswordPage />;
+  if (route === '/reset-password') {
+    return <ResetPasswordPage onDone={(message) => { manualLogout.current = true; logout(); setNotice(message); go('/login'); }} />;
+  }
+  if (!current && route === '/bookings') {
+    return <PublicShell><div className="huy-module"><PitchesPage signedIn={false} onBooked={() => {}} /></div></PublicShell>;
+  }
   if (!current) {
     return <AuthPage mode={route === '/register' ? 'register' : 'login'} notice={notice} clearNotice={() => setNotice('')}
-      onNavigate={go} onSuccess={(message) => { setNotice(message); go('/login'); }} onLogin={() => { setNotice(''); go('/dashboard'); }} />;
+      onNavigate={go} onSuccess={(message) => { setNotice(message); go('/login'); }} onLogin={() => { setNotice(''); if (hasBookingIntent()) go('/bookings'); else if(route!=='/my-bookings' && route!=='/notifications' && route!=='/matchmaking') go('/dashboard'); }} />;
   }
 
   // Public auth URLs should never display an authenticated user a login form.
   const activeRoute: Route = route === '/login' || route === '/register' ? '/dashboard' : route;
-  if (activeRoute === '/teams') return <TeamsPage />;
-  if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage /></AppShell>;
-  if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchmakingPage initialTab='notifications' /></AppShell>;
-  if (activeRoute === '/schedule') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><SchedulePage /></AppShell>;
-  if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} /></AppShell>;
+  if (current.user.role === 'ADMIN') {
+    const adminTabs = {
+      '/dashboard': 'adminDashboard', '/admin/bookings': 'adminBookings', '/admin/pitches': 'adminPitches',
+      '/admin/balance': 'settlement', '/admin/revenue': 'revenue', '/admin/statistics': 'statistics', '/admin/match-requests': 'matchRequests',
+    } as const;
+    const adminRoute = (activeRoute in adminTabs || activeRoute === '/profile' ? activeRoute : '/dashboard') as AdminRoute;
+    return <AdminShell current={current.user} route={adminRoute} onLogout={onLogout}>
+      {adminRoute === '/profile'
+        ? <ProfilePage currentUser={current.user} onPasswordChanged={() => {
+            manualLogout.current = true; setNotice('Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.'); logout(); go('/login');
+          }} />
+        : <FieldApp key={current.user.user_id} tab={adminTabs[adminRoute as keyof typeof adminTabs]} selectedBookingId={bookingTarget} />}
+    </AdminShell>;
+  }
+  if (activeRoute === '/teams') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><TeamsPage /></AppShell>;
+  if (activeRoute === '/matchmaking') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><MatchFindPage user={current.user} /></AppShell>;
+  if (activeRoute === '/notifications') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><NotificationsPage /></AppShell>;
+  if (activeRoute === '/profile') return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}><ProfilePage currentUser={current.user} onPasswordChanged={()=>{
+    manualLogout.current=true;setNotice('Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.');logout();go('/login');
+  }} /></AppShell>;
   const fieldTabs = {
     '/bookings': 'pitches', '/my-bookings': 'bookings', '/admin/bookings': 'adminBookings',
     '/admin/pitches': 'adminPitches', '/admin/balance': 'settlement', '/admin/revenue': 'revenue',
+    '/admin/statistics': 'statistics',
   } as const;
   if (activeRoute in fieldTabs) {
-    const allowed = !activeRoute.startsWith('/admin/') || current.user.role === 'ADMIN';
+    const allowed = !activeRoute.startsWith('/admin/'); // Admins were routed to AdminShell above.
     return <AppShell current={current.user} route={activeRoute} onLogout={onLogout}>
-      {allowed ? <FieldApp key={current.user.user_id} tab={fieldTabs[activeRoute as keyof typeof fieldTabs]} />
+      {allowed ? <FieldApp key={current.user.user_id} tab={fieldTabs[activeRoute as keyof typeof fieldTabs]} selectedBookingId={bookingTarget} />
         : <section role="alert" className="notice-error">Bạn không có quyền truy cập chức năng quản trị.</section>}
     </AppShell>;
   }
-  return <AppShell current={current.user} route="/dashboard" onLogout={onLogout}><DashboardPage user={current.user} /></AppShell>;
+  return <AppShell current={current.user} route="/dashboard" onLogout={onLogout}><PlayerHome user={current.user} /></AppShell>;
 }
 
 function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }: {
@@ -105,6 +149,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -134,7 +179,7 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
         setFullName(''); setPhone(''); setPassword(''); setConfirmPassword('');
         onSuccess('Đăng ký thành công! Hãy đăng nhập bằng tài khoản bạn vừa tạo.');
       } else {
-        await login({ email: normalizedEmail, password });
+        await login({ email: normalizedEmail, password }, remember);
         onLogin();
       }
     } catch (reason) {
@@ -142,19 +187,6 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
       const names = isRegister ? ['full_name', 'email', 'password', 'phone', 'skill_level'] : ['email', 'password'];
       setErrors(Object.fromEntries(names.map((name) => [name, fieldError(reason, name)]).filter(([, value]) => value)));
     } finally { setBusy(false); }
-  }
-
-  async function demoLogin() {
-    setEmail('demo@example.test'); setPassword('mock-only'); setError(''); setBusy(true);
-    try { await login({ email: 'demo@example.test', password: 'mock-only' }); onLogin(); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
-  }
-  async function demoCaptainLogin() {
-    setEmail('captain@example.test'); setPassword('mock-only'); setError(''); setBusy(true);
-    try { await login({ email: 'captain@example.test', password: 'mock-only' }); onLogin(); }
-    catch (reason) { setError(errorMessage(reason)); }
-    finally { setBusy(false); }
   }
 
   return <div className="auth-screen">
@@ -169,7 +201,6 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
       <section className="auth-card">
         <div className="auth-card-title"><span className="auth-icon">{isRegister ? '＋' : '↗'}</span><div><h2>{isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}</h2><p>{isRegister ? 'Tham gia cộng đồng bóng đá phong trào.' : 'Đăng nhập để tiếp tục hành trình trên sân cỏ.'}</p></div></div>
         {notice && <div className="notice-success" role="status">{notice}<button type="button" aria-label="Đóng thông báo" onClick={clearNotice}>×</button></div>}
-        {useMocks && <div className="demo-hint"><span className="status-dot" /> Chế độ demo · Chưa cần kết nối backend</div>}
         <form className="auth-form" onSubmit={submit} noValidate>
           {isRegister && <div className="form-field"><label htmlFor="auth-name">Họ và tên <span>*</span></label><input id="auth-name" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nguyễn Văn An" aria-invalid={!!errors.full_name} />{errors.full_name && <small className="field-error">{errors.full_name}</small>}</div>}
           <div className="form-field"><label htmlFor="auth-email">Email <span>*</span></label><input id="auth-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ban@example.com" aria-invalid={!!errors.email} />{errors.email && <small className="field-error">{errors.email}</small>}</div>
@@ -179,10 +210,13 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
           </div>}
           <div className="form-field"><label htmlFor="auth-password">Mật khẩu <span>*</span></label><div className="password-wrap"><input id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={isRegister ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isRegister ? 'Tối thiểu 8 ký tự' : 'Nhập mật khẩu'} aria-invalid={!!errors.password} /><button type="button" className="show-password" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Ẩn' : 'Hiện'}</button></div>{errors.password && <small className="field-error">{errors.password}</small>}</div>
           {isRegister && <div className="form-field"><label htmlFor="auth-confirm">Nhập lại mật khẩu <span>*</span></label><input id="auth-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Nhập lại mật khẩu" aria-invalid={!!errors.confirm_password} />{errors.confirm_password && <small className="field-error">{errors.confirm_password}</small>}</div>}
+          {!isRegister && <p className="forgot-link"><a href="#/forgot-password">Quên mật khẩu?</a></p>}
+          {!isRegister && <label className="remember-me"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Ghi nhớ đăng nhập trên máy này<small>Chỉ chọn trên máy riêng hoặc máy quầy của sân.</small></label>}
           {error && <div className="notice-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}<span aria-hidden="true">↗</span></button>
         </form>
-        {useMocks && !isRegister && <><button type="button" className="demo-login-button" disabled={busy} onClick={demoLogin}>Đăng nhập nhanh bằng tài khoản mẫu</button><button type="button" className="demo-login-button" disabled={busy} onClick={demoCaptainLogin}>Thử tài khoản đội trưởng mẫu</button></>}
+        {!isRegister && <GoogleSignIn password={password} disabled={busy} onSuccess={onLogin} />}
+        <p className="auth-switch"><a href="#/bookings">Xem sân, giá và giờ trống không cần đăng nhập →</a></p>
         <p className="auth-switch">{isRegister ? 'Đã có tài khoản?' : 'Chưa có tài khoản?'} <button type="button" onClick={() => { clearNotice(); setError(''); onNavigate(isRegister ? '/login' : '/register'); }}>{isRegister ? 'Đăng nhập' : 'Đăng ký ngay'}</button></p>
         <p className="auth-terms">Bằng việc tiếp tục, bạn đồng ý tuân thủ các quy định sử dụng của hệ thống.</p>
       </section>
@@ -191,51 +225,14 @@ function AuthPage({ mode, notice, clearNotice, onNavigate, onSuccess, onLogin }:
   </div>;
 }
 
+/** Player pages share one shell: grouped navigation, venue phone, and a tab bar on phones. */
 function AppShell({ current, route, onLogout, children }: { current: UserSelf; route: Route; onLogout: () => void; children: ReactNode }) {
-  const navItems: { path: Route; icon: string; label: string }[] = [
-    { path: '/dashboard', icon: '⌂', label: 'Tổng quan' }, { path: '/teams', icon: '♧', label: 'Đội bóng của tôi' },
-    { path: '/bookings', icon: '▦', label: 'Đặt sân' }, { path: '/my-bookings', icon: '▤', label: 'Booking của tôi' }, { path: '/matchmaking', icon: '⇄', label: 'Ghép đội & tìm trận' },
-    { path: '/notifications', icon: '♧', label: 'Thông báo' }, { path: '/schedule', icon: '▦', label: 'Lịch thi đấu' }, { path: '/profile', icon: '◎', label: 'Hồ sơ cá nhân' },
-  ];
-  if (current.role === 'ADMIN') navItems.push(
-    { path: '/admin/bookings', icon: '▦', label: 'Quản lý lịch sân' },
-    { path: '/admin/pitches', icon: '⚽', label: 'Quản lý sân' },
-    { path: '/admin/balance', icon: '◈', label: 'Thu tiền sau trận' },
-    { path: '/admin/revenue', icon: '▥', label: 'Doanh thu' },
-  );
-  const title = navItems.find((item) => item.path === route)?.label ?? 'Tổng quan';
-  return <div className="account-shell">
-    <aside className="account-sidebar">
-      <a href="#/dashboard" className="account-brand"><span className="account-brand-mark">F</span><span>FOOTBALL<small>FIELD MANAGEMENT</small></span></a>
-      <div className="account-side-label">KHÔNG GIAN CỦA BẠN</div>
-      <nav className="account-nav" aria-label="Điều hướng chính">{navItems.map((item) => <a key={item.path} href={`#${item.path}`} className={route === item.path ? 'account-nav-item active' : 'account-nav-item'} aria-current={route === item.path ? 'page' : undefined}><span className="account-nav-icon">{item.icon}</span><span>{item.label}</span>{route === item.path && <span className="account-nav-arrow">↗</span>}</a>)}</nav>
-      <div className="account-sidebar-bottom"><div className="account-mini-pitch"><span /></div><p><i /> Cùng đội. Cùng đam mê.</p><small>Chọn đội, tìm kèo, ra sân.</small></div>
-    </aside>
-    <div className="account-workspace">
-      <header className="account-topbar"><div className="account-breadcrumb">Không gian cá nhân <span>/</span> <strong>{title}</strong></div><div className="account-user"><span className="account-avatar">{initials(current.full_name)}</span><span className="account-user-name">{current.full_name}</span><button onClick={onLogout}>Đăng xuất ↗</button></div></header>
-      <main className="account-main">{children}<footer className="account-footer"><span>FOOTBALL FIELD MANAGEMENT</span><span>Đồng đội hôm nay. Kỷ niệm ngày mai.</span></footer></main>
-    </div>
-  </div>;
+  return <PlayerShell current={current} route={route} onLogout={onLogout}>{children}</PlayerShell>;
 }
 
-function DashboardPage({ user }: { user: UserSelf }) {
-  return <>
-    <div className="account-eyebrow">KẾT NỐI TỪ SÂN CỎ</div>
-    <div className="account-page-heading"><div><h1>Xin chào, {user.full_name.split(/\s+/).slice(-1)[0]}<span>.</span></h1><p>Quản lý hoạt động bóng đá của bạn tại một nơi.</p></div><span className="account-page-index">01 / TỔNG QUAN</span></div>
-    <section className="welcome-panel"><div><span className="welcome-kicker">SẴN SÀNG RA SÂN?</span><h2>Mỗi trận đấu hay bắt đầu từ một kết nối.</h2><p>Hoàn thiện hồ sơ, tạo đội bóng hoặc tìm trận phù hợp với trình độ của bạn.</p><div className="welcome-actions"><a className="account-primary-button" href="#/teams">Đến đội bóng của tôi ↗</a><a className="account-secondary-button" href="#/profile">Hoàn thiện hồ sơ</a></div></div><div className="welcome-decoration" aria-hidden="true"><div className="welcome-ball">F</div><span>PLAY TOGETHER</span></div></section>
-    <div className="account-section-heading"><div><h2>Lối tắt của bạn</h2><p>Truy cập nhanh các chức năng chính trong hệ thống.</p></div></div>
-    <section className="shortcut-grid">
-      <a href="#/profile" className="shortcut-card"><span className="shortcut-icon">◎</span><span className="shortcut-label">TÀI KHOẢN</span><strong>Hồ sơ cá nhân</strong><p>Cập nhật tên, số điện thoại và trình độ thi đấu.</p><span className="shortcut-arrow">↗</span></a>
-      <a href="#/teams" className="shortcut-card"><span className="shortcut-icon">♧</span><span className="shortcut-label">ĐỒNG ĐỘI</span><strong>Đội bóng của tôi</strong><p>Xem đội hiện có hoặc tạo đội bóng mới.</p><span className="shortcut-arrow">↗</span></a>
-      <a href="#/bookings" className="shortcut-card"><span className="shortcut-icon">▦</span><span className="shortcut-label">LỊCH SÂN</span><strong>Đặt sân</strong><p>Khu vực dành cho luồng tìm sân và đặt lịch.</p><span className="shortcut-arrow">↗</span></a>
-      <a href="#/matchmaking" className="shortcut-card"><span className="shortcut-icon">⇄</span><span className="shortcut-label">GHÉP TRẬN</span><strong>Ghép đội & tìm trận</strong><p>Tìm đối thủ hoặc người chơi phù hợp.</p><span className="shortcut-arrow">↗</span></a>
-    </section>
-    <div className="account-notice"><span>i</span><div><strong>Thông tin phiên làm việc</strong><p>Tài khoản hiện tại có quyền <b>{currentRoleLabel(user.role)}</b>. Vì lý do bảo mật, phiên đăng nhập có thời hạn tối đa 60 phút; sau khi hết hạn, bạn cần đăng nhập lại.</p></div></div>
-  </>;
-}
 function currentRoleLabel(role: UserSelf['role']) { return role === 'ADMIN' ? 'Quản trị viên' : 'Người chơi'; }
 
-function ProfilePage({ currentUser }: { currentUser: UserSelf }) {
+function ProfilePage({ currentUser, onPasswordChanged }: { currentUser: UserSelf; onPasswordChanged: () => void }) {
   const [profile, setProfile] = useState<UserSelf>(currentUser);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -257,15 +254,18 @@ function ProfilePage({ currentUser }: { currentUser: UserSelf }) {
     event.preventDefault(); setError(''); setSuccess(''); setErrors({});
     const nextErrors: Record<string, string> = {};
     if (profile.full_name.trim().length < 2 || profile.full_name.trim().length > 100) nextErrors.full_name = 'Họ tên cần từ 2 đến 100 ký tự.';
-    if ((profile.phone ?? '').trim().length > 30) nextErrors.phone = 'Số điện thoại quá dài.';
+    if ((profile.phone ?? '').trim().length > 20) nextErrors.phone = 'Số điện thoại quá dài.';
     if (Object.keys(nextErrors).length) { setErrors(nextErrors); return; }
-    const payload: ProfileUpdate = { full_name: profile.full_name.trim(), phone: profile.phone?.trim() || null, skill_level: profile.skill_level };
+    const refund = [profile.refund_bank_name, profile.refund_account_no, profile.refund_account_name].map(v => (v ?? '').trim());
+    if (refund.some(Boolean) && !refund.every(Boolean)) { setErrors({ refund_account_no: 'Điền đủ ngân hàng, số tài khoản và tên chủ tài khoản, hoặc để trống cả ba.' }); return; }
+    const payload: ProfileUpdate = { full_name: profile.full_name.trim(), phone: profile.phone?.trim() || null, skill_level: profile.skill_level,
+      refund_bank_name: refund[0], refund_account_no: refund[1], refund_account_name: refund[2] };
     setSaving(true);
     try {
       const updated = await updateCurrentUser(payload); setProfile(updated); setSuccess('Đã lưu thay đổi hồ sơ.');
     } catch (reason) {
       setError(errorMessage(reason));
-      setErrors(Object.fromEntries(['full_name', 'phone', 'skill_level'].map((name) => [name, fieldError(reason, name)]).filter(([, value]) => value)));
+      setErrors(Object.fromEntries(['full_name', 'phone', 'skill_level', 'refund_bank_name', 'refund_account_no', 'refund_account_name'].map((name) => [name, fieldError(reason, name)]).filter(([, value]) => value)));
     } finally { setSaving(false); }
   }
 
@@ -274,15 +274,25 @@ function ProfilePage({ currentUser }: { currentUser: UserSelf }) {
     <div className="account-page-heading"><div><h1>Hồ sơ cá nhân<span>.</span></h1><p>Thông tin được sử dụng để kết nối với đội bóng và trận đấu.</p></div><span className="account-page-index">02 / TÀI KHOẢN</span></div>
     {loading ? <div className="account-panel account-loading"><span className="spinner" /> Đang tải thông tin hồ sơ…</div> : <div className="profile-layout">
       <section className="profile-summary"><div className="profile-avatar">{initials(profile.full_name)}</div><h2>{profile.full_name}</h2><p>{profile.email}</p><span className="profile-role">{currentRoleLabel(profile.role)}</span><div className="profile-summary-divider" /><div className="profile-summary-line"><span>Trạng thái</span><strong><i /> {profile.status === 'ACTIVE' ? 'Đang hoạt động' : profile.status === 'BANNED' ? 'Bị khóa' : 'Ngừng hoạt động'}</strong></div><div className="profile-summary-line"><span>Trình độ</span><strong>{skillLabels[profile.skill_level]}</strong></div></section>
-      <section className="profile-form-card"><div className="profile-form-heading"><div><h2>Thông tin tài khoản</h2><p>Chỉ chỉnh sửa các trường được phép theo API.</p></div><span>✎</span></div>
+      <section className="profile-form-card"><div className="profile-form-heading"><div><h2>Thông tin tài khoản</h2></div><span>✎</span></div>
         {error && <div className="notice-error" role="alert">{error}</div>}{success && <div className="notice-success" role="status">{success}</div>}
         <form className="profile-form" onSubmit={submit} noValidate>
           <div className="form-field"><label htmlFor="profile-name">Họ và tên <span>*</span></label><input id="profile-name" value={profile.full_name} onChange={(e) => setProfile((value) => ({ ...value, full_name: e.target.value }))} aria-invalid={!!errors.full_name} />{errors.full_name && <small className="field-error">{errors.full_name}</small>}</div>
-          <div className="form-field"><label htmlFor="profile-email">Email</label><input id="profile-email" value={profile.email} disabled /><small className="input-caption">Email không thể thay đổi bằng API hồ sơ hiện tại.</small></div>
+          <div className="form-field"><label htmlFor="profile-email">Email</label><input id="profile-email" value={profile.email} disabled /></div>
           <div className="form-row"><div className="form-field"><label htmlFor="profile-phone">Số điện thoại</label><input id="profile-phone" type="tel" value={profile.phone ?? ''} onChange={(e) => setProfile((value) => ({ ...value, phone: e.target.value }))} placeholder="Chưa cập nhật" aria-invalid={!!errors.phone} />{errors.phone && <small className="field-error">{errors.phone}</small>}</div><div className="form-field"><label htmlFor="profile-skill">Trình độ thi đấu</label><select id="profile-skill" value={profile.skill_level} onChange={(e) => setProfile((value) => ({ ...value, skill_level: e.target.value as SkillLevel }))}>{Object.entries(skillLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div></div>
+          {profile.role === 'PLAYER' && <fieldset className="profile-refund">
+            <legend>Tài khoản nhận hoàn tiền</legend>
+            <p className="profile-refund-help">Khi sân hủy lượt hoặc bạn chuyển dư, cửa hàng chuyển lại tiền vào tài khoản này. Để trống thì nhận tiền mặt tại quầy.</p>
+            <div className="form-row">
+              <div className="form-field"><label htmlFor="refund-bank">Ngân hàng</label><input id="refund-bank" value={profile.refund_bank_name ?? ''} placeholder="VD: MB, Vietcombank" onChange={(e) => setProfile((value) => ({ ...value, refund_bank_name: e.target.value }))} aria-invalid={!!errors.refund_bank_name} />{errors.refund_bank_name && <small className="field-error">{errors.refund_bank_name}</small>}</div>
+              <div className="form-field"><label htmlFor="refund-number">Số tài khoản</label><input id="refund-number" inputMode="numeric" value={profile.refund_account_no ?? ''} onChange={(e) => setProfile((value) => ({ ...value, refund_account_no: e.target.value }))} aria-invalid={!!errors.refund_account_no} />{errors.refund_account_no && <small className="field-error">{errors.refund_account_no}</small>}</div>
+            </div>
+            <div className="form-field"><label htmlFor="refund-name">Tên chủ tài khoản</label><input id="refund-name" value={profile.refund_account_name ?? ''} placeholder="Viết không dấu, đúng như trên ngân hàng" onChange={(e) => setProfile((value) => ({ ...value, refund_account_name: e.target.value }))} aria-invalid={!!errors.refund_account_name} />{errors.refund_account_name && <small className="field-error">{errors.refund_account_name}</small>}</div>
+          </fieldset>}
           <div className="profile-actions"><button className="account-secondary-button" type="button" onClick={() => { setProfile(currentUser); setError(''); setSuccess(''); setErrors({}); }}>Khôi phục ban đầu</button><button className="account-primary-button" type="submit" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu thay đổi ↗'}</button></div>
         </form>
       </section>
     </div>}
+    {!loading && <ChangePasswordForm hasPassword={profile.has_password !== false} onSuccess={onPasswordChanged} />}
   </>;
 }

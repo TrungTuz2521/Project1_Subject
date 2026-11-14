@@ -3,7 +3,6 @@ and no lock is ever held across a gateway call."""
 from dataclasses import replace
 from flask import current_app
 from sqlalchemy import select
-from app.contracts.dto import GatewayResult
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.models import Booking, Payment
 from app.services import booking_service, payment_service
@@ -90,7 +89,9 @@ def _recover_expired_refunds():
     return created
 
 def reconcile_payments():
-    return {'resolved_payments': _reconcile_pending(), 'recovered_refunds': _recover_expired_refunds()}
+    from app.services.sepay_service import expire_stale_sessions
+    return {'resolved_payments': _reconcile_pending(), 'expired_qr_sessions': expire_stale_sessions(),
+            'recovered_refunds': _recover_expired_refunds()}
 
 def register_booking_commands(app):
     import click

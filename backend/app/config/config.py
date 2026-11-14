@@ -22,6 +22,16 @@ def settings():
                                    'init_command': "SET time_zone = '+00:00'", 'connect_timeout': 10}
     return {'SQLALCHEMY_DATABASE_URI': uri, 'SQLALCHEMY_ENGINE_OPTIONS': options,
             'SQLALCHEMY_TRACK_MODIFICATIONS': False, 'JWT_SECRET_KEY': secret,
+            'GOOGLE_CLIENT_ID': os.getenv('GOOGLE_CLIENT_ID', ''),
+            'DEMO_PAYMENT_ENABLED': os.getenv('DEMO_PAYMENT_ENABLED', 'false').lower() == 'true',
+            'EMAIL_ENABLED': os.getenv('EMAIL_ENABLED', 'false').lower() == 'true',
+            'SMTP_HOST': os.getenv('SMTP_HOST', 'smtp.gmail.com'),
+            'SMTP_PORT': int(os.getenv('SMTP_PORT', '587')),
+            'SMTP_USERNAME': os.getenv('SMTP_USERNAME', ''),
+            'SMTP_PASSWORD': os.getenv('SMTP_PASSWORD', '').replace(' ', ''),
+            'PUBLIC_WEB_URL': os.getenv('PUBLIC_WEB_URL', 'http://localhost:5173'),
             'JWT_ISSUER': 'football-field-api', 'JWT_AUDIENCE': 'football-field-web',
             'CORS_ORIGINS': os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(','),
+            # Number of reverse proxies in front of the app on the cloud (load balancer, Cloudflare...). 0 locally.
+            'TRUSTED_PROXY_HOPS': int(os.getenv('TRUSTED_PROXY_HOPS', '0')),
             'MAX_CONTENT_LENGTH': 64 * 1024}

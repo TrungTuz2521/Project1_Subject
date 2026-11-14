@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient } from './api';
 import { createSessionStore } from '../stores/session';
-import { demoUser } from '../mocks/fixtures';
-import { createMockServer } from '../mocks/server';
+import { demoUser } from './testUser';
 
 const stores: ReturnType<typeof createSessionStore>[] = [];
 const makeStore = () => { const store = createSessionStore(); stores.push(store); return store; };
@@ -79,19 +78,16 @@ describe('API client session and error boundaries', () => {
   });
 });
 
-it('mock supports login → load → create → reload and rejects expired sessions', async () => {
-  const store = makeStore();
-  const mock = createMockServer(0);
-  const api = createApiClient({ baseUrl: '/api/v1', store, transport: mock.transport });
-  const result = await api.request<{ data: { access_token: string; expires_in: number; user: typeof demoUser } }>('/auth/login', { auth: false, method: 'POST', body: { email: 'demo@example.test', password: 'mock-only' } });
-  store.set(result.data);
-  const first = await api.request<{ data: unknown[]; meta: { total: number } }>('/teams');
-  expect(first.meta.total).toBe(3);
-  await api.request('/teams', { method: 'POST', body: { team_name: 'FC Kiểm Thử' } });
-  const next = await api.request<{ data: { team_name: string }[]; meta: { total: number } }>('/teams');
-  expect(next.meta.total).toBe(4); expect(next.data[0].team_name).toBe('FC Kiểm Thử');
-  await expect(api.request('/teams', { method: 'POST', body: { team_name: '' } })).rejects.toMatchObject({ status: 422 });
-  mock.expireSession();
-  await expect(api.request('/teams')).rejects.toMatchObject({ status: 401 });
-  expect(store.getSnapshot()).toBeNull();
+it('optional auth sends the token when signed in, works signed out, and never signs out on a 401', async () => {
+  const ok = () => new Response(JSON.stringify({ data: {}, meta: { server_time: new Date().toISOString() } }));
+  const transport = vi.fn(async () => ok());
+  const anonymous = makeStore();
+  await createApiClient({ baseUrl: '/api/v1', store: anonymous, transport }).request('/match-requests/1', { auth: 'optional' });
+  expect(new Headers((transport.mock.calls[0] as unknown as [string, RequestInit])[1].headers).get('Authorization')).toBeNull();
+  const store = makeStore(); loginStore(store);
+  await createApiClient({ baseUrl: '/api/v1', store, transport }).request('/match-requests/1', { auth: 'optional' });
+  expect(new Headers((transport.mock.calls[1] as unknown as [string, RequestInit])[1].headers).get('Authorization')).toBe('Bearer test-token');
+  const denied = vi.fn(async () => new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'x' } }), { status: 401 }));
+  await expect(createApiClient({ baseUrl: '/api/v1', store, transport: denied }).request('/match-requests/1', { auth: 'optional' })).rejects.toMatchObject({ status: 401 });
+  expect(store.getSnapshot()).not.toBeNull();
 });

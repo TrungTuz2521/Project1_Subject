@@ -1,40 +1,18 @@
 import unittest
-from datetime import timedelta, timezone
+from datetime import timedelta
 from decimal import Decimal
 import bcrypt
 import jwt
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app import create_app
 from app.extensions import db
-from app.models import User, Team, TeamMember, MatchPost, MatchProposal, ProposalConfirmation, Match, Notification, FieldComplex, Pitch, Booking, Payment
+from app.models import User, Notification, FieldComplex, Pitch
 from app.utils.time import utcnow, VIETNAM
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.contracts.dto import Actor, BookingHold
-from app.contracts.errors import SlotUnavailable, DomainError
-from app.services import match_service, matchmaking_service as mm
-from app.jobs.commands import scan_open_posts, expire_proposals
 
 SECRET = 'test-only-secret-do-not-use-in-production-123456789'
 HASH = bcrypt.hashpw(b'Password123!', bcrypt.gensalt(rounds=4)).decode()
 
-class FakeBooking:
-    def __init__(self, unavailable=False):
-        self.calls = 0
-        self.unavailable = unavailable
-    def find_match_pitch(self, ctx, **kwargs):
-        return 1
-    def create_match_hold(self, ctx, **kwargs):
-        self.calls += 1
-        if self.unavailable:
-            raise SlotUnavailable()
-        deadline = ctx.now() + timedelta(minutes=5)
-        plan = [dict(user_id=kwargs['source_user_id'], amount='60000.00'),
-                dict(user_id=kwargs['opponent_user_id'], amount='60000.00')]
-        ctx.session.add(Booking(booking_id=1, pitch_id=kwargs['pitch_id'], user_id=kwargs['source_user_id'],
-                                start_time=kwargs['start_time'], end_time=kwargs['end_time'], status='PENDING_HOLD',
-                                hold_expires_at=deadline, payer_plan=plan))
-        ctx.session.flush()
-        return BookingHold(1, 'PENDING_HOLD', deadline, Decimal('600000'), Decimal('120000'), plan)
 
 class BackendTests(unittest.TestCase):
     def setUp(self):
@@ -68,43 +46,17 @@ class BackendTests(unittest.TestCase):
         with UnitOfWork() as ctx:
             user = ctx.session.get(User, uid)
             now = utcnow()
-            token = jwt.encode(dict(sub=str(uid), role=user.role, iat=now-timedelta(hours=2) if expired else now,
+            from app.services.auth_service import session_key
+            token = jwt.encode(dict(sub=str(uid), role=user.role, skey=session_key(user), iat=now-timedelta(hours=2) if expired else now,
                                     exp=now-timedelta(hours=1) if expired else now+timedelta(hours=1),
                                     iss='football-field-api', aud='football-field-web'), SECRET, algorithm='HS256')
         return {'Authorization': 'Bearer ' + token}
 
-    def team(self, header, full=False):
+    def team(self, header):
         r = self.client.post('/api/v1/teams', headers=header, json={'team_name': 'FC Test'})
         self.assertEqual(r.status_code, 201, r.json)
         tid = r.json['data']['team_id']
-        if full:
-            with UnitOfWork() as ctx:
-                for i in range(4):
-                    u = User(full_name='Member', email=f'{tid}-{i}@example.test', password_hash=HASH)
-                    ctx.session.add(u)
-                    ctx.session.flush()
-                    ctx.session.add(TeamMember(team_id=tid, user_id=u.user_id))
         return tid
-
-    def post(self, header, kind='FIND_OPPONENT', tid=None, skill='INTERMEDIATE', **extra):
-        data = dict(post_type=kind, title='Test match', skill_level=skill, pitch_type='PITCH_5',
-                    match_time=self.start.isoformat(), expiry_time=self.deadline.isoformat(), payment_rule='SPLIT_EQUAL')
-        if tid:
-            data['team_id'] = tid
-        data.update(extra)
-        r = self.client.post('/api/v1/match-posts', headers=header, json=data)
-        self.assertEqual(r.status_code, 201, r.json)
-        return r.json['data']['post_id']
-
-    def pair(self):
-        source = self.post(self.a, tid=self.team(self.a, full=True))
-        target = self.post(self.b, tid=self.team(self.b, full=True))
-        result = scan_open_posts()
-        self.assertEqual(len(result['created_proposal_ids']), 1)
-        return source, target, result['created_proposal_ids'][0]
-
-    def respond(self, pid, header, decision='ACCEPTED'):
-        return self.client.post(f'/api/v1/match-proposals/{pid}/respond', headers=header, json={'decision': decision})
 
     def test_register_login_profile_contract_and_hash(self):
         r = self.client.post('/api/v1/auth/register', json=dict(full_name='New Player', email=' NEW@example.test ', password='Password123!'))
@@ -148,134 +100,39 @@ class BackendTests(unittest.TestCase):
         tid = self.team(self.a)
         r = self.client.get('/api/v1/teams?page=1&page_size=6', headers=self.a)
         self.assertEqual(r.json['meta']['total'], 1)
-        self.assertEqual(r.json['data'][0]['active_member_count'], 1)
+        self.assertIsNone(r.json['data'][0]['last_player_count'])
         self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.b).status_code, 404)
         self.assertEqual(self.client.patch(f'/api/v1/teams/{tid}', headers=self.b, json={'team_name': 'Hijack'}).status_code, 403)
-        self.assertEqual(self.client.delete(f'/api/v1/teams/{tid}/members/me', headers=self.a).json['error']['code'], 'CAPTAIN_TRANSFER_REQUIRED')
+        self.assertEqual(self.client.post(f'/api/v1/teams/{tid}/members', headers=self.a, json={'contact': 'u2@example.test'}).status_code, 404)
 
-    def test_post_validation_and_public_privacy(self):
-        tid = self.team(self.a)
-        r = self.client.post('/api/v1/match-posts', headers=self.a, json=dict(post_type='FIND_OPPONENT', title='Short team', team_id=tid,
-             skill_level='INTERMEDIATE', pitch_type='PITCH_5', match_time=self.start.isoformat(), expiry_time=self.deadline.isoformat(), payment_rule='SPLIT_EQUAL'))
-        self.assertEqual(r.status_code, 422)
-        pid = self.post(self.a, kind='LOOK_FOR_TEAM')
-        payload = self.client.get(f'/api/v1/match-posts/{pid}').json['data']
-        self.assertNotIn('email', payload)
-        self.assertEqual(payload['end_time'], (self.start+timedelta(minutes=90)).astimezone(timezone.utc).isoformat().replace('+00:00','Z'))
-        self.assertEqual(self.client.patch(f'/api/v1/match-posts/{pid}', headers=self.b, json={'title': 'Hijack'}).status_code, 403)
-        self.assertEqual(self.client.patch(f'/api/v1/match-posts/{pid}', headers=self.a, json={'required_deposit': '1'}).status_code, 422)
-
-    def test_ai_filters_skill_payment_rule_and_duplicate_scan(self):
-        a = self.post(self.a, tid=self.team(self.a, True))
-        b = self.post(self.b, tid=self.team(self.b, True), skill='PRO')
-        self.assertEqual(scan_open_posts()['created_proposal_ids'], [])
+    def test_notifications_are_private(self):
         with UnitOfWork() as ctx:
-            ctx.session.get(MatchPost, b).skill_level = 'AMATEUR'
-        result = scan_open_posts()
-        self.assertEqual(len(result['created_proposal_ids']), 1)
-        self.assertEqual(scan_open_posts()['created_proposal_ids'], [])
-        self.assertEqual(self.client.get(f"/api/v1/match-proposals/{result['created_proposal_ids'][0]}", headers=self.c).status_code, 404)
-
-    def test_decline_reopens_posts_and_is_idempotent(self):
-        a, b, pid = self.pair()
-        self.assertEqual(self.respond(pid, self.a, 'DECLINED').status_code, 200)
-        self.assertEqual(self.respond(pid, self.a, 'DECLINED').status_code, 200)
-        self.assertEqual(self.respond(pid, self.a, 'ACCEPTED').status_code, 409)
-        with UnitOfWork() as ctx:
-            self.assertEqual(ctx.session.get(MatchPost, a).status, 'OPEN')
-            self.assertEqual(ctx.session.get(MatchPost, b).status, 'OPEN')
-
-    def test_missing_booking_adapter_rolls_back_second_confirmation(self):
-        self.app.extensions.pop('booking_service')  # The real service is registered by default now.
-        a, b, pid = self.pair()
-        self.assertEqual(self.respond(pid, self.a).status_code, 200)
-        self.assertEqual(self.respond(pid, self.b).status_code, 503)
-        with UnitOfWork() as ctx:
-            self.assertEqual(ctx.session.scalar(select(func_count(Match))), 0)
-            c = ctx.session.scalar(select(ProposalConfirmation).where(ProposalConfirmation.proposal_id == pid, ProposalConfirmation.user_id == self.users[1]))
-            self.assertEqual(c.decision, 'PENDING')
-
-    def test_opponent_hold_once_and_no_early_confirmation(self):
-        adapter = FakeBooking()
-        self.app.extensions['booking_service'] = adapter
-        a, b, pid = self.pair()
-        self.respond(pid, self.a)
-        r = self.respond(pid, self.b)
-        self.assertEqual(r.status_code, 200, r.json)
-        self.assertEqual(self.respond(pid, self.b).status_code, 200)
-        self.assertEqual(adapter.calls, 1)
-        with UnitOfWork() as ctx:
-            match = ctx.session.scalar(select(Match))
-            self.assertEqual(match.status, 'SUGGESTED')
-            self.assertEqual(ctx.session.get(MatchPost, a).status, 'LOCKED')
-            with self.assertRaises(DomainError):
-                match_service.confirm_after_deposit(ctx, booking_id=1)
-
-    def test_slot_unavailable_commits_failure_and_reopens(self):
-        self.app.extensions['booking_service'] = FakeBooking(True)
-        a, b, pid = self.pair()
-        self.respond(pid, self.a)
-        r = self.respond(pid, self.b)
-        self.assertEqual(r.status_code, 409, r.json)
-        with UnitOfWork() as ctx:
-            self.assertEqual(ctx.session.scalar(select(Match)).status, 'CANCELLED')
-            self.assertEqual(ctx.session.get(MatchPost, a).status, 'OPEN')
-            self.assertEqual(ctx.session.get(MatchProposal, pid).status, 'ACCEPTED')
-
-    def test_deposit_confirmation_requires_each_payer_and_is_idempotent(self):
-        self.app.extensions['booking_service'] = FakeBooking()
-        a, b, pid = self.pair()
-        self.respond(pid, self.a)
-        self.respond(pid, self.b)
-        with UnitOfWork() as ctx:
-            ctx.session.execute(text("UPDATE bookings SET status='CONFIRMED'"))
-            ctx.session.add(Payment(booking_id=1, user_id=self.users[0], payment_type='BOOKING_DEPOSIT', payment_method='VNPAY', status='SUCCESS', amount=120000))
-        with UnitOfWork() as ctx:
-            with self.assertRaises(DomainError):
-                match_service.confirm_after_deposit(ctx, booking_id=1)
-        with UnitOfWork() as ctx:
-            ctx.session.add(Payment(booking_id=1, user_id=self.users[1], payment_type='BOOKING_DEPOSIT', payment_method='VNPAY', status='SUCCESS', amount=60000))
-            ctx.session.flush()
-            match = match_service.confirm_after_deposit(ctx, booking_id=1)
-            self.assertEqual(match.status, 'CONFIRMED')
-            match_service.confirm_after_deposit(ctx, booking_id=1)
-            self.assertEqual(ctx.session.get(MatchPost, a).status, 'MATCHED')
-
-    def test_recruitment_accepts_only_after_both_and_no_booking(self):
-        tid = self.team(self.a)
-        post_id = self.post(self.a, kind='RECRUIT_MEMBERS', tid=tid, required_players=1)
-        r = self.client.post(f'/api/v1/match-posts/{post_id}/participants', headers=self.b, json={})
-        self.assertEqual(r.status_code, 201, r.json)
-        pid = r.json['data']['proposal_id']
-        self.respond(pid, self.a)
-        self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data']['active_member_count'], 1)
-        self.assertEqual(self.respond(pid, self.b).status_code, 200)
-        self.assertEqual(self.respond(pid, self.b).status_code, 200)
-        self.assertEqual(self.client.get(f'/api/v1/teams/{tid}', headers=self.a).json['data']['active_member_count'], 2)
-        with UnitOfWork() as ctx:
-            self.assertEqual(ctx.session.scalar(select(func_count(Match))), 0)
-            self.assertEqual(ctx.session.execute(text('SELECT COUNT(*) FROM bookings')).scalar(), 0)
-
-    def test_expiry_reopens_and_notifications_are_private(self):
-        a, b, pid = self.pair()
-        with UnitOfWork() as ctx:
-            ctx.session.get(MatchProposal, pid).expires_at = utcnow()-timedelta(seconds=1)
-        self.assertEqual(expire_proposals(), 1)
-        self.assertEqual(expire_proposals(), 0)
-        r = self.client.get('/api/v1/notifications', headers=self.a)
-        nid = r.json['data'][0]['notification_id']
+            ctx.session.add(Notification(user_id=self.users[0], notification_type='POST_EXPIRED', title='t', content='c'))
+        nid = self.client.get('/api/v1/notifications', headers=self.a).json['data'][0]['notification_id']
         self.assertEqual(self.client.patch(f'/api/v1/notifications/{nid}/read', headers=self.b).status_code, 404)
         self.assertEqual(self.client.patch(f'/api/v1/notifications/{nid}/read', headers=self.a).status_code, 200)
+
+    def test_read_all_notifications_touches_only_own_unread(self):
+        with UnitOfWork() as ctx:
+            for _ in range(3):
+                ctx.session.add(Notification(user_id=self.users[0], notification_type='POST_EXPIRED', title='t', content='c'))
+            ctx.session.add(Notification(user_id=self.users[1], notification_type='POST_EXPIRED', title='t', content='c'))
+        unread = lambda h: self.client.get('/api/v1/notifications?is_read=false', headers=h).json['meta']['total']
+        r = self.client.patch('/api/v1/notifications/read-all', headers=self.a)
+        self.assertEqual((r.status_code, r.json['data']['updated']), (200, 3))
+        self.assertEqual((unread(self.a), unread(self.b)), (0, 1))
+        self.assertEqual(self.client.patch('/api/v1/notifications/read-all', headers=self.a).json['data']['updated'], 0)
+        self.assertEqual(self.client.patch('/api/v1/notifications/read-all').status_code, 401)
 
     def test_scan_requires_admin(self):
         self.assertEqual(self.client.post('/api/v1/matchmaking/scan', headers=self.a, json={}).status_code, 403)
 
     def test_invalid_json_null_expiry_and_naive_time_return_422(self):
         self.assertEqual(self.client.post('/api/v1/auth/login', json=[]).status_code, 422)
-        self.assertEqual(self.client.post('/api/v1/match-posts', headers=self.a, json=dict(post_type='LOOK_FOR_TEAM',
-            title='Bad expiry', skill_level='AMATEUR', expiry_time=None)).status_code, 422)
-        self.assertEqual(self.client.post('/api/v1/match-posts', headers=self.a, json=dict(post_type='LOOK_FOR_TEAM',
-            title='Bad time', skill_level='AMATEUR', expiry_time=self.deadline.isoformat(), match_time='2026-10-29T18:00:00')).status_code, 422)
+        self.assertEqual(self.client.post('/api/v1/match-requests', headers=self.a, json=dict(post_type='LOOK_FOR_TEAM',
+            skill_level='AMATEUR', preferred_dates=None)).status_code, 422)
+        self.assertEqual(self.client.post('/api/v1/match-requests', headers=self.a, json=dict(post_type='LOOK_FOR_TEAM',
+            skill_level='AMATEUR', preferred_dates=['2026-13-40'], window_start='18:00', window_end='21:00')).status_code, 422)
 
     def test_auth_rate_limit_and_cors(self):
         self.app.config['AUTH_RATE_LIMIT'] = 1
@@ -284,99 +141,6 @@ class BackendTests(unittest.TestCase):
         r = self.client.options('/api/v1/users/me', headers={'Origin':'http://localhost:5173',
             'Access-Control-Request-Method':'PATCH', 'Access-Control-Request-Headers':'Authorization,Content-Type'})
         self.assertEqual(r.headers.get('Access-Control-Allow-Origin'), 'http://localhost:5173')
-
-    def test_random_squad_creates_temporary_team_without_booking(self):
-        first = self.post(self.a, kind='RANDOM_SQUAD')
-        second = self.post(self.b, kind='RANDOM_SQUAD')
-        pid = scan_open_posts()['created_proposal_ids'][0]
-        self.assertEqual(self.respond(pid, self.a).status_code, 200)
-        r = self.respond(pid, self.b)
-        self.assertEqual(r.status_code, 200, r.json)
-        with UnitOfWork() as ctx:
-            source = ctx.session.get(MatchPost, first)
-            self.assertEqual(source.post_type, 'RECRUIT_MEMBERS')
-            self.assertEqual(source.required_players, 3)
-            self.assertEqual(ctx.session.get(Team, source.team_id).creation_type, 'AI_RANDOM')
-            self.assertEqual(ctx.session.get(MatchPost, second).status, 'MATCHED')
-            self.assertEqual(ctx.session.execute(text('SELECT COUNT(*) FROM bookings')).scalar(), 0)
-
-    def test_captain_join_response_contract_and_withdrawal(self):
-        tid = self.team(self.a)
-        post_id = self.post(self.a, kind='RECRUIT_MEMBERS', tid=tid, required_players=2)
-        r = self.client.post(f'/api/v1/teams/{tid}/join-requests', headers=self.b, json={})
-        self.assertEqual(r.status_code, 201)
-        r = self.client.patch(f'/api/v1/teams/{tid}/join-requests/{post_id}/respond', headers=self.a, json={'decision':'ACCEPTED'})
-        self.assertEqual(r.status_code, 200, r.json)
-        self.assertEqual(r.json['data']['status'], 'PENDING')
-        self.assertIn('participant_id', r.json['data'])
-        r = self.client.delete(f'/api/v1/match-posts/{post_id}/participants/me', headers=self.b)
-        self.assertEqual(r.status_code, 200, r.json)
-        self.assertEqual(r.json['data']['status'], 'CANCELLED')
-
-    def test_mismatched_payment_rule_not_matched_and_overlap_blocked(self):
-        first = self.post(self.a, tid=self.team(self.a, True))
-        second = self.post(self.b, tid=self.team(self.b, True), payment_rule='LOSER_PAYS_REMAINDER')
-        self.assertEqual(scan_open_posts()['created_proposal_ids'], [])
-        with UnitOfWork() as ctx:
-            ctx.session.get(MatchPost, second).payment_rule = 'SPLIT_EQUAL'
-        self.app.extensions['booking_service'] = FakeBooking()
-        pid = scan_open_posts()['created_proposal_ids'][0]
-        self.respond(pid, self.a)
-        self.respond(pid, self.b)
-        r = self.client.post('/api/v1/match-posts', headers=self.a, json=dict(post_type='LOOK_FOR_TEAM', title='Overlap',
-            skill_level='AMATEUR', expiry_time=self.deadline.isoformat(), match_time=self.start.isoformat(), pitch_type='PITCH_5'))
-        self.assertEqual(r.status_code, 409, r.json)
-
-    def test_expired_deposit_cannot_revive_and_cancellation_reopens(self):
-        self.app.extensions['booking_service'] = FakeBooking()
-        a, b, pid = self.pair()
-        self.respond(pid, self.a)
-        self.respond(pid, self.b)
-        with UnitOfWork() as ctx:
-            ctx.session.execute(text("UPDATE bookings SET status='CONFIRMED',hold_expires_at=:deadline"),
-                                {'deadline': (utcnow()-timedelta(seconds=1)).replace(tzinfo=None).isoformat()})
-        with UnitOfWork() as ctx:
-            with self.assertRaises(DomainError):
-                match_service.confirm_after_deposit(ctx, booking_id=1)
-        with UnitOfWork() as ctx:
-            ctx.session.execute(text("UPDATE bookings SET status='EXPIRED'"))
-            result = match_service.cancel_after_booking_change(ctx, booking_id=1, cause='HOLD_TIMEOUT')
-            self.assertEqual(result.status, 'CANCELLED')
-            self.assertEqual(ctx.session.get(MatchPost, a).status, 'OPEN')
-            self.assertIsNone(ctx.session.get(MatchPost, a).booking_id)
-            match_service.cancel_after_booking_change(ctx, booking_id=1, cause='HOLD_TIMEOUT')
-
-    def test_confirmation_at_deadline_persists_expiry(self):
-        a, b, pid = self.pair()
-        with UnitOfWork() as ctx:
-            deadline = utcnow()-timedelta(seconds=1)
-            ctx.session.get(MatchProposal, pid).expires_at = deadline
-        self.assertEqual(self.respond(pid, self.a).status_code, 409)
-        with UnitOfWork() as ctx:
-            self.assertEqual(ctx.session.get(MatchProposal, pid).status, 'EXPIRED')
-            self.assertEqual(ctx.session.get(MatchPost, b).status, 'OPEN')
-
-    def test_booking_parties_are_display_context_not_payment_allocation(self):
-        self.app.extensions['booking_service'] = FakeBooking()
-        a, b, pid = self.pair()
-        self.respond(pid, self.a)
-        self.respond(pid, self.b)
-        with UnitOfWork() as ctx:
-            parties = match_service.get_booking_parties(ctx, booking_id=1)
-            self.assertEqual(parties.booking_id, 1)
-            self.assertEqual(parties.source['representative_user_id'], self.users[0])
-            self.assertEqual(parties.opponent['representative_user_id'], self.users[1])
-            self.assertEqual(parties.source['team_id'], ctx.session.get(MatchPost, a).team_id)
-            self.assertEqual(parties.opponent['team_id'], ctx.session.get(MatchPost, b).team_id)
-            from app.utils.serialization import encode
-            payload = encode(parties)
-            self.assertEqual(set(payload['source']), {'team_id', 'team_name', 'representative_user_id'})
-            self.assertNotIn('outcome', payload)
-            self.assertNotIn('remaining_amount', payload['source'])
-
-    def test_direct_booking_has_no_artificial_match_parties(self):
-        with UnitOfWork() as ctx:
-            self.assertIsNone(match_service.get_booking_parties(ctx, booking_id=999))
 
     def test_booking_balance_dto_uses_one_total_for_both_rules(self):
         from app.contracts.dto import BookingBalance, ManualReceipt

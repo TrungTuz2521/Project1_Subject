@@ -1,0 +1,146 @@
+/* Player (customer) app: keeps the green football identity of app.css, adds what a customer needs on a phone. */
+:root{--pl-green:#21513e;--pl-green-strong:#163e2b;--pl-mint:#eaf3e4;--pl-line:#dfe7da;--pl-text:#20372e;--pl-muted:#55645a;--pl-amber:#b45309;--pl-amber-soft:#fef3c7}
+
+/* ---- Shell: grouped navigation, venue phone ---- */
+.player-nav{gap:2px}
+.player-nav-group{display:flex;flex-direction:column;gap:3px;margin-bottom:14px}
+.player-nav-title{margin:6px 10px 4px;font-size:12px;color:#9db9aa;font-weight:500}
+.player-side-contact{margin-top:auto;padding:16px 8px 0}
+.player-side-contact .venue-call{color:#eaf3d9;border-color:#3b6655}
+.venue-call{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--pl-line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--pl-green);text-decoration:none;white-space:nowrap}
+.venue-call:hover{background:var(--pl-mint)}
+.player-nav-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#c2410c;color:#fff;font-size:11px;font-weight:700;line-height:20px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* Desktop: sidebar and top bar stay put, only the page content scrolls (the window still scrolls, as in admin). */
+.player-shell .account-sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:flex-start;scrollbar-width:thin;scrollbar-color:#3b6655 transparent}
+.player-shell .account-topbar{position:sticky;top:0;z-index:20;background:rgba(251,252,248,.94);backdrop-filter:blur(6px)}
+.player-footer{margin-top:40px;border-top:1px solid var(--pl-line);padding-top:16px;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--pl-muted)}
+.player-footer strong{color:var(--pl-text)}
+.player-footer a{color:var(--pl-green);font-weight:600}
+
+/* Phone tab bar */
+.player-tabbar{display:none}
+@media(max-width:760px){
+  .player-shell .account-sidebar{display:none}
+  .player-shell .account-main{padding-bottom:90px}
+  .player-shell .account-user .venue-call span:last-child{display:none}
+  .player-tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-top:1px solid var(--pl-line);padding:6px 4px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(18,62,51,.06)}
+  .player-tabbar a{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;color:#6b7a6f;padding:4px 2px;border-radius:10px;min-height:48px;justify-content:center}
+  .player-tabbar a span{font-size:18px;line-height:1}
+  .player-tabbar a small{font-size:11px;font-weight:600}
+  .player-tabbar a.is-active{color:var(--pl-green);background:var(--pl-mint)}
+}
+
+/* ---- Public page (not signed in) ---- */
+.player-public{min-height:100vh;background:#f5f6f2;color:var(--pl-text)}
+.player-public-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px clamp(16px,4vw,44px);background:#123e33;color:#f5f8ef}
+.player-public-brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;font-weight:700;font-size:16px;min-width:0}
+.player-public-brand small{display:block;font-weight:400;font-size:13px;color:#b9cfc3}
+.player-public-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.player-public-actions .venue-call{color:#eaf3d9;border-color:#3b6655}
+.player-public-actions .account-secondary-button,.player-public-actions .account-primary-button{font-size:14px;min-height:38px}
+.player-public-actions .account-primary-button{background:#d6e8a6;color:#123e33}
+.player-public-main{max-width:1280px;margin:0 auto;padding:24px clamp(16px,4vw,44px) 40px}
+.player-public .huy-module{font-size:14px}
+.player-public .huy-head h1 span,.player-public .huy-kicker{display:none}
+.player-public .huy-head p{font-size:14px;color:var(--pl-muted)}
+.auth-switch a{color:var(--pl-green);font-weight:700}
+
+/* ---- Venue card ---- */
+.venue-card{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:#fff;border:1px solid var(--pl-line);border-radius:12px;padding:16px 18px;margin:18px 0}
+.venue-card strong{display:block;font-size:16px}
+.venue-card small{display:block;font-size:13px;color:var(--pl-muted);margin-top:2px}
+.venue-actions{display:flex;gap:8px;flex-wrap:wrap}
+.venue-actions a{font-size:14px;min-height:40px}
+
+/* ---- Home ---- */
+.home-hero{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;background:#123e33;color:#f5f8ef;border-radius:14px;padding:clamp(20px,3vw,32px)}
+.home-hero h1{margin:0 0 6px;font-size:clamp(24px,3vw,32px);letter-spacing:-.5px;color:#fff}
+.home-hero p{margin:0;font-size:14px;color:#c9dccf;max-width:60ch}
+.home-cta{background:#d6e8a6;color:#123e33;font-weight:800;font-size:16px;text-decoration:none;border-radius:10px;padding:14px 22px;white-space:nowrap}
+.home-cta:hover{background:#c8df8e}
+.home-section{margin-top:22px}
+.home-section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.home-section-head h2{margin:0;font-size:18px}
+.home-section-head a{font-size:14px;font-weight:600;color:var(--pl-green)}
+.home-muted{font-size:14px;color:var(--pl-muted)}
+.home-empty{background:#fff;border:1px dashed #cfdac4;border-radius:12px;padding:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.home-empty p{margin:0;font-size:14px;color:var(--pl-muted)}
+.home-games{display:grid;gap:8px}
+.home-game{display:grid;grid-template-columns:80px minmax(0,1fr) auto auto;gap:14px;align-items:center;background:#fff;border:1px solid var(--pl-line);border-left:4px solid #7aa15a;border-radius:12px;padding:12px 16px;text-decoration:none;color:inherit}
+.home-game.is-hold{border-left-color:#f5b971;background:#fffdf5}
+.home-game:hover{border-color:#a9c0a3}
+.home-game-time strong{display:block;font-size:22px;font-weight:800;line-height:1.1}
+.home-game-time small,.home-game-info small,.home-game-money small{display:block;font-size:12px;color:var(--pl-muted)}
+.home-game-info strong{font-size:15px}
+.home-game-money{text-align:right}
+.home-game-money strong{font-size:15px;color:var(--pl-amber)}
+.home-game-go{font-size:14px;font-weight:700;color:var(--pl-green);white-space:nowrap}
+.home-links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:6px}
+.home-links a{background:#fff;border:1px solid var(--pl-line);border-radius:12px;padding:14px;text-decoration:none;color:inherit;display:grid;gap:4px}
+.home-links a:hover{border-color:#a9c0a3}
+.home-links strong{font-size:15px}
+.home-links span{font-size:13px;color:var(--pl-muted)}
+
+/* ---- Booking page ---- */
+.book-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:10px}
+.book-filters .huy-field{min-width:130px;margin:0}
+.book-price-filter{display:contents}
+.player-public .huy-field,.player-shell .book-filters .huy-field{font-size:13px}
+.player-public .huy-field>span{color:var(--pl-muted)}
+.player-public .huy-field input,.player-public .huy-field select{font-size:14px;min-height:42px}
+.book-days{display:inline-flex;gap:4px;background:#e9efe4;border-radius:10px;padding:3px}
+.book-days button{border:0;background:transparent;border-radius:8px;padding:9px 14px;font-weight:700;font-size:14px;color:var(--pl-muted);min-height:40px}
+.book-days button.is-on{background:#fff;color:var(--pl-green);box-shadow:0 1px 3px rgba(18,62,51,.12)}
+.list-tabs{margin-bottom:12px}
+.book-hint{font-size:14px;color:var(--pl-muted);margin:6px 0 12px}
+.book-matrix-wrap{overflow-x:auto;background:#fff;border:1px solid var(--pl-line);border-radius:12px}
+.book-matrix{border-collapse:separate;border-spacing:0;width:100%;min-width:820px}
+.book-matrix th{font-size:12px;color:var(--pl-muted);font-weight:600;padding:8px 4px;text-align:center;border-bottom:1px solid var(--pl-line);background:#f7faf5;white-space:nowrap}
+.book-matrix tbody th{text-align:left;position:sticky;left:0;background:#fff;z-index:1;border-right:1px solid var(--pl-line);padding:8px 10px;min-width:150px}
+.book-matrix tbody th strong{display:block;font-size:14px;color:var(--pl-text)}
+.book-matrix tbody th small{display:block;font-size:12px;color:var(--pl-muted);font-weight:400}
+.book-matrix tbody th .book-row-price{color:var(--pl-green);font-weight:600}
+.book-matrix td{padding:4px;border-bottom:1px solid #eef3eb}
+.book-matrix tr:last-child td,.book-matrix tr:last-child th{border-bottom:0}
+.book-matrix td.is-past{background:repeating-linear-gradient(-45deg,transparent 0 5px,#f1f4ef 5px 10px)}
+.book-cell{width:100%;min-height:44px;border-radius:8px;border:1px solid #cfe0c7;background:#fff;color:var(--pl-green);font-weight:700;font-size:13px}
+.book-cell:hover:not(:disabled){background:var(--pl-mint);border-color:#7aa15a}
+.book-cell.is-peak:not(:disabled){border-color:#f5b971;color:var(--pl-amber);box-shadow:inset 0 -3px 0 #fbd38d}
+.book-cell.is-picked,.book-cell.is-picked:hover{background:var(--pl-green);border-color:var(--pl-green);color:#fff}
+.book-cell:disabled{background:#f1f4ef;border-color:transparent;color:#a3ada0;font-weight:500;cursor:not-allowed}
+.book-stack{display:none}
+.book-none{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px dashed #cfdac4;border-radius:12px;padding:16px 18px;margin-bottom:12px}
+.book-none p{margin:0;font-size:15px;font-weight:600}
+.book-bar{position:sticky;bottom:12px;z-index:10;margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:#fff;border:1px solid var(--pl-line);border-radius:14px;padding:12px 16px;box-shadow:0 6px 24px rgba(18,62,51,.1)}
+.book-bar.is-ready{border-color:#7aa15a}
+.book-bar-info strong{display:block;font-size:15px}
+.book-bar-info small{display:block;font-size:13px;color:var(--pl-muted);margin-top:2px;max-width:70ch}
+.book-bar .huy-btn{min-height:46px;font-size:15px;padding:10px 20px}
+@media(max-width:640px){
+  .book-matrix-wrap{display:none}
+  .book-stack{display:grid;gap:10px}
+  .book-stack-pitch{background:#fff;border:1px solid var(--pl-line);border-radius:12px;padding:12px}
+  .book-stack-pitch header strong{display:block;font-size:16px}
+  .book-stack-pitch header small{display:block;font-size:13px;color:var(--pl-muted);margin:2px 0 10px}
+  .book-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px}
+  .book-chip{border:1px solid #cfe0c7;background:#fff;border-radius:10px;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--pl-text)}
+  .book-chip strong{font-size:16px}
+  .book-chip small{font-size:12px;color:var(--pl-green);font-weight:600}
+  .book-chip.is-peak{border-color:#f5b971}
+  .book-chip.is-peak small{color:var(--pl-amber)}
+  .book-chip.is-picked{background:var(--pl-green);border-color:var(--pl-green);color:#fff}
+  .book-chip.is-picked small{color:#d6e8a6}
+  .book-filters .huy-field{min-width:calc(50% - 6px);flex:1}
+  .book-bar{bottom:76px;padding:8px 12px;gap:8px}
+  .book-bar-info strong{font-size:14px}
+  .book-bar-info small{font-size:12px}
+  .book-bar-more{display:none}
+  .book-bar .huy-btn{width:100%;min-height:44px}
+  .book-price-filter{display:none}
+  .player-public .book-bar{bottom:10px}
+  .home-game{grid-template-columns:64px minmax(0,1fr);grid-template-areas:"time info" "time money" "go go"}
+  .home-game-time{grid-area:time}.home-game-info{grid-area:info}.home-game-money{grid-area:money;text-align:left}.home-game-go{grid-area:go}
+  .home-links{grid-template-columns:1fr 1fr}
+  .home-cta{width:100%;text-align:center}
+}

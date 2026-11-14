@@ -1,4 +1,4 @@
-"""Models owned by Đức; Tú registers his models on the same db.metadata."""
+"""Account, team and matchmaking models; booking-side models are re-exported at the bottom (same metadata)."""
 from sqlalchemy import UniqueConstraint
 from app.extensions import db
 from app.utils.time import UTCDateTime, utcnow
@@ -21,6 +21,10 @@ class User(Timestamped, db.Model):
     match_priority = db.Column(db.Integer, nullable=False, default=100)
     radar_stats = db.Column(db.JSON)
     status = db.Column(db.String(16), nullable=False, default='ACTIVE')
+    # Where a bank refund is sent (migration 007). Webhooks never tell who sent a transfer.
+    refund_bank_name = db.Column(db.String(100))
+    refund_account_no = db.Column(db.String(30))
+    refund_account_name = db.Column(db.String(100))
 
 class Team(Timestamped, db.Model):
     __tablename__ = 'teams'
@@ -57,10 +61,18 @@ class MatchPost(Timestamped, db.Model):
     payment_rule = db.Column(db.String(100))
     required_players = db.Column(db.Integer)
     current_players = db.Column(db.Integer, nullable=False, default=1)
+    # Per-post snapshot, independent of permanent TeamMember membership. NULL = legacy.
+    attendance_plan = db.Column(db.JSON, nullable=True)
     required_deposit = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     expiry_time = db.Column(UTCDateTime(), nullable=False)
     is_fallback_scanned = db.Column(db.Boolean, nullable=False, default=False)
     status = db.Column(db.String(32), nullable=False, default='OPEN')
+    # Request criteria (migration 006). A request tied to a booking has a fixed match_time instead.
+    preferred_dates = db.Column(db.JSON, nullable=True)
+    window_start = db.Column(db.String(5))
+    window_end = db.Column(db.String(5))
+    skill_tolerance = db.Column(db.Integer)
+    matched_post_id = db.Column(db.Integer)
 
 class MatchParticipant(db.Model):
     __tablename__ = 'match_participants'
@@ -122,8 +134,8 @@ class Notification(db.Model):
     sent_at = db.Column(UTCDateTime(), default=utcnow)
     read_at = db.Column(UTCDateTime())
 
-# Models owned by Tú, registered on the same metadata.
-from app.models.field_complex import FieldComplex  # noqa: E402
-from app.models.pitch import Pitch  # noqa: E402
-from app.models.booking import Booking  # noqa: E402
-from app.models.payment import Payment  # noqa: E402
+# Booking-side models live in their own files and are re-exported here, on the same metadata.
+from app.models.field_complex import FieldComplex  # noqa: E402,F401
+from app.models.pitch import Pitch  # noqa: E402,F401
+from app.models.booking import Booking  # noqa: E402,F401
+from app.models.payment import Payment  # noqa: E402,F401

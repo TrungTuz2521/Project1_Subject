@@ -34,15 +34,16 @@ def _locked_active_pitch(ctx, pitch_id):
         raise SlotUnavailable()
     return rows[0]
 
-def _insert_hold(ctx, *, pitch, user_id, start, end, payment_rule, payer_ids, booking_type='ONLINE', note=None):
-    total = policy.money(pitch.price_per_slot)
+def _insert_hold(ctx, *, pitch, user_id, start, end, payment_rule, payer_ids, booking_type='ONLINE', note=None, hold_seconds=None):
+    from app.services.pricing import slot_price
+    total, _ = slot_price(ctx, pitch, start)  # Peak or normal price, fixed onto the booking now.
     deposit = policy.deposit_total(total)
     amounts = policy.split_deposit(deposit) if len(payer_ids) == 2 else (deposit,)
     plan = [{'user_id': uid, 'amount': format(amount, '.2f')} for uid, amount in zip(payer_ids, amounts)]
     now = ctx.now().replace(microsecond=0)
     booking = Booking(pitch_id=pitch.pitch_id, user_id=user_id, start_time=start, end_time=end, total_amount=total,
                       deposit_amount=deposit, booking_type=booking_type, status='PENDING_HOLD',
-                      hold_expires_at=now + timedelta(seconds=policy.HOLD_SECONDS), payment_rule=payment_rule,
+                      hold_expires_at=now + timedelta(seconds=hold_seconds or policy.HOLD_SECONDS), payment_rule=payment_rule,
                       payer_plan=plan, note=note)
     ctx.session.add(booking)
     ctx.session.flush()
@@ -52,15 +53,16 @@ def _hold(booking):
     return BookingHold(booking.booking_id, booking.status, booking.hold_expires_at, policy.money(booking.total_amount),
                        policy.money(booking.deposit_amount), booking.payer_plan)
 
-def create_direct_hold(ctx, *, pitch_id, user_id, start_time, end_time, booking_type='ONLINE', note=None):
+def create_direct_hold(ctx, *, pitch_id, user_id, start_time, end_time, booking_type='ONLINE', note=None,
+                       max_advance_days=policy.MAX_ADVANCE_DAYS):
     pitch = _locked_active_pitch(ctx, pitch_id)
-    policy.validate_slot(ctx.now(), start_time, end_time)
+    policy.validate_slot(ctx.now(), start_time, end_time, max_advance_days)
     if find_conflict(ctx, pitch_id, start_time, end_time):
         raise SlotUnavailable()
     return _insert_hold(ctx, pitch=pitch, user_id=user_id, start=start_time, end=end_time,
                         payment_rule='DIRECT_BOOKING', payer_ids=[user_id], booking_type=booking_type, note=note)
 
-def create_match_hold(ctx, *, match_id, pitch_id, start_time, end_time, source_user_id, opponent_user_id, payment_rule):
+def create_match_hold(ctx, *, match_id, pitch_id, start_time, end_time, source_user_id, opponent_user_id, payment_rule, hold_seconds=None):
     """Caller already holds parent locks. Raises SlotUnavailable before any Booking is inserted."""
     if payment_rule not in PAYMENT_RULES or source_user_id == opponent_user_id:
         raise DomainError('STATE_CONFLICT', 'Thể thức hoặc đại diện hai bên không hợp lệ.')
@@ -74,7 +76,8 @@ def create_match_hold(ctx, *, match_id, pitch_id, start_time, end_time, source_u
     if find_conflict(ctx, pitch_id, start_time, end_time):
         raise SlotUnavailable()
     return _hold(_insert_hold(ctx, pitch=pitch, user_id=source_user_id, start=start_time, end=end_time,
-                              payment_rule=payment_rule, payer_ids=[source_user_id, opponent_user_id]))
+                              payment_rule=payment_rule, payer_ids=[source_user_id, opponent_user_id],
+                              hold_seconds=hold_seconds))
 
 def payments_of(ctx, booking_id):
     return list(ctx.session.scalars(select(Payment).where(Payment.booking_id == booking_id).order_by(Payment.payment_id)))
@@ -85,7 +88,7 @@ def lock_booking_graph(ctx, booking_id, extra_pitch_ids=()):
     if found is None:
         raise DomainError('NOT_FOUND', 'Không tìm thấy booking.', 404)
     pitch_id = found.pitch_id
-    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id))
+    match = ctx.session.scalar(select(Match).where(Match.booking_id == booking_id).order_by(Match.match_id.desc()))
     ctx.locks.lock(Pitch, [pitch_id, *extra_pitch_ids])
     if match:
         ctx.locks.lock(MatchPost, [match.post_id, match.opponent_post_id])
@@ -127,20 +130,49 @@ def confirm_if_deposit_complete(ctx, *, booking_id):
     ctx.session.flush()
     return True
 
+def required_share(booking, user_id):
+    """The deposit this payer owes for the booking, or None when they are not a payer."""
+    item = next((p for p in booking.payer_plan or [] if p['user_id'] == user_id), None)
+    return Decimal(item['amount']) if item else None
+
+def summary_text(ctx, booking):
+    """One line that names the booking in messages: number, pitch, time and day."""
+    from app.utils.time import VIETNAM
+    pitch = ctx.session.get(Pitch, booking.pitch_id)
+    start, end = booking.start_time.astimezone(VIETNAM), booking.end_time.astimezone(VIETNAM)
+    return (f'Booking #{booking.booking_id} - {pitch.pitch_name if pitch else f"sân #{booking.pitch_id}"}, '
+            f'{start:%H:%M}-{end:%H:%M} ngày {start:%d/%m/%Y}.')
+
 def is_party(booking, user_id):
     return booking.user_id == user_id or any(p['user_id'] == user_id for p in booking.payer_plan or [])
 
-def booking_data(ctx, booking, admin=False, payments=None):
+def booking_data(ctx, booking, admin=False, payments=None, pitch_names=None):
     result = columns(booking, 'booking_id pitch_id user_id start_time end_time total_amount deposit_amount '
                      'booking_type status payment_rule created_at')
     result['hold_expires_at'] = booking.hold_expires_at if booking.status == 'PENDING_HOLD' else None
-    result['payer_progress'] = payer_progress(ctx, booking, payments)
+    rows = payments if payments is not None else payments_of(ctx, booking.booking_id)
+    result['payer_progress'] = payer_progress(ctx, booking, rows)
+    from app.services.payment_service import is_demo_payment
+    result['is_demo'] = any(is_demo_payment(p) for p in rows)
+    # What the customer has paid so far for this booking (net of refunds) and what is still due at the pitch.
+    collected = sum((Decimal(p.amount) for p in rows if p.payment_type in ('BOOKING_DEPOSIT', 'BOOKING_REMAINING_PAYMENT')
+                     and p.status in ('SUCCESS', 'REFUNDED')), Decimal('0'))
+    collected -= sum((Decimal(p.amount) for p in rows if p.payment_type == 'REFUND' and p.status == 'SUCCESS'), Decimal('0'))
+    result['paid_amount'] = policy.money(collected)
+    owed = Decimal(booking.total_amount) - collected if booking.status in ('CONFIRMED', 'PENDING_HOLD') else Decimal('0')
+    result['outstanding_amount'] = policy.money(max(owed, Decimal('0')))
+    if pitch_names is not None and booking.pitch_id in pitch_names:
+        result['pitch_name'] = pitch_names[booking.pitch_id]
+    else:
+        pitch = ctx.session.get(Pitch, booking.pitch_id)
+        result['pitch_name'] = pitch.pitch_name if pitch else None
     if admin:
         result['note'] = booking.note
+        result.update(series_id=booking.series_id, arrival_status=booking.arrival_status, arrived_at=booking.arrived_at)
     return result
 
 def read_for_actor(ctx, *, booking_id, actor):
-    """booking_reader for match details: the route has already checked the viewer may see this match."""
+    """Booking view inside match details: the route has already checked the viewer may see this match."""
     booking = ctx.session.get(Booking, booking_id)
     if booking is None:
         return None
@@ -148,4 +180,20 @@ def read_for_actor(ctx, *, booking_id, actor):
     if actor.role != 'ADMIN' and not is_party(booking, actor.user_id):
         # Team members see progress only, not the amounts other people paid.
         result['payer_progress'] = [{'user_id': p['user_id'], 'status': p['status']} for p in result['payer_progress']]
+        result.pop('paid_amount', None)
+        result.pop('outstanding_amount', None)
     return result
+
+def payments_by_booking(ctx, bookings):
+    """One query for a whole page of bookings, grouped by booking_id."""
+    ids = [b.booking_id for b in bookings]
+    grouped = {booking_id: [] for booking_id in ids}
+    if ids:
+        for payment in ctx.session.scalars(select(Payment).where(Payment.booking_id.in_(ids)).order_by(Payment.payment_id)):
+            grouped[payment.booking_id].append(payment)
+    return grouped
+
+def pitch_names(ctx, bookings):
+    """One query for the pitch names of a page of bookings."""
+    ids = {b.pitch_id for b in bookings}
+    return dict(ctx.session.execute(select(Pitch.pitch_id, Pitch.pitch_name).where(Pitch.pitch_id.in_(ids))).all()) if ids else {}

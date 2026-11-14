@@ -9,8 +9,7 @@ from app import create_app
 from app.contracts.dto import GatewayResult
 from app.extensions import db
 from app.infrastructure.unit_of_work import UnitOfWork
-from app.models import Booking, FieldComplex, Payment, Pitch, TeamMember, User
-from app.jobs.commands import scan_open_posts
+from app.models import Booking, FieldComplex, Payment, Pitch, User
 from app.services.booking_policy import day_slots
 from app.use_cases.process_payment import process_gateway_callback
 from app.utils.time import VIETNAM, utcnow
@@ -85,10 +84,12 @@ class BookingCase(unittest.TestCase):
             return user.user_id
 
     def header(self, uid):
+        from app.services.auth_service import session_key
         with UnitOfWork() as ctx:
-            role = ctx.session.get(User, uid).role
+            user = ctx.session.get(User, uid)
+            role, skey = user.role, session_key(user)
         real = utcnow()
-        token = jwt.encode(dict(sub=str(uid), role=role, iat=real, exp=real + timedelta(hours=1), iss='football-field-api', aud='football-field-web'),
+        token = jwt.encode(dict(sub=str(uid), role=role, skey=skey, iat=real, exp=real + timedelta(hours=1), iss='football-field-api', aud='football-field-web'),
                            SECRET, algorithm='HS256')
         return {'Authorization': 'Bearer ' + token}
 
@@ -132,34 +133,34 @@ class BookingCase(unittest.TestCase):
     def team(self, header):
         r = self.client.post('/api/v1/teams', headers=header, json={'team_name': 'FC Test'})
         self.assertEqual(r.status_code, 201, r.json)
-        tid = r.json['data']['team_id']
-        with UnitOfWork() as ctx:
-            for i in range(4):
-                user = User(full_name='Member', email=f'{tid}-{i}@example.test', password_hash=HASH)
-                ctx.session.add(user)
-                ctx.session.flush()
-                ctx.session.add(TeamMember(team_id=tid, user_id=user.user_id))
-        return tid
+        return r.json['data']['team_id']
 
-    def post(self, header, rule='SPLIT_EQUAL'):
-        start, _ = self.slot()
-        data = dict(post_type='FIND_OPPONENT', title='Test match', skill_level='INTERMEDIATE', pitch_type='PITCH_5', match_time=start.isoformat(),
-                    expiry_time=(self.now + timedelta(hours=1)).isoformat(), payment_rule=rule, team_id=self.team(header))
-        r = self.client.post('/api/v1/match-posts', headers=header, json=data)
+    def request_opponent(self, header, rule='SPLIT_EQUAL', days=2, index=8, booking_id=None, skill='INTERMEDIATE', tolerance=1):
+        """A full team of 5 asks for an opponent; returns the request id."""
+        data = dict(post_type='FIND_OPPONENT', team_id=self.team(header), skill_level=skill, skill_tolerance=tolerance,
+                    payment_rule=rule, player_count=5)
+        if booking_id:
+            data['booking_id'] = booking_id
+        else:
+            start, end = self.slot(days, index)
+            data.update(pitch_type='PITCH_5', preferred_dates=[start.astimezone(VIETNAM).date().isoformat()],
+                        window_start=start.astimezone(VIETNAM).strftime('%H:%M'), window_end=end.astimezone(VIETNAM).strftime('%H:%M'))
+        r = self.client.post('/api/v1/match-requests', headers=header, json=data)
         self.assertEqual(r.status_code, 201, r.json)
-        return r.json['data']['post_id']
+        return r.json['data']['request_id']
 
-    def respond(self, proposal_id, header):
-        return self.client.post(f'/api/v1/match-proposals/{proposal_id}/respond', headers=header, json={'decision': 'ACCEPTED'})
+    def latest_match(self):
+        from app.models import Match
+        with UnitOfWork() as ctx:
+            return ctx.session.scalar(select(Match).order_by(Match.match_id.desc()))
 
     def agreed_match(self, rule='SPLIT_EQUAL'):
-        """Runs Đức's real flow through two acceptances. Returns (source post, target post, proposal, response)."""
-        first, second = self.post(self.a, rule), self.post(self.b, rule)
-        proposal = scan_open_posts()['created_proposal_ids'][0]
-        self.assertEqual(self.respond(proposal, self.a).status_code, 200)
-        return first, second, proposal, self.respond(proposal, self.b)
+        """Two teams without a pitch ask for the same slot two days ahead: the system pairs them and holds a pitch."""
+        first, second = self.request_opponent(self.a, rule), self.request_opponent(self.b, rule)
+        return first, second, self.latest_match()
 
     def match_booking(self, rule='SPLIT_EQUAL'):
-        _, _, _, response = self.agreed_match(rule)
-        self.assertEqual(response.status_code, 200, response.json)
-        return response.json['data']['booking_id'], response.json['data']['match_id']
+        _, _, match = self.agreed_match(rule)
+        self.assertIsNotNone(match)
+        self.assertIsNotNone(match.booking_id)
+        return match.booking_id, match.match_id

@@ -1,0 +1,58 @@
+/* Readability for the player app (booking on a phone, often outdoors). Scoped to .account-shell so the
+   admin console (.adm) is untouched. Body text >= 13-14px, secondary >= 12px, greys dark enough to read. */
+.account-shell{--read-muted:#55645a}
+.account-shell .account-nav-item{font-size:14px}
+.account-shell .account-side-label{font-size:12px;letter-spacing:.2px;color:#b9cfc3}
+.account-shell .account-breadcrumb{font-size:13px}
+.account-shell .account-user-name{font-size:14px}
+.account-shell .account-user>button{font-size:13px}
+.account-shell .account-page-heading p,.account-shell .account-section-heading p{font-size:14px;color:var(--read-muted)}
+.account-shell .account-page-index,.account-shell .account-eyebrow{display:none}
+.account-shell .welcome-panel p{font-size:14px;color:var(--read-muted)}
+.account-shell .welcome-kicker,.account-shell .shortcut-label{font-size:12px;letter-spacing:.2px}
+.account-shell .shortcut-card strong{font-size:15px}
+.account-shell .shortcut-card p{font-size:13px;color:var(--read-muted)}
+.account-shell .account-primary-button,.account-shell .account-secondary-button{font-size:14px}
+.account-shell .account-footer{font-size:12px;letter-spacing:0}
+.account-shell form label{font-size:13px}
+.account-shell form input,.account-shell form select{font-size:14px}
+.account-shell .profile-summary>p,.account-shell .profile-summary-line,.account-shell .profile-form-heading p{font-size:13px}
+
+/* Booking pages (huy-* module) inside the player shell. */
+.account-shell .huy-module{font-size:14px}
+.account-shell .huy-kicker{display:none}
+.account-shell .huy-head h1 span{display:none}
+.account-shell .huy-head p{font-size:14px;color:var(--read-muted)}
+.account-shell .huy-card h2{font-size:18px}
+.account-shell .huy-banner{font-size:13px;line-height:1.65}
+.account-shell .huy-btn{font-size:14px;min-height:42px}
+.account-shell .huy-field{font-size:13px}
+.account-shell .huy-field input,.account-shell .huy-field select{font-size:14px}
+.account-shell .huy-info-grid small,.account-shell .huy-booking-item small,.account-shell .huy-block{font-size:12px;color:var(--read-muted)}
+.account-shell .huy-info-grid strong,.account-shell .huy-booking-item strong,.account-shell .huy-booking-item b{font-size:14px}
+.account-shell .huy-payer{font-size:13px}
+.account-shell .huy-pill{font-size:12px;padding:4px 9px}
+.account-shell .huy-muted{font-size:13px;color:var(--read-muted)}
+.account-shell .huy-table-wrap th{font-size:12px;text-transform:none;letter-spacing:0}
+.account-shell .huy-table-wrap td{font-size:13px}
+.account-shell .huy-slot strong{font-size:14px}
+.account-shell .huy-pitch-card strong,.account-shell .huy-pitch-card b{font-size:14px}
+.account-shell .huy-pitch-card small{font-size:12px}
+
+/* Login: "remember me" */
+.remember-me{display:flex!important;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;font-weight:500;margin:4px 0 2px;cursor:pointer}
+.remember-me input{width:auto!important;margin:0;accent-color:#21513e}
+.remember-me small{flex-basis:100%;font-weight:400;font-size:12px;color:#6b7a6f;margin-left:26px}
+
+/* Prices: normal and peak, per pitch and per slot */
+.huy-price-tag{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.huy-price-tag small{font-size:12px;color:#b45309;font-weight:600;margin:0}
+.huy-pitch-card:disabled{opacity:.55;cursor:not-allowed}
+.huy-slot .huy-slot-price{font-size:12px;color:#3e7952;font-weight:600}
+.huy-slot.chosen .huy-slot-price{color:#e8f5ec}
+.huy-slot.is-peak:not(.unavailable){border-color:#f5b971;box-shadow:inset 0 -3px 0 #fbd38d}
+.huy-peak-badge{display:inline-block;background:#fef3c7;color:#b45309;font-weight:700;font-size:12px;border-radius:999px;padding:1px 8px}
+.huy-money-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:8px 0 4px}
+.huy-money-summary>div{background:#f3f7f1;border:1px solid #dfe9da;border-radius:8px;padding:10px 12px}
+.huy-money-summary small{display:block;font-size:12px;color:#55645a}
+.huy-money-summary strong{font-size:16px;color:#21513e}

@@ -1,0 +1,38 @@
+# Fly.io: run `fly launch --no-deploy` once in backend/ to pick the app name, then `fly deploy`.
+# Tokyo, next to the TiDB cluster (ap-northeast-1).
+app = "football-field-api"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # Fly's edge proxy is the one hop in front of the app.
+  TRUSTED_PROXY_HOPS = "1"
+  DEMO_PAYMENT_ENABLED = "false"
+
+# web answers requests and SePay webhooks; worker is the scheduler and must run as exactly one machine.
+[processes]
+  web = "gunicorn wsgi:app --bind 0.0.0.0:8080 --workers 2 --timeout 60"
+  worker = "python -m flask --app app:create_app scheduler --with-matchmaking --with-email"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  processes = ["web"]
+  # Always on: a sleeping server answers the bank webhook too late.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/v1/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

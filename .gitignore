@@ -25,3 +25,6 @@ Thumbs.db
 
 # Service credentials
 *service-account*.json
+
+# Build caches
+*.tsbuildinfo

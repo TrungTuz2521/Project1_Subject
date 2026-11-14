@@ -1,5 +1,7 @@
+from datetime import timedelta
 from decimal import Decimal
 from secrets import token_hex
+from flask import current_app
 from sqlalchemy import select
 from app.contracts.dto import PaymentApplyResult, RefundPlan
 from app.contracts.errors import DomainError
@@ -11,10 +13,19 @@ COLLECTED_TYPES = ('BOOKING_DEPOSIT', 'BOOKING_REMAINING_PAYMENT')
 CONSOLIDATED_NOTE = 'THU_GOP theo booking'
 FORFEITED_NOTE = 'MAT_COC do tu huy'
 ACTIVE_REFUND = ('REFUND_PROCESSING', 'SUCCESS')
+# SePay QR deposits are stored as BANK_TRANSFER (no ENUM migration) and told apart by this fixed-length code.
+QR_PREFIX = 'SP'
+QR_CODE_LENGTH = 12
+QR_EXPIRED_NOTE = 'QR het han'
+
+def is_demo_payment(payment):
+    return (payment.transaction_code or '').startswith('DEMO-')
+
 
 def payment_data(payment, admin=False):
     result = columns(payment, 'payment_id booking_id post_id amount payment_type payment_method status '
                      'transaction_code refund_for_payment_id paid_at')
+    result['is_demo'] = is_demo_payment(payment)
     if admin:
         result.update(columns(payment, 'user_id recorded_by_admin_id note created_at'))
     return result
@@ -22,13 +33,44 @@ def payment_data(payment, admin=False):
 def is_consolidated(payment):
     return bool(payment.note) and payment.note.startswith(CONSOLIDATED_NOTE)
 
+def is_qr_session(payment):
+    code = payment.transaction_code or ''
+    return payment.payment_method == 'BANK_TRANSFER' and code.startswith(QR_PREFIX) and len(code) == QR_CODE_LENGTH
+
+def new_qr_code():
+    return QR_PREFIX + token_hex((QR_CODE_LENGTH - len(QR_PREFIX)) // 2).upper()
+
+def qr_ttl():
+    return timedelta(seconds=int(current_app.config.get('SEPAY_QR_TTL_SECONDS', 60)))
+
+def qr_grace():
+    return timedelta(seconds=int(current_app.config.get('SEPAY_CONFIRM_GRACE_SECONDS', 120)))
+
+def qr_expires_at(payment):
+    return payment.created_at + qr_ttl()
+
+def expire_stale_qr_sessions(ctx, payments, *, ttl_only=False):
+    """PENDING QR rows stop blocking once their code is no longer shown (ttl_only, a new code was asked for)
+    or once a slow bank notification can no longer be expected. FAILED is not terminal: real money that
+    still arrives for the code is recorded by apply_verified_payment. Caller holds the booking locks."""
+    now, limit = ctx.now(), qr_ttl() + (timedelta(0) if ttl_only else qr_grace())
+    expired = []
+    for payment in payments:
+        if is_qr_session(payment) and payment.status == 'PENDING' and now >= payment.created_at + limit:
+            payment.status = 'FAILED'
+            payment.note = policy.add_note(payment.note, QR_EXPIRED_NOTE)
+            expired.append(payment)
+    if expired:
+        ctx.session.flush()
+    return expired
+
 def find_active_deposit(payments, user_id):
     return next((p for p in payments if p.user_id == user_id and p.payment_type == 'BOOKING_DEPOSIT'
                  and p.status == 'PENDING'), None)
 
-def create_pending_deposit(ctx, *, booking, user_id, method, amount):
+def create_pending_deposit(ctx, *, booking, user_id, method, amount, code=None):
     """The merchant reference is stored before any network call and never regenerated on timeout."""
-    code = f'B{booking.booking_id}U{user_id}{token_hex(6).upper()}'
+    code = code or f'B{booking.booking_id}U{user_id}{token_hex(6).upper()}'
     payment = Payment(user_id=user_id, booking_id=booking.booking_id, amount=amount, payment_type='BOOKING_DEPOSIT',
                       payment_method=method, transaction_code=code, status='PENDING',
                       created_at=ctx.now().replace(microsecond=0))
@@ -60,13 +102,15 @@ def plan_refunds(ctx, *, booking_id, cause, cancelling_user_id=None, payment_ids
     refunded = {p.refund_for_payment_id for p in payments if p.payment_type == 'REFUND' and p.status in ACTIVE_REFUND}
     items, forfeited = [], []
     for payment in payments:
+        if is_demo_payment(payment):
+            continue  # Simulated deposits never trigger a real refund.
         if payment.payment_type not in COLLECTED_TYPES or payment.status != 'SUCCESS':
             continue
         if payment.payment_id in refunded or (payment_ids is not None and payment.payment_id not in payment_ids):
             continue
         if is_consolidated(payment):
             continue  # Reference account is not the sender: Admin must verify the recipient first.
-        if cause == 'USER_CANCEL' and payment.user_id == cancelling_user_id:
+        if cause == 'USER_CANCEL' and payment.user_id == cancelling_user_id and payment.payment_type == 'BOOKING_DEPOSIT':
             forfeited.append(payment.payment_id)
             continue
         items.append({'original_payment_id': payment.payment_id, 'payer_user_id': payment.user_id, 'amount': policy.money(payment.amount)})
@@ -88,13 +132,29 @@ def create_refund(ctx, original, note=None):
     ctx.session.flush()
     return refund
 
+MANUAL_REFUND_METHODS = ('CASH', 'BANK_TRANSFER')
+
+def refund_account(user):
+    """Where the venue sends a bank refund; None until the customer fills it in on their profile."""
+    if user is None or not (user.refund_bank_name and user.refund_account_no and user.refund_account_name):
+        return None
+    return {'bank_name': user.refund_bank_name, 'account_no': user.refund_account_no, 'account_name': user.refund_account_name}
+
+def notify_refund(ctx, refund, lead='Khoản hoàn của bạn đang được xử lý.'):
+    """A bank or cash refund is paid back by hand, so tell the customer where it will go."""
+    if refund.payment_method in MANUAL_REFUND_METHODS:
+        from app.models import User
+        account = refund_account(ctx.session.get(User, refund.user_id))
+        lead += (f' Cửa hàng sẽ chuyển vào tài khoản {account["bank_name"]} {account["account_no"]} ({account["account_name"]}).'
+                 if account else ' Hãy điền "Tài khoản nhận hoàn tiền" trong Hồ sơ để cửa hàng chuyển lại, hoặc nhận tiền mặt tại quầy.')
+    notification_service.notify(ctx, [refund.user_id], 'REFUND_PROCESSING', 'Đang hoàn tiền', lead)
+
 def execute_refund_plan(ctx, plan, note=None):
     refunds = []
     for item in plan.items:
         refund = create_refund(ctx, ctx.session.get(Payment, item['original_payment_id']), note=note)
         refunds.append(refund)
-        notification_service.notify(ctx, [refund.user_id], 'REFUND_PROCESSING', 'Đang hoàn tiền',
-                                    'Khoản hoàn của bạn đang được xử lý.')
+        notify_refund(ctx, refund)
     for payment_id in plan.forfeited_payment_ids:
         payment = ctx.session.get(Payment, payment_id)
         payment.note = policy.add_note(payment.note, FORFEITED_NOTE)

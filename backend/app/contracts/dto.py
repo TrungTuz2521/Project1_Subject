@@ -1,12 +1,14 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any
 
 @dataclass(frozen=True)
 class Actor:
     user_id: int
     role: str
+    # Fingerprint of the credentials the JWT was issued for; None only for internal (non-HTTP) actors.
+    session_key: str | None = None
 
 @dataclass
 class CommandResult:
@@ -25,23 +27,8 @@ class BookingHold:
     payer_plan: list[dict]
 
 @dataclass(frozen=True)
-class MembershipResult:
-    team_id: int
-    user_id: int
-    participant_id: int
-    remaining_players: int
-    post_status: str
-
-@dataclass(frozen=True)
-class MatchParties:
-    match_id: int
-    booking_id: int | None
-    source: dict
-    opponent: dict
-
-@dataclass(frozen=True)
 class BookingBalance:
-    """Tú computes booking-wide totals; payment_rule is for display only after play."""
+    """Booking-wide totals; payment_rule is for display only after play."""
     booking_id: int
     payment_rule: str
     total_amount: Decimal
@@ -60,11 +47,6 @@ class ManualReceipt:
     payment_method: str
     amount: Decimal
     reference: str | None = None
-
-class BookingBalancePort(Protocol):
-    def get_booking_balance(self, actor: Actor, *, booking_id: int) -> BookingBalance: ...
-    def confirm_booking_paid(self, actor: Actor, *, booking_id: int, expected_outstanding: Decimal,
-                             idempotency_key: str, receipts: list[ManualReceipt]) -> BookingBalance: ...
 
 @dataclass(frozen=True)
 class PaymentApplyResult:
@@ -92,8 +74,3 @@ class RefundPlan:
     cause: str
     items: list[dict] = field(default_factory=list)
     forfeited_payment_ids: list[int] = field(default_factory=list)
-
-class BookingPort(Protocol):
-    def create_match_hold(self, ctx, *, match_id: int, pitch_id: int, start_time: datetime,
-                          end_time: datetime, source_user_id: int, opponent_user_id: int,
-                          payment_rule: str) -> BookingHold: ...

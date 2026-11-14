@@ -25,7 +25,8 @@ def bank_qr_payload(bin_code, account_no, amount, reference):
     return body + crc16(body)
 
 def transfer_reference(booking_id):
-    return f'BOOKING-{booking_id}'
+    """Pitch-fee transfer content. The closing TT keeps digits a bank appends from being read as the booking id."""
+    return f'SAN{booking_id}TT'
 
 def compute(ctx, booking, payments=None, with_qr=True):
     rows = payments if payments is not None else booking_service.payments_of(ctx, booking.booking_id)
@@ -38,7 +39,11 @@ def compute(ctx, booking, payments=None, with_qr=True):
     status = 'PAID' if total > 0 and outstanding == 0 else 'PARTIAL' if collected > 0 else 'UNPAID'
     qr, reference, reason = None, None, None
     if with_qr:
-        qr, reference, reason = _qr(ctx, booking, outstanding, collected)
+        from app.services.payment_service import is_demo_payment
+        if any(is_demo_payment(p) for p in rows):
+            reason = 'Booking DEMO, không thu tiền thật.'
+        else:
+            qr, reference, reason = _qr(ctx, booking, outstanding, collected)
     return BookingBalance(booking.booking_id, booking.payment_rule, policy.money(total), policy.money(deposit),
                           policy.money(remaining), policy.money(collected), policy.money(outstanding), status,
                           qr, reference, reason)
@@ -50,8 +55,6 @@ def _qr(ctx, booking, outstanding, collected):
         return None, None, None
     if booking.status != 'CONFIRMED':
         return None, None, 'Booking chưa xác nhận hoặc đã kết thúc.'
-    if ctx.now() < booking.end_time:
-        return None, None, 'Chưa hết giờ đá.'
     reference = transfer_reference(booking.booking_id)
     bin_code, account = current_app.config.get('BANK_BIN'), current_app.config.get('BANK_ACCOUNT_NO')
     if not bin_code or not account:

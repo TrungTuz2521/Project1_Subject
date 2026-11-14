@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+from app.services.match_requests import MATCH_HOLD_SECONDS
 from datetime import timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -10,6 +11,7 @@ from booking_fixtures import BookingCase
 from app.contracts.dto import GatewayResult
 from app.infrastructure.unit_of_work import UnitOfWork
 from app.jobs.booking_jobs import expire_holds, process_refunds, reconcile_payments
+from app.jobs.commands import scan_requests
 from app.models import Booking, Match, MatchPost, Notification, Payment
 from app.services import booking_policy as policy
 from app.services.booking_balance_service import bank_qr_payload, crc16
@@ -359,39 +361,37 @@ class MatchFlowWithRealServices(BookingCase):
             posts = [ctx.session.get(MatchPost, match.post_id).status, ctx.session.get(MatchPost, match.opponent_post_id).status]
             return ctx.session.get(Booking, booking_id).status, match.status, posts
 
-    def test_two_acceptances_create_one_hold_with_two_payers(self):
-        first, second, proposal, r = self.agreed_match()
-        self.assertEqual(r.status_code, 200, r.json)
-        booking_id = r.json['data']['booking_id']
+    def test_paired_requests_create_one_hold_with_two_payers(self):
+        booking_id, match_id = self.match_booking()
         booking = self.booking(booking_id)
         self.assertEqual(booking.payer_plan, [{'user_id': self.ua, 'amount': '60000.00'}, {'user_id': self.ub, 'amount': '60000.00'}])
         self.assertEqual((booking.user_id, booking.payment_rule, booking.pitch_id), (self.ua, 'SPLIT_EQUAL', 1))
-        self.assertEqual(self.respond(proposal, self.b).status_code, 200)
+        # Two teams that never booked get six hours to pay their halves.
+        self.assertEqual(booking.hold_expires_at, self.now + timedelta(seconds=MATCH_HOLD_SECONDS))
+        self.assertEqual(scan_requests()['matches'], [])
         with UnitOfWork() as ctx:
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Booking)), 1)
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Match)), 1)
-        self.assertEqual(self.statuses(booking_id, r.json['data']['match_id']), ('PENDING_HOLD', 'SUGGESTED', ['LOCKED', 'LOCKED']))
+        self.assertEqual(self.statuses(booking_id, match_id), ('PENDING_HOLD', 'SUGGESTED', ['MATCHED', 'MATCHED']))
 
-    def test_no_pitch_left_commits_failure_without_money(self):
-        self.hold(self.c, pitch_id=1)
-        self.hold(self.c, pitch_id=2)
-        first, second, proposal, r = self.agreed_match()
-        self.assertEqual((r.status_code, r.json['error']['code']), (409, 'SLOT_UNAVAILABLE'))
+    def test_no_pitch_left_pairs_nobody_and_keeps_searching(self):
+        self.hold(self.c, pitch_id=1, days=2)
+        self.hold(self.c, pitch_id=2, days=2)
+        first, second, match = self.agreed_match()
+        self.assertIsNone(match)
         with UnitOfWork() as ctx:
-            match = ctx.session.scalar(select(Match))
-            self.assertEqual((match.status, match.booking_id), ('CANCELLED', None))
-            self.assertEqual(ctx.session.get(MatchPost, first).status, 'OPEN')
+            self.assertEqual([ctx.session.get(MatchPost, i).status for i in (first, second)], ['OPEN', 'OPEN'])
             self.assertEqual(ctx.session.scalar(select(func.count()).select_from(Payment)), 0)
 
     def test_second_pitch_used_when_first_is_taken(self):
-        self.hold(self.c, pitch_id=1)
+        self.hold(self.c, pitch_id=1, days=2)
         booking_id, _ = self.match_booking()
         self.assertEqual(self.booking(booking_id).pitch_id, 2)
 
     def test_one_team_paying_does_not_confirm(self):
         booking_id, match_id = self.match_booking()
         self.pay(booking_id, self.a)
-        self.assertEqual(self.statuses(booking_id, match_id), ('PENDING_HOLD', 'SUGGESTED', ['LOCKED', 'LOCKED']))
+        self.assertEqual(self.statuses(booking_id, match_id), ('PENDING_HOLD', 'SUGGESTED', ['MATCHED', 'MATCHED']))
 
     def test_both_deposits_confirm_everything_in_one_transaction(self):
         booking_id, match_id = self.match_booking()
@@ -410,13 +410,14 @@ class MatchFlowWithRealServices(BookingCase):
         detail = self.client.get(f'/api/v1/matches/{match_id}', headers=self.b).json['data']
         self.assertEqual(detail['booking']['booking_id'], booking_id)
 
-    def test_timeout_with_one_deposit_refunds_it_and_reopens_posts(self):
+    def test_timeout_with_one_deposit_refunds_it_and_reopens_only_the_payer(self):
         booking_id, match_id = self.match_booking()
         self.pay(booking_id, self.a)
-        self.advance(seconds=300)
+        self.advance(seconds=MATCH_HOLD_SECONDS)
         self.assertEqual(expire_holds(), 1)
         self.assertEqual(expire_holds(), 0)
-        self.assertEqual(self.statuses(booking_id, match_id), ('EXPIRED', 'CANCELLED', ['OPEN', 'OPEN']))
+        # The team that paid searches again; the team that did not pay is dropped.
+        self.assertEqual(self.statuses(booking_id, match_id), ('EXPIRED', 'CANCELLED', ['OPEN', 'CANCELLED']))
         rows = self.payments(booking_id)
         self.assertEqual([(p.payment_type, p.user_id) for p in rows], [('BOOKING_DEPOSIT', self.ua), ('REFUND', self.ua)])
 
@@ -424,7 +425,7 @@ class MatchFlowWithRealServices(BookingCase):
         booking_id, match_id = self.match_booking()
         self.pay(booking_id, self.a)
         session = self.open_deposit(booking_id, self.b)
-        self.advance(seconds=300)
+        self.advance(seconds=MATCH_HOLD_SECONDS)
         self.callback(session)
         self.assertEqual(self.statuses(booking_id, match_id)[:2], ('EXPIRED', 'CANCELLED'))
         refunded = [p.user_id for p in self.payments(booking_id) if p.payment_type == 'REFUND']
@@ -656,8 +657,8 @@ class BalanceAndConfirmPaid(BookingCase):
         data = self.balance(booking_id).json['data']
         self.assertEqual((data['total_amount'], data['deposit_collected_amount'], data['remaining_collected_amount'], data['collected_amount'], data['outstanding_amount'], data['payment_status']),
                          ('600000.00', '120000.00', '0.00', '120000.00', '480000.00', 'PARTIAL'))
-        self.assertEqual(data['transfer_reference'], f'BOOKING-{booking_id}')
-        self.assertIn('BOOKING-', data['qr_payload'])
+        self.assertEqual(data['transfer_reference'], f'SAN{booking_id}TT')
+        self.assertIn(f'SAN{booking_id}TT', data['qr_payload'])
         self.assertIsNone(data['qr_unavailable_reason'])
 
     def test_viewing_qr_records_nothing(self):
@@ -672,9 +673,10 @@ class BalanceAndConfirmPaid(BookingCase):
         self.assertIsNone(data['qr_payload'])
         self.assertIn('ngân hàng', data['qr_unavailable_reason'])
 
-    def test_no_qr_before_game_ends(self):
+    def test_qr_for_the_rest_is_ready_as_soon_as_confirmed(self):
+        # The customer pays the rest at the counter on arrival, not only after the match.
         data = self.confirmed()
-        self.assertIsNone(self.balance(data['booking_id']).json['data']['qr_payload'])
+        self.assertIsNotNone(self.balance(data['booking_id']).json['data']['qr_payload'])
 
     def test_mixed_receipts_close_the_booking(self):
         booking_id = self.ended()
@@ -720,14 +722,13 @@ class BalanceAndConfirmPaid(BookingCase):
         self.assertEqual(self.confirm(booking_id, receipts=[]).status_code, 422)
         self.assertEqual(len(self.payments(booking_id)), 1)
 
-    def test_before_end_time_and_player_are_rejected(self):
-        data = self.confirmed()
-        self.assertEqual(self.confirm(data['booking_id']).status_code, 409)
-        booking_id = data['booking_id']
-        self.go_after(self.booking(booking_id).end_time)
+    def test_player_is_rejected_and_admin_collects_before_kick_off(self):
+        booking_id = self.confirmed()['booking_id']
         self.assertEqual(self.confirm(booking_id, header=self.a).status_code, 403)
         self.assertEqual(self.client.get(f'/api/v1/admin/bookings/{booking_id}/balance', headers=self.a).status_code, 403)
         self.assertEqual(len(self.payments(booking_id)), 1)
+        r = self.confirm(booking_id)
+        self.assertEqual((r.status_code, r.json['data']['payment_status']), (200, 'PAID'), r.json)
 
     def test_pending_online_remaining_blocks_confirmation(self):
         booking_id = self.ended()
@@ -771,16 +772,38 @@ class AdminOperations(BookingCase):
         self.assertEqual(self.booking(data['booking_id']).total_amount, Decimal('600000.00'))
 
     def manual(self, index=8):
+        """A player's online hold: the only booking that still waits for a deposit."""
         start, end = self.slot(index=index)
-        return self.client.post('/api/v1/admin/bookings', headers=self.admin, json=dict(user_id=self.ub, pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat(), note='Khách gọi điện'))
+        r = self.client.post('/api/v1/bookings', headers=self.b, json=dict(pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat()))
+        return r
+
+    def counter(self, index=8, **extra):
+        start, end = self.slot(index=index)
+        return self.client.post('/api/v1/admin/bookings', headers=self.admin, json=dict(user_id=self.ub, pitch_id=1, start_time=start.isoformat(), end_time=end.isoformat(), note='Khách gọi điện', **extra))
 
     def record(self, booking_id, amount='120000', reference='PT-1', kind='BOOKING_DEPOSIT', user=None, method='CASH'):
         return self.client.post('/api/v1/admin/payments/record', headers=self.admin, json=dict(booking_id=booking_id, user_id=user or self.ub, amount=amount, payment_type=kind, payment_method=method, reference=reference))
 
+    def test_counter_booking_is_confirmed_at_once_and_records_money_taken(self):
+        r = self.counter()
+        self.assertEqual(r.status_code, 201, r.json)
+        self.assertEqual((r.json['data']['booking_type'], r.json['data']['status'], r.json['data']['hold_expires_at']), ('MANUAL_ADMIN', 'CONFIRMED', None))
+        self.assertEqual(self.payments(r.json['data']['booking_id']), [])
+        paid = self.counter(index=7, payment={'amount': '200000', 'payment_method': 'CASH', 'reference': 'PT-9'})
+        self.assertEqual(paid.status_code, 201, paid.json)
+        rows = sorted((p.payment_type, p.amount, p.status) for p in self.payments(paid.json['data']['booking_id']))
+        self.assertEqual(rows, [('BOOKING_DEPOSIT', Decimal('120000.00'), 'SUCCESS'), ('BOOKING_REMAINING_PAYMENT', Decimal('80000.00'), 'SUCCESS')])
+        self.assertEqual(paid.json['data']['payer_progress'][0]['status'], 'PAID')
+        self.assertEqual(self.counter(index=6, payment={'amount': '600001', 'payment_method': 'CASH'}).status_code, 422)
+        self.assertEqual(self.counter(index=6, payment={'amount': '100', 'payment_method': 'VNPAY'}).status_code, 422)
+        # The slot is taken immediately, with no expiry.
+        self.go_after(self.now, seconds=3600)
+        self.assertEqual(self.counter().json['error']['code'], 'SLOT_UNAVAILABLE')
+
     def test_manual_booking_needs_a_real_deposit(self):
         r = self.manual()
         self.assertEqual(r.status_code, 201, r.json)
-        self.assertEqual((r.json['data']['booking_type'], r.json['data']['status']), ('MANUAL_ADMIN', 'PENDING_HOLD'))
+        self.assertEqual(r.json['data']['status'], 'PENDING_HOLD')
         bid = r.json['data']['booking_id']
         self.assertEqual(self.record(bid, amount='50000').status_code, 201)
         self.assertEqual(self.booking(bid).status, 'PENDING_HOLD')

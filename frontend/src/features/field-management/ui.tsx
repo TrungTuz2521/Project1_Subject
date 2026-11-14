@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { errorMessage } from '../../services/api';
-import { huyDemo, serverNow, todayVN } from '../../services/huyApi';
+import { ApiError, errorMessage } from '../../services/api';
+import { serverNow, todayVN } from '../../services/fieldApi';
 
 export function Banner({ children, tone = 'info' }: { children: ReactNode; tone?: 'info' | 'danger' | 'success' }) {
   return <div className={`huy-banner huy-banner-${tone}`} role={tone === 'danger' ? 'alert' : undefined}>{children}</div>;
 }
+const fieldNames: Record<string, string> = {
+  'guest.full_name': 'Tên khách', 'guest.phone': 'Số điện thoại', user_id: 'Khách', pitch_id: 'Sân', start_time: 'Giờ bắt đầu',
+  end_time: 'Giờ kết thúc', reason: 'Lý do', note: 'Ghi chú', amount: 'Số tiền', reference: 'Mã chứng từ', payment_method: 'Hình thức',
+  price_per_slot: 'Giá sân', pitch_name: 'Tên sân', date: 'Ngày', from: 'Từ ngày', to: 'Đến ngày', q: 'Tìm kiếm', receipts: 'Các khoản thu',
+};
+/** Server errors list what is wrong per field; show those, not just "Dữ liệu không hợp lệ." */
 export function Warning({ error }: { error: unknown }) {
   if (!error) return null;
-  return <Banner tone="danger">{errorMessage(error)}</Banner>;
+  const details = error instanceof ApiError ? Object.entries(error.fields).map(([key, value]) => {
+    const text = Array.isArray(value) ? value.join(' ') : value;
+    return /^(Giá trị không hợp lệ|Trường bắt buộc|Trường không được phép ghi)/.test(text) ? `${fieldNames[key] ?? key}: ${text}` : text;
+  }) : [];
+  return <Banner tone="danger">{errorMessage(error)}{details.map(d => <span key={d} className="huy-block">{d}</span>)}</Banner>;
 }
-export function Head({ kicker, title, description, aside }: { kicker: string; title: string; description: string; aside?: ReactNode }) {
-  return <header className="huy-head"><div><div className="huy-kicker">{kicker}</div><h1>{title}<span>.</span></h1><p>{description}</p></div>{aside}</header>;
+export function Head({ kicker, title, description, aside }: { kicker?: string; title: string; description: string; aside?: ReactNode }) {
+  return <header className="huy-head"><div>{kicker && <div className="huy-kicker">{kicker}</div>}<h1>{title}<span>.</span></h1><p>{description}</p></div>{aside}</header>;
 }
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`huy-card ${className}`}>{children}</div>;
@@ -25,7 +35,6 @@ export function Status({ state }: { state: string }) {
     PENDING_HOLD: 'Chờ cọc', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn', SUCCESS: 'Đã thu', PENDING: 'Đang chờ', FAILED: 'Thất bại', REFUND_PROCESSING: 'Đang hoàn', REFUNDED: 'Đã hoàn', UNPAID: 'Chưa thu', PARTIAL: 'Chưa thu đủ', PAID: 'Đã thu đủ' };
   return <span className={`huy-pill huy-pill-${state.toLowerCase()}`}>{labels[state] ?? state}</span>;
 }
-export const showDate = (date: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(`${date}T00:00:00+07:00`));
 export function dateAfter(days: number): string {
   const d = new Date(`${todayVN()}T00:00:00+07:00`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -43,6 +52,5 @@ export function countdown(expires: string | null, now: number) {
   const seconds = Math.max(0, Math.ceil((Date.parse(expires) - now) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
-export function DemoNote() { return huyDemo ? <Banner><strong>CHẾ ĐỘ DEMO:</strong> dữ liệu thử trên trình duyệt, không đặt sân/thu tiền thật. QR ở đây chỉ là bản minh họa.</Banner> : null; }
 export function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="huy-field"><span>{label}</span>{children}</label>; }
 export function Empty({ children }: { children: ReactNode }) { return <div className="huy-empty">{children}</div>; }

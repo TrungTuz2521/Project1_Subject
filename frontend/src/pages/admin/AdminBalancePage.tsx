@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AdminBooking, BookingBalance, ConfirmBookingPaid, ManualReceipt } from '../../types/api';
-import { confirmBookingPaid, getAdminBookings, getBooking, getBookingBalance, huyDemo, moneyVN, dateVN } from '../../services/huyApi';
+import { confirmBookingPaid, getAdminBookingsPage, getBooking, getBookingBalance, moneyVN, dateVN } from '../../services/fieldApi';
 import { Banner, Button, Card, Empty, Field, Head, Status, Warning } from '../../features/field-management/ui';
 import { BankQR } from '../../features/payments/BankQR';
 
@@ -10,25 +10,37 @@ export function AdminBalancePage({ selectedId }: { selectedId: number | null }) 
   const [error, setError] = useState<unknown>(null);
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [total, setTotal] = useState(0);
   useEffect(() => { if (selectedId) setId(selectedId); }, [selectedId]);
   useEffect(() => {
     let alive = true;
-    getAdminBookings().then(items => {
+    // Everything still owed that kicks off today or earlier: collect when the customer is at the counter.
+    getAdminBookingsPage({ phase: 'DUE', page: 1, page_size: 100 }).then(result => {
       if (!alive) return;
-      setBookings(items.filter(b => b.status === 'CONFIRMED' && Date.parse(b.end_time) <= Date.now()));
+      setBookings([...result.data].sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time)));
+      setTotal(result.meta.total);
     }).catch(e => { if (alive) setError(e); });
     return () => { alive = false; };
   }, [revision]);
+  const today = new Date().toDateString();
   return <>
-    <Head kicker="ADMIN / 03" title="Thu tiền sau trận" description="Đối chiếu tiền thực nhận và xác nhận thu đủ theo booking. Hai đội tự chia tiền theo thể thức đã chọn."
+    <Head title="Thu tiền" description="Thu phần còn lại khi khách đến quầy hoặc sau trận. Ghi nhận đúng số tiền thực nhận, có thể chia nhiều khoản."
       aside={<Button variant="outline" disabled={busy} onClick={() => { setError(null); setRevision(n => n + 1); }}>Làm mới</Button>} />
     <Warning error={error} />
-    <Card><Field label="Booking đã kết thúc"><select disabled={busy} value={id} onChange={e => setId(Number(e.target.value))}>
-      <option value={0}>— Chọn booking —</option>
-      {id > 0 && !bookings.some(b => b.booking_id === id) && <option value={id}>#{id}</option>}
-      {bookings.map(b => <option key={b.booking_id} value={b.booking_id}>#{b.booking_id} · {b.pitch_name ?? `Sân #${b.pitch_id}`} · {dateVN(b.start_time)}{b.balance?.payment_status === 'PAID' ? ' · Đã thu đủ' : ''}</option>)}
-    </select></Field><p className="huy-muted">Danh sách hiển thị tối đa 100 booking gần nhất. Chọn “Thu tiền sau trận” tại lịch sân để mở một booking cụ thể.</p></Card>
-    {id ? <BalancePanel key={`${id}:${revision}`} id={id} booking={bookings.find(b => b.booking_id === id)} onBusy={setBusy} /> : <Empty>Chọn booking để xem cọc thực thu, số còn thiếu và QR chung.</Empty>}
+    <div className="adm-collect">
+      <Card className="adm-collect-list"><h2>Cần thu ({total})</h2>
+        {bookings.length === 0 ? <Empty>Không còn khoản nào cần thu.</Empty> : <div className="huy-booking-list">
+          {bookings.map(b => <button type="button" key={b.booking_id} disabled={busy} className={`huy-booking-item${b.booking_id === id ? ' active' : ''}`} onClick={() => setId(b.booking_id)}>
+            <span><b>{b.customer?.full_name ?? `Khách #${b.user_id}`}</b>
+              <small>{b.pitch_name ?? `Sân #${b.pitch_id}`}, {new Date(b.start_time).toDateString() === today ? `hôm nay ${dateVN(b.start_time).split(' ').pop()}` : dateVN(b.start_time)}</small>
+              <small>{b.arrival_status === 'ARRIVED' ? 'Khách đã đến' : Date.parse(b.end_time) <= Date.now() ? 'Đã đá xong' : 'Chưa đá'}</small></span>
+            <span className="adm-collect-amount"><small>Còn thiếu</small><b>{moneyVN(b.balance?.outstanding_amount ?? '0')}</b></span>
+          </button>)}</div>}
+        {total > bookings.length && <p className="huy-muted">Đang hiện {bookings.length}/{total} khoản cũ nhất; thu xong sẽ hiện tiếp.</p>}
+      </Card>
+      <div>{id ? <BalancePanel key={`${id}:${revision}`} id={id} booking={bookings.find(b => b.booking_id === id)} onBusy={setBusy} />
+        : <Empty>Chọn một khoản bên trái để xem số tiền và ghi nhận thu.</Empty>}</div>
+    </div>
   </>;
 }
 
@@ -49,7 +61,8 @@ function BalancePanel({ id, booking, onBusy }: { id: number; booking?: AdminBook
       .catch(e => { if (alive) setError(e); });
     return () => { alive = false; };
   }, [id]);
-  const canCollect = balance && balance.payment_status !== 'PAID' && detail?.status === 'CONFIRMED' && Date.parse(detail.end_time) <= Date.now();
+  // Collect as soon as the booking is confirmed: customers usually pay the rest at the counter on arrival.
+  const canCollect = balance && balance.payment_status !== 'PAID' && detail?.status === 'CONFIRMED';
   const total = receipts.reduce((sum, r) => sum + (/^[1-9]\d*$/.test(r.amount) ? BigInt(r.amount) : 0n), 0n);
   function update(index: number, patch: Partial<ManualReceipt>) {
     setReceipts(rows => rows.map((r, n) => n === index ? { ...r, ...patch } : r));
@@ -70,12 +83,12 @@ function BalancePanel({ id, booking, onBusy }: { id: number; booking?: AdminBook
     try {
       setBalance(await confirmBookingPaid(id, pending.current));
       pending.current = null; setUncertain(false);
-      setSuccess(huyDemo ? 'Đã ghi nhận trong dữ liệu demo; không có giao dịch thật.' : 'Đã ghi nhận các khoản thực thu.');
+      setSuccess('Đã ghi nhận các khoản thực thu.');
     } catch (e) { setError(e); setUncertain(true); }
     finally { setBusy(false); onBusy(false); }
   }
   return <><Warning error={error} />{success && <Banner tone="success">{success}</Banner>}
-    {!balance ? <Empty>{error ? 'Chưa tải được số dư. Hãy bấm Làm mới để thử lại.' : 'Đang tải số dư booking…'}</Empty> : <div className="huy-two-col">
+    {!balance ? <Empty>{error ? 'Chưa tải được số dư. Hãy bấm Làm mới để thử lại.' : 'Đang tải số dư booking…'}</Empty> : <div className="adm-collect-panel">
       <Card><h2>Số tiền theo booking #{id}</h2>
         <div className="huy-info-grid">
           <div><small>Tổng tiền sân</small><strong>{moneyVN(balance.total_amount)}</strong></div>
@@ -87,13 +100,13 @@ function BalancePanel({ id, booking, onBusy }: { id: number; booking?: AdminBook
           <div><small>Thể thức hai đội tự chia</small><strong>{balance.payment_rule === 'LOSER_PAYS_REMAINDER' ? 'Đội thua trả phần còn lại' : balance.payment_rule === 'SPLIT_EQUAL' ? 'Chia 50–50' : balance.payment_rule === 'DIRECT_BOOKING' ? 'Đặt sân trực tiếp' : 'Chưa xác định (dữ liệu cũ)'}</strong></div>
         </div>
         {booking?.teams && <p>{booking.teams.source.team_name} — {booking.teams.opponent.team_name}</p>}
-        {balance.qr_payload && !huyDemo && <BankQR payload={balance.qr_payload} />}
+        {balance.qr_payload && <BankQR payload={balance.qr_payload} />}
         {balance.transfer_reference && <p>Nội dung chuyển khoản: <strong>{balance.transfer_reference}</strong></p>}
         {balance.qr_unavailable_reason && <Banner>{balance.qr_unavailable_reason}</Banner>}
-        <Banner>QR chung gợi ý số còn thiếu. Hai đội có thể chuyển nhiều khoản hoặc trả tiền mặt. Quét QR không xác nhận đã thanh toán.</Banner>
+        <Banner>Khách quét QR này và giữ nguyên nội dung chuyển khoản: khi tiền vào, hệ thống tự ghi nhận (cần bật SePay), chuyển dư sẽ vào "Khoản cần hoàn". Tiền mặt hoặc chuyển khoản khác thì xác nhận tay bên dưới.</Banner>
       </Card>
       <Card><h2>Xác nhận tiền thực nhận</h2>
-        {balance.payment_status === 'PAID' ? <Banner tone="success">Booking đã thu đủ.</Banner> : !canCollect ? <Banner>Chỉ xác nhận thu đủ sau giờ kết thúc của booking đã xác nhận. Nếu thiếu thông tin, hãy mở lại từ lịch sân.</Banner> : <>
+        {balance.payment_status === 'PAID' ? <Banner tone="success">Booking đã thu đủ.</Banner> : !canCollect ? <Banner>Booking này không còn ở trạng thái đã xác nhận nên không thu thêm.</Banner> : <>
           {receipts.map((r, i) => <div className="huy-payer-panel" key={i}><div className="huy-form">
             <Field label={`Khoản ${i + 1} · Phương thức`}><select disabled={busy || uncertain} value={r.payment_method} onChange={e => update(i, { payment_method: e.target.value as ManualReceipt['payment_method'] })}><option value="BANK_TRANSFER">Chuyển khoản</option><option value="CASH">Tiền mặt</option></select></Field>
             <Field label="Số tiền thực nhận (VND)"><input disabled={busy || uncertain} inputMode="numeric" value={r.amount} onChange={e => update(i, { amount: e.target.value })} /></Field>
