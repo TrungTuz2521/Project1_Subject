@@ -39,7 +39,7 @@ export function AdminBalancePage({ selectedId }: { selectedId: number | null }) 
         {total > bookings.length && <p className="huy-muted">Đang hiện {bookings.length}/{total} khoản cũ nhất; thu xong sẽ hiện tiếp.</p>}
       </Card>
       <div>{id ? <BalancePanel key={`${id}:${revision}`} id={id} booking={bookings.find(b => b.booking_id === id)} onBusy={setBusy} />
-        : <Empty>Chọn một khoản bên trái để xem số tiền và ghi nhận thu.</Empty>}</div>
+        : <Empty>Chọn một khoản trong danh sách để xem số tiền và ghi nhận thu.</Empty>}</div>
     </div>
   </>;
 }

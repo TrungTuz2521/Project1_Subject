@@ -27,3 +27,14 @@
 .reset-card{width:min(100%,460px)}
 .forgot-link{margin:-6px 0 0;text-align:right;font-size:11px}
 .forgot-link a{color:#386445;font-weight:600}
+
+/* ---- Responsive fixes shared by every screen ---- */
+/* Tablet portrait: the two-column sign-in needs 800px; below 900px show the form alone. */
+@media(max-width:900px){.auth-screen{grid-template-columns:1fr}.auth-visual{display:none}.auth-main{min-height:100vh;padding:32px 20px}}
+/* Page title and its button: the button drops below the text instead of squeezing it. */
+.huy-head{flex-wrap:wrap}
+.huy-head>div:first-child{flex:1 1 280px;min-width:0}
+/* iOS Safari zooms into any field under 16px when it is tapped; phones and tablets get 16px fields. */
+@media(max-width:1024px) and (pointer:coarse){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{font-size:16px!important}
+}

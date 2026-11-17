@@ -97,6 +97,6 @@ export function BookingsPage({ selectedId, onRefresh }: { selectedId: number | n
         {(active.status === 'PENDING_HOLD' || active.status === 'CONFIRMED') && Date.parse(active.start_time) > now && <div className="huy-actions"><Button variant="danger" disabled={busy} onClick={() => void cancel()}>Hủy booking</Button></div>}
         {active.status === 'PENDING_HOLD' && !validHold && <Button variant="outline" onClick={() => void reload()}>Kiểm tra trạng thái với server</Button>}
         <VenueContact venue={venue} />
-      </> : <Empty>Chọn một lịch ở cột bên trái để xem chi tiết.</Empty>}</Card></div>
+      </> : <Empty>Chọn một lịch trong danh sách để xem chi tiết.</Empty>}</Card></div>
   </>;
 }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type { UserSelf } from '../../types/api';
 import { getAdminDashboard } from '../../services/fieldApi';
 import { useNow } from '../field-management/ui';
@@ -38,6 +38,25 @@ const groups: { title: string; items: Item[] }[] = [
   { title: 'Thiết lập', items: [{ path: '/admin/pitches', label: 'Sân bóng', icon: icons.pitch }, { path: '/profile', label: 'Tài khoản của tôi', icon: icons.user }] },
 ];
 
+/** Narrow screens show each table row as a card; every cell needs its column name for that. Tables render
+ * asynchronously, so watch the page and label new cells from their table's header. */
+function useCardTables(root: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const label = () => el.querySelectorAll<HTMLTableElement>('.huy-table-wrap table').forEach(table => {
+      const names = [...table.querySelectorAll('thead th')].map(th => th.textContent?.trim() || '');
+      table.querySelectorAll('tbody tr').forEach(row => [...row.children].forEach((cell, i) => {
+        if (cell.getAttribute('data-label') !== (names[i] ?? '')) cell.setAttribute('data-label', names[i] ?? '');
+      }));
+    });
+    label();
+    const observer = new MutationObserver(label);
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [root]);
+}
+
 const clock = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' });
 const day = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', day: 'numeric', month: 'numeric' });
 
@@ -54,9 +73,17 @@ export function AdminShell({ current, route, onLogout, children }: { current: Us
     return () => { alive = false; window.clearInterval(timer); };
   }, [route]);
   const title = groups.flatMap(g => g.items).find(i => i.path === route)?.label ?? 'Hôm nay';
+  const side = useRef<HTMLElement>(null);
+  const main = useRef<HTMLElement>(null);
+  useCardTables(main);
+  useEffect(() => {
+    // On phones and tablets the menu is one scrolling row: keep the open page's link in view.
+    const bar = side.current, link = bar?.querySelector<HTMLElement>('.adm-link.is-active');
+    if (bar && link && bar.scrollWidth > bar.clientWidth) bar.scrollLeft = link.offsetLeft - (bar.clientWidth - link.offsetWidth) / 2;
+  }, [route]);
 
   return <div className="adm">
-    <aside className="adm-side">
+    <aside className="adm-side" ref={side}>
       <a className="adm-brand" href="#/dashboard"><span className="adm-brand-mark" aria-hidden="true" /><span>Quầy điều hành<small>Quản lý cụm sân</small></span></a>
       <nav aria-label="Điều hướng quản trị">{groups.map(group => <div key={group.title} className="adm-group">
         <p className="adm-group-title">{group.title}</p>
@@ -87,7 +114,7 @@ export function AdminShell({ current, route, onLogout, children }: { current: Us
           <AccountMenu name={current.full_name} avatar={current.full_name.trim().charAt(0).toLocaleUpperCase()} profileHref="#/profile" onLogout={onLogout} />
         </div>
       </header>
-      <main className="adm-main">{children}</main>
+      <main className="adm-main" ref={main}>{children}</main>
     </div>
   </div>;
 }

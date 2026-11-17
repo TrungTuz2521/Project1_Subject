@@ -343,3 +343,31 @@ a.adm-board-cell:hover{border-color:var(--brand-line);box-shadow:0 2px 8px rgba(
 /* Scheduler not running: a plain, hard-to-miss strip above the scoreboard. */
 .adm-job-alert{display:flex;flex-direction:column;gap:4px;border:1px solid #e3b7a9;background:#fff3ee;color:#7d3424;border-radius:10px;padding:12px 14px;margin:0 0 14px;font-size:13px;line-height:1.55}
 .adm-job-alert code{font-size:12px;background:#fde6dd;padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+
+/* ---- Tables become cards when the columns no longer fit (phones, tablets, small laptops) ---- */
+/* Each cell: its column name pinned on the left, the cell's own content (one or more lines) on the right. */
+@media(max-width:1100px){
+  .adm .huy-table-wrap{overflow:visible}
+  .adm .huy-table-wrap table{min-width:0;width:100%;display:block}
+  .adm .huy-table-wrap thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .adm .huy-table-wrap tbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px}
+  .adm .huy-table-wrap tr{display:block;border:1px solid var(--line);border-radius:12px;padding:4px 14px;background:var(--surface);--label:min(34%,130px)}
+  .adm .huy-table-wrap tbody tr:hover{background:var(--surface)}
+  .adm .huy-table-wrap td{display:block;position:relative;padding:9px 0 9px calc(var(--label) + 12px);border-bottom:1px solid var(--line-soft);min-height:22px}
+  .adm .huy-table-wrap td::before{content:attr(data-label);position:absolute;left:0;top:9px;width:var(--label);font-size:12px;font-weight:600;color:var(--muted);line-height:1.6}
+  .adm .huy-table-wrap td[data-label=""]{padding-left:0}
+  .adm .huy-table-wrap td[data-label=""]::before{display:none}
+  .adm .huy-table-wrap td:last-child{border-bottom:0}
+  .adm .huy-table-wrap td>strong{white-space:normal}
+  .adm .huy-table-wrap .adm-row-actions{justify-content:flex-start}
+}
+@media(max-width:860px){
+  /* The menu row stays on screen while the page scrolls; it is the only way between pages. */
+  .adm-side{position:sticky;top:0;z-index:20;scrollbar-width:none}
+  .adm-side::-webkit-scrollbar{display:none}
+}
+@media(max-width:520px){
+  .adm .huy-table-wrap tr{padding:2px 12px}
+  .adm .huy-table-wrap td{padding-top:7px;padding-bottom:7px}
+  .adm .huy-table-wrap td::before{top:7px}
+}
